@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	agentconfig "github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
 	toolbrowser "github.com/uvwt/agentdock/internal/tool/browser"
 )
@@ -67,21 +68,28 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 	if err != nil {
 		return err
 	}
-	var acpAdapter desktopACPAdapter
+	acpProfiles := append([]agentconfig.ACPProfile(nil), request.ACPProfiles...)
 	if request.ACPEnabled {
-		configuredCommand := request.ACPCommand
-		configuredArgs := request.ACPArgs
-		if request.ACPAgent != "custom" {
-			configuredCommand = ""
-			configuredArgs = nil
-			if runtime.settings.ACPAgent == request.ACPAgent {
-				configuredCommand = runtime.settings.ACPCommand
-				configuredArgs = runtime.settings.ACPArgs
+		for index := range acpProfiles {
+			profile := &acpProfiles[index]
+			if !profile.Enabled {
+				continue
 			}
+			adapter, resolveErr := resolveDesktopACPAdapter(profile.Kind, runtime.root, profile.Command, profile.Args)
+			if resolveErr != nil {
+				return fmt.Errorf("解析 ACP Profile %s Adapter 失败: %w", profile.ID, resolveErr)
+			}
+			profile.Command = adapter.Command
+			profile.Args = append([]string(nil), adapter.Args...)
 		}
-		acpAdapter, err = resolveDesktopACPAdapter(request.ACPAgent, runtime.root, configuredCommand, configuredArgs)
-		if err != nil {
-			return err
+	}
+	acpDefaultProfile := request.ACPDefaultProfile
+	if acpDefaultProfile == "" {
+		for _, profile := range acpProfiles {
+			if profile.Enabled {
+				acpDefaultProfile = profile.ID
+				break
+			}
 		}
 	}
 	settingsPath := filepath.Join(runtime.root, "control-panel-settings.json")
@@ -118,12 +126,6 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		return cause
 	}
 
-	acpCommand := acpAdapter.Command
-	acpArgs := append([]string(nil), acpAdapter.Args...)
-	if !request.ACPEnabled && request.ACPAgent == "custom" {
-		acpCommand = request.ACPCommand
-		acpArgs = append([]string(nil), request.ACPArgs...)
-	}
 	settings := controlPanelSettings{
 		Port:                    request.Port,
 		LogLevel:                request.LogLevel,
@@ -133,9 +135,8 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		BrowserCDPURL:           request.BrowserCDPURL,
 		BrowserReuseExistingCDP: request.BrowserReuseExistingCDP,
 		ACPEnabled:              request.ACPEnabled,
-		ACPAgent:                request.ACPAgent,
-		ACPCommand:              acpCommand,
-		ACPArgs:                 acpArgs,
+		ACPProfiles:             acpProfiles,
+		ACPDefaultProfile:       acpDefaultProfile,
 	}
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {

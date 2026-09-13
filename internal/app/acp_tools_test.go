@@ -35,7 +35,9 @@ func TestACPToolsAreFeatureGatedAndUseStrictSchemas(t *testing.T) {
 	root := t.TempDir()
 	enabled := config.Config{
 		AgentDockHome: t.TempDir(), AgentDockDefaultDir: root,
-		ACPEnabled: true, ACPAgentName: "helper", ACPCommand: executable,
+		ACPEnabled:        true,
+		ACPProfiles:       []config.ACPProfile{{ID: "helper", Kind: "custom", Command: executable, Enabled: true}},
+		ACPDefaultProfile: "helper",
 	}
 	if err := enabled.Normalize(); err != nil {
 		t.Fatal(err)
@@ -61,35 +63,36 @@ func TestACPToolsAreFeatureGatedAndUseStrictSchemas(t *testing.T) {
 		if schema["additionalProperties"] != false {
 			t.Fatalf("%s additionalProperties = %#v", name, schema["additionalProperties"])
 		}
+		properties := schema["properties"].(map[string]any)
+		if _, exists := properties["profile_id"]; !exists {
+			t.Fatalf("%s input schema missing profile_id", name)
+		}
 	}
 
 	sessionProperties := testInputSchema("acp_session")["properties"].(map[string]any)
 	actions := sessionProperties["action"].(map[string]any)["enum"].([]string)
-	expectedActions := []string{"info", "authenticate", "new", "load", "resume", "fork", "set_mode", "set_config", "list", "inspect", "close", "delete"}
+	expectedActions := []string{"info", "new", "list", "inspect", "open", "update", "close", "delete"}
 	if !reflect.DeepEqual(actions, expectedActions) {
 		t.Fatalf("acp_session actions = %#v, want %#v", actions, expectedActions)
 	}
 	sessionOutputProperties := testOutputSchema("acp_session")["properties"].(map[string]any)
-	for _, property := range []string{"context_policy", "event_policy", "interaction_policy", "steering_policy"} {
+	for _, property := range []string{"profile_id", "context_policy", "event_policy", "interaction_policy", "steering_policy"} {
 		if _, exists := sessionOutputProperties[property]; !exists {
 			t.Fatalf("acp_session output schema missing %s", property)
 		}
 	}
 
 	promptProperties := testOutputSchema("acp_prompt")["properties"].(map[string]any)
-	for _, property := range []string{"next_seq", "first_seq", "latest_seq", "dropped_count", "has_more", "truncated"} {
+	for _, property := range []string{"profile_id", "next_seq", "first_seq", "latest_seq", "dropped_count", "has_more", "truncated"} {
 		if _, exists := promptProperties[property]; !exists {
 			t.Fatalf("acp_prompt output schema missing %s", property)
 		}
 	}
+	interactionProperties := testOutputSchema("acp_interaction")["properties"].(map[string]any)
+	if _, exists := interactionProperties["profile_id"]; !exists {
+		t.Fatal("acp_interaction output schema missing profile_id")
+	}
 
-	result, err := runtime.Call(context.Background(), "acp_session", map[string]any{"action": "list"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result["count"] != 0 {
-		t.Fatalf("empty ACP session count = %#v", result["count"])
-	}
 	contextResult, err := runtime.Call(context.Background(), "agentdock_context", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -98,8 +101,51 @@ func TestACPToolsAreFeatureGatedAndUseStrictSchemas(t *testing.T) {
 	if err := remarshal(contextResult, &contextData); err != nil {
 		t.Fatal(err)
 	}
-	if contextData.ACP == nil || !contextData.ACP.Enabled || contextData.ACP.Agent != "helper" {
+	if contextData.ACP == nil || !contextData.ACP.Enabled || contextData.ACP.DefaultProfile != "helper" {
 		t.Fatalf("context ACP metadata = %#v", contextData.ACP)
+	}
+}
+
+func TestACPContextListsConfiguredProfiles(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Config{
+		AgentDockHome: t.TempDir(), AgentDockDefaultDir: t.TempDir(), ACPEnabled: true,
+		ACPProfiles: []config.ACPProfile{
+			{ID: "zcode", Kind: "custom", Command: executable, Enabled: true},
+			{ID: "agy", Kind: "custom", Command: executable, Enabled: true},
+		},
+		ACPDefaultProfile: "zcode",
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = runtime.Close() }()
+
+	contextResult, err := runtime.Call(context.Background(), "agentdock_context", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contextData capabilityContext
+	if err := remarshal(contextResult, &contextData); err != nil {
+		t.Fatal(err)
+	}
+	if contextData.ACP == nil || contextData.ACP.DefaultProfile != "zcode" {
+		t.Fatalf("context ACP metadata = %#v", contextData.ACP)
+	}
+	if acpData, ok := contextResult["acp"].(map[string]any); ok {
+		if _, exists := acpData["agent"]; exists {
+			t.Fatalf("context ACP metadata still contains legacy agent alias: %#v", acpData)
+		}
+	}
+	if len(contextData.ACP.Profiles) != 2 || contextData.ACP.Profiles[0].ID != "zcode" || contextData.ACP.Profiles[1].ID != "agy" {
+		t.Fatalf("context ACP profiles = %#v", contextData.ACP.Profiles)
 	}
 }
 

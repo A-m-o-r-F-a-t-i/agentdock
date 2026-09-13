@@ -43,14 +43,16 @@ struct ServiceConfiguration: Equatable {
         "AGENTDOCK_BROWSER_CDP_URL",
         "AGENTDOCK_BROWSER_REUSE_EXISTING_CDP",
         "AGENTDOCK_ACP_ENABLED",
+        "AGENTDOCK_ACP_PROFILES_JSON",
+        "AGENTDOCK_ACP_DEFAULT_PROFILE",
+    ]
+    // 旧配置键只用于读取迁移或已停止使用；新版保存时统一清除，避免继续形成双写状态。
+    static let removableLegacyKeys: Set<String> = [
+        "AGENTDOCK_ACP_ALLOWED_ROOTS",
         "AGENTDOCK_ACP_AGENT",
         "AGENTDOCK_ACP_COMMAND",
         "AGENTDOCK_ACP_ARGS_JSON",
         "AGENTDOCK_ACP_ENV_FROM_ENV_JSON",
-    ]
-    // 旧 Nexus 凭据不再参与运行；保存设置时一并从环境文件清除，避免废弃密钥继续落盘。
-    static let removableLegacyKeys: Set<String> = [
-        "AGENTDOCK_ACP_ALLOWED_ROOTS",
         "AGENTDOCK_NEXUS_ENDPOINT",
         "AGENTDOCK_NEXUS_TOKEN",
     ]
@@ -66,9 +68,8 @@ struct ServiceConfiguration: Equatable {
     let browserCDPURL: String
     let browserReuseExistingCDP: Bool
     let acpEnabled: Bool
-    let acpAgent: ACPAgentPreset
-    let acpCommand: String
-    let acpArgs: [String]
+    let acpProfiles: [ACPProfileConfiguration]
+    let acpDefaultProfile: String
 
     var healthHost: String {
         switch host {
@@ -101,7 +102,31 @@ struct ServiceConfiguration: Equatable {
         let host = values["AGENTDOCK_HOST"] ?? "127.0.0.1"
         guard let port = Int(values["AGENTDOCK_PORT"] ?? "8765"), (1...65535).contains(port) else { return nil }
         let publicURL = values["AGENTDOCK_SERVER_URL"].flatMap { $0.isEmpty ? nil : $0 }
-        guard let acpAgent = ACPAgentPreset.parse(values["AGENTDOCK_ACP_AGENT"] ?? "codex") else {
+        let acpEnabled = parseBool(values["AGENTDOCK_ACP_ENABLED"])
+        guard var acpProfiles = try? ACPDesktopConfiguration.decodeProfiles(values["AGENTDOCK_ACP_PROFILES_JSON"]) else {
+            return nil
+        }
+        var acpDefaultProfile = values["AGENTDOCK_ACP_DEFAULT_PROFILE"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if acpProfiles.isEmpty {
+            // 旧单 ACP 环境变量只在读取边界迁移；新版保存后会删除这些旧键。
+            guard let legacyAgent = ACPAgentPreset.parse(values["AGENTDOCK_ACP_AGENT"] ?? "codex") else {
+                return nil
+            }
+            acpProfiles = [ACPProfileConfiguration(
+                id: legacyAgent.rawValue,
+                kind: legacyAgent,
+                command: values["AGENTDOCK_ACP_COMMAND"] ?? "",
+                args: decodeStringArray(values["AGENTDOCK_ACP_ARGS_JSON"]),
+                envFromEnv: decodeStringMap(values["AGENTDOCK_ACP_ENV_FROM_ENV_JSON"]),
+                // 旧单 ACP 没有 Profile 级开关；迁移后保持“已配置”，只由全局开关控制是否启用。
+                enabled: true
+            )]
+            acpDefaultProfile = legacyAgent.rawValue
+        } else if acpDefaultProfile.isEmpty {
+            acpDefaultProfile = acpProfiles.first(where: \.enabled)?.id ?? acpProfiles[0].id
+        }
+        guard acpProfiles.contains(where: { $0.id == acpDefaultProfile }) else {
             return nil
         }
         return ServiceConfiguration(
@@ -115,10 +140,9 @@ struct ServiceConfiguration: Equatable {
             browserEnabled: parseBool(values["AGENTDOCK_BROWSER_ENABLED"]),
             browserCDPURL: values["AGENTDOCK_BROWSER_CDP_URL"] ?? "",
             browserReuseExistingCDP: parseBool(values["AGENTDOCK_BROWSER_REUSE_EXISTING_CDP"]),
-            acpEnabled: parseBool(values["AGENTDOCK_ACP_ENABLED"]),
-            acpAgent: acpAgent,
-            acpCommand: values["AGENTDOCK_ACP_COMMAND"] ?? "",
-            acpArgs: decodeStringArray(values["AGENTDOCK_ACP_ARGS_JSON"])
+            acpEnabled: acpEnabled,
+            acpProfiles: acpProfiles,
+            acpDefaultProfile: acpDefaultProfile
         )
     }
 
@@ -131,6 +155,15 @@ struct ServiceConfiguration: Equatable {
         guard let raw, let data = raw.data(using: .utf8),
               let values = try? JSONDecoder().decode([String].self, from: data) else {
             return []
+        }
+        return values
+    }
+
+    private static func decodeStringMap(_ raw: String?) -> [String: String]? {
+        guard let raw, let data = raw.data(using: .utf8),
+              let values = try? JSONDecoder().decode([String: String].self, from: data),
+              !values.isEmpty else {
+            return nil
         }
         return values
     }

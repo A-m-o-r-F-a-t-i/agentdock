@@ -49,16 +49,25 @@ type Config struct {
 	BrowserCDPURL                string
 	BrowserReuseExistingCDP      bool
 	ACPEnabled                   bool
-	ACPAgentName                 string
-	ACPCommand                   string
-	ACPArgs                      []string
-	ACPEnvFromEnv                map[string]string
+	ACPProfiles                  []ACPProfile
+	ACPDefaultProfile            string
 	ACPMaxPrompts                int
 	ACPInteractionMS             int
 	Stdio                        bool
 	TrustedProxyCIDRs            []string
 	InstructionsFile             string
 	Instructions                 string
+}
+
+// ACPProfile 表示一个可独立运行、独立持久化会话的 ACP 实例。
+// 内置类型使用固定 ID（codex/claude/grok）保持单实例；custom 使用自定义 ID 支持多个实例。
+type ACPProfile struct {
+	ID         string            `json:"id"`
+	Kind       string            `json:"kind"`
+	Command    string            `json:"command"`
+	Args       []string          `json:"args,omitempty"`
+	EnvFromEnv map[string]string `json:"env_from_env,omitempty"`
+	Enabled    bool              `json:"enabled"`
 }
 
 func FromEnv() (Config, error) {
@@ -98,22 +107,26 @@ func FromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	var acpArgs []string
-	var acpEnvFromEnv map[string]string
-	acpAgentName := "claude"
-	acpCommand := ""
+	var acpProfiles []ACPProfile
+	acpDefaultProfile := ""
 	acpMaxPrompts := 2
 	acpInteractionMS := 300000
 	if acpEnabled {
-		acpAgentName = getenv("AGENTDOCK_ACP_AGENT", acpAgentName)
-		acpCommand = os.Getenv("AGENTDOCK_ACP_COMMAND")
-		acpArgs, err = getenvStringSliceJSON("AGENTDOCK_ACP_ARGS_JSON")
-		if err != nil {
-			return Config{}, err
-		}
-		acpEnvFromEnv, err = getenvStringMapJSON("AGENTDOCK_ACP_ENV_FROM_ENV_JSON")
-		if err != nil {
-			return Config{}, err
+		profilesJSON := strings.TrimSpace(os.Getenv("AGENTDOCK_ACP_PROFILES_JSON"))
+		if profilesJSON != "" {
+			if err := json.Unmarshal([]byte(profilesJSON), &acpProfiles); err != nil {
+				return Config{}, fmt.Errorf("AGENTDOCK_ACP_PROFILES_JSON: %w", err)
+			}
+			acpDefaultProfile = strings.TrimSpace(os.Getenv("AGENTDOCK_ACP_DEFAULT_PROFILE"))
+		} else {
+			// 旧单 ACP 环境变量只在配置入口存在：读取后立即转换成 Profile。
+			// 旧 custom 保持 ID=custom，因此原 session store identity 不变。
+			legacyProfile, legacyErr := legacyACPProfileFromEnv()
+			if legacyErr != nil {
+				return Config{}, legacyErr
+			}
+			acpProfiles = []ACPProfile{legacyProfile}
+			acpDefaultProfile = legacyProfile.ID
 		}
 		acpMaxPrompts, err = getenvInt("AGENTDOCK_ACP_MAX_CONCURRENT_PROMPTS", acpMaxPrompts)
 		if err != nil {
@@ -142,10 +155,8 @@ func FromEnv() (Config, error) {
 		BrowserCDPURL:                strings.TrimSpace(os.Getenv("AGENTDOCK_BROWSER_CDP_URL")),
 		BrowserReuseExistingCDP:      browserReuseExistingCDP,
 		ACPEnabled:                   acpEnabled,
-		ACPAgentName:                 acpAgentName,
-		ACPCommand:                   acpCommand,
-		ACPArgs:                      acpArgs,
-		ACPEnvFromEnv:                acpEnvFromEnv,
+		ACPProfiles:                  acpProfiles,
+		ACPDefaultProfile:            acpDefaultProfile,
 		ACPMaxPrompts:                acpMaxPrompts,
 		ACPInteractionMS:             acpInteractionMS,
 		Stdio:                        stdio,
@@ -398,17 +409,11 @@ func splitCommaSeparated(value string) []string {
 
 func (c *Config) normalizeACP() error {
 	if !c.ACPEnabled {
-		c.ACPAgentName = "claude"
-		c.ACPCommand = ""
-		c.ACPArgs = nil
-		c.ACPEnvFromEnv = nil
+		c.ACPProfiles = nil
+		c.ACPDefaultProfile = ""
 		c.ACPMaxPrompts = 2
 		c.ACPInteractionMS = 300000
 		return nil
-	}
-	c.ACPAgentName = strings.TrimSpace(c.ACPAgentName)
-	if c.ACPAgentName == "" {
-		c.ACPAgentName = "claude"
 	}
 	if c.ACPMaxPrompts == 0 {
 		c.ACPMaxPrompts = 2
@@ -416,36 +421,149 @@ func (c *Config) normalizeACP() error {
 	if c.ACPInteractionMS == 0 {
 		c.ACPInteractionMS = 300000
 	}
-	if !validACPAgentName(c.ACPAgentName) {
-		return fmt.Errorf("AGENTDOCK_ACP_AGENT must be a 1-64 character identifier using letters, numbers, dot, underscore, or hyphen: %q", c.ACPAgentName)
-	}
 	if c.ACPMaxPrompts < 1 || c.ACPMaxPrompts > 8 {
 		return fmt.Errorf("AGENTDOCK_ACP_MAX_CONCURRENT_PROMPTS must be between 1 and 8: %d", c.ACPMaxPrompts)
 	}
 	if c.ACPInteractionMS < 1000 || c.ACPInteractionMS > 3600000 {
 		return fmt.Errorf("AGENTDOCK_ACP_INTERACTION_TIMEOUT_MS must be between 1000 and 3600000: %d", c.ACPInteractionMS)
 	}
-	if err := validateACPArguments(c.ACPArgs); err != nil {
-		return fmt.Errorf("AGENTDOCK_ACP_ARGS_JSON: %w", err)
+	return c.normalizeACPProfiles()
+}
+
+func (c *Config) normalizeACPProfiles() error {
+	seen := make(map[string]struct{}, len(c.ACPProfiles))
+	enabled := make(map[string]struct{}, len(c.ACPProfiles))
+	firstEnabled := ""
+
+	for index := range c.ACPProfiles {
+		profile := &c.ACPProfiles[index]
+		profile.ID = strings.TrimSpace(profile.ID)
+		profile.Kind = strings.ToLower(strings.TrimSpace(profile.Kind))
+		if !validACPAgentName(profile.ID) {
+			return fmt.Errorf("AGENTDOCK_ACP_PROFILES_JSON profile id must be a 1-64 character identifier using letters, numbers, dot, underscore, or hyphen: %q", profile.ID)
+		}
+		if _, exists := seen[profile.ID]; exists {
+			return fmt.Errorf("AGENTDOCK_ACP_PROFILES_JSON contains duplicate profile id %q", profile.ID)
+		}
+		seen[profile.ID] = struct{}{}
+
+		switch profile.Kind {
+		case "codex", "claude", "grok":
+			if profile.ID != profile.Kind {
+				return fmt.Errorf("built-in ACP profile %q must use id %q", profile.Kind, profile.Kind)
+			}
+		case "custom":
+			if profile.ID == "codex" || profile.ID == "claude" || profile.ID == "grok" {
+				return fmt.Errorf("custom ACP profile id %q is reserved for the built-in profile", profile.ID)
+			}
+		default:
+			return fmt.Errorf("unsupported ACP profile kind %q", profile.Kind)
+		}
+
+		if err := validateACPArguments(profile.Args); err != nil {
+			return fmt.Errorf("AGENTDOCK_ACP_PROFILES_JSON profile %q args: %w", profile.ID, err)
+		}
+		if err := validateEnvironmentMapping(profile.EnvFromEnv); err != nil {
+			return fmt.Errorf("AGENTDOCK_ACP_PROFILES_JSON profile %q env_from_env: %w", profile.ID, err)
+		}
+
+		profile.Command = strings.TrimSpace(profile.Command)
+		if profile.Command != "" {
+			profile.Command = filepath.Clean(profile.Command)
+			if !filepath.IsAbs(profile.Command) {
+				return fmt.Errorf("ACP profile %q command must be an absolute executable path: %s", profile.ID, profile.Command)
+			}
+		}
+		if !profile.Enabled {
+			continue
+		}
+		if profile.Command == "" {
+			return fmt.Errorf("enabled ACP profile %q requires a command", profile.ID)
+		}
+		info, err := os.Stat(profile.Command)
+		if err != nil {
+			return fmt.Errorf("stat ACP profile %q command %s: %w", profile.ID, profile.Command, err)
+		}
+		if info.IsDir() {
+			return fmt.Errorf("ACP profile %q command is not a file: %s", profile.ID, profile.Command)
+		}
+		if err := validateACPCommandPlatform(profile.Command, info); err != nil {
+			return fmt.Errorf("ACP profile %q: %w", profile.ID, err)
+		}
+		enabled[profile.ID] = struct{}{}
+		if firstEnabled == "" {
+			firstEnabled = profile.ID
+		}
 	}
-	if err := validateEnvironmentMapping(c.ACPEnvFromEnv); err != nil {
-		return fmt.Errorf("AGENTDOCK_ACP_ENV_FROM_ENV_JSON: %w", err)
+
+	if len(enabled) == 0 {
+		return errors.New("AGENTDOCK_ACP_PROFILES_JSON must contain at least one enabled ACP profile")
 	}
-	c.ACPCommand = filepath.Clean(strings.TrimSpace(c.ACPCommand))
-	if c.ACPCommand == "." || !filepath.IsAbs(c.ACPCommand) {
-		return fmt.Errorf("AGENTDOCK_ACP_COMMAND must be an absolute executable path: %s", c.ACPCommand)
+	c.ACPDefaultProfile = strings.TrimSpace(c.ACPDefaultProfile)
+	if c.ACPDefaultProfile == "" {
+		c.ACPDefaultProfile = firstEnabled
 	}
-	info, err := os.Stat(c.ACPCommand)
-	if err != nil {
-		return fmt.Errorf("stat AGENTDOCK_ACP_COMMAND %s: %w", c.ACPCommand, err)
-	}
-	if info.IsDir() {
-		return fmt.Errorf("AGENTDOCK_ACP_COMMAND is not a file: %s", c.ACPCommand)
-	}
-	if err := validateACPCommandPlatform(c.ACPCommand, info); err != nil {
-		return err
+	if _, exists := enabled[c.ACPDefaultProfile]; !exists {
+		return fmt.Errorf("AGENTDOCK_ACP_DEFAULT_PROFILE must reference an enabled ACP profile: %q", c.ACPDefaultProfile)
 	}
 	return nil
+}
+
+// EffectiveACPProfiles 返回 Runtime 实际需要启动的 ACP profile。
+func (c Config) EffectiveACPProfiles() []ACPProfile {
+	if !c.ACPEnabled {
+		return nil
+	}
+	profiles := make([]ACPProfile, 0, len(c.ACPProfiles))
+	for _, profile := range c.ACPProfiles {
+		if profile.Enabled {
+			profiles = append(profiles, profile)
+		}
+	}
+	return profiles
+}
+
+func (c Config) EffectiveACPDefaultProfile() string {
+	return c.ACPDefaultProfile
+}
+
+func legacyACPProfileKind(agent string) string {
+	agent = strings.ToLower(strings.TrimSpace(agent))
+	switch agent {
+	case "codex", "claude", "grok":
+		return agent
+	default:
+		return "custom"
+	}
+}
+
+func legacyACPProfileFromEnv() (ACPProfile, error) {
+	agent := strings.TrimSpace(getenv("AGENTDOCK_ACP_AGENT", "claude"))
+	if !validACPAgentName(agent) {
+		return ACPProfile{}, fmt.Errorf("AGENTDOCK_ACP_AGENT must be a 1-64 character identifier using letters, numbers, dot, underscore, or hyphen: %q", agent)
+	}
+	args, err := getenvStringSliceJSON("AGENTDOCK_ACP_ARGS_JSON")
+	if err != nil {
+		return ACPProfile{}, err
+	}
+	if err := validateACPArguments(args); err != nil {
+		return ACPProfile{}, fmt.Errorf("AGENTDOCK_ACP_ARGS_JSON: %w", err)
+	}
+	envFromEnv, err := getenvStringMapJSON("AGENTDOCK_ACP_ENV_FROM_ENV_JSON")
+	if err != nil {
+		return ACPProfile{}, err
+	}
+	if err := validateEnvironmentMapping(envFromEnv); err != nil {
+		return ACPProfile{}, fmt.Errorf("AGENTDOCK_ACP_ENV_FROM_ENV_JSON: %w", err)
+	}
+	return ACPProfile{
+		ID:         agent,
+		Kind:       legacyACPProfileKind(agent),
+		Command:    os.Getenv("AGENTDOCK_ACP_COMMAND"),
+		Args:       args,
+		EnvFromEnv: envFromEnv,
+		Enabled:    true,
+	}, nil
 }
 
 func getenv(key, fallback string) string {

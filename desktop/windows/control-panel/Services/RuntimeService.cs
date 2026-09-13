@@ -61,9 +61,40 @@ public sealed class RuntimeService : IDisposable
         {
             settings.LogLevel = "info";
         }
-        settings.AcpAgent = NormalizeAcpAgent(settings.AcpAgent);
-        settings.AcpCommand ??= "";
-        settings.AcpArgs ??= [];
+        settings.AcpProfiles ??= [];
+        if (settings.AcpProfiles.Count == 0)
+        {
+            // 旧 control-panel-settings.json 只在读取边界迁移；保存后只保留 Profiles。
+            var legacy = await ReadJsonAsync<LegacyAcpControlPanelSettings>(SettingsPath, cancellationToken);
+            var legacyKind = string.IsNullOrWhiteSpace(legacy?.AcpAgent)
+                ? "codex"
+                : NormalizeAcpAgent(legacy.AcpAgent);
+            settings.AcpProfiles.Add(new AcpProfileSettings
+            {
+                Id = legacyKind,
+                Kind = legacyKind,
+                Command = legacy?.AcpCommand?.Trim() ?? "",
+                Args = legacy?.AcpArgs is null ? [] : [.. legacy.AcpArgs],
+                Enabled = true
+            });
+            settings.AcpDefaultProfile = legacyKind;
+        }
+        else
+        {
+            foreach (var profile in settings.AcpProfiles)
+            {
+                profile.Id = (profile.Id ?? "").Trim();
+                profile.Kind = NormalizeAcpAgent(profile.Kind);
+                profile.Command = (profile.Command ?? "").Trim();
+                profile.Args ??= [];
+            }
+            settings.AcpDefaultProfile = (settings.AcpDefaultProfile ?? "").Trim();
+            if (settings.AcpDefaultProfile.Length == 0)
+            {
+                settings.AcpDefaultProfile = settings.AcpProfiles.FirstOrDefault(profile => profile.Enabled)?.Id
+                    ?? settings.AcpProfiles[0].Id;
+            }
+        }
 
         var localOrigin = $"http://127.0.0.1:{settings.Port}";
         var localMcpUrl = localOrigin + "/mcp";
@@ -362,9 +393,8 @@ public sealed class RuntimeService : IDisposable
             "--browser-cdp-url", settings.BrowserCdpUrl ?? "",
             $"--browser-reuse-existing-cdp={settings.BrowserReuseExistingCdp.ToString().ToLowerInvariant()}",
             $"--acp-enabled={settings.AcpEnabled.ToString().ToLowerInvariant()}",
-            "--acp-agent", NormalizeAcpAgent(settings.AcpAgent),
-            "--acp-command", settings.AcpCommand ?? "",
-            "--acp-args-json", JsonSerializer.Serialize(settings.AcpArgs ?? [])
+            "--acp-profiles-json", JsonSerializer.Serialize(settings.AcpProfiles ?? []),
+            "--acp-default-profile", settings.AcpDefaultProfile ?? ""
         };
         await RunNativeAgentDockAsync("config", arguments, cancellationToken);
     }
