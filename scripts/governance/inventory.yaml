@@ -261,3 +261,45 @@ scripts:
     public_contract: false
     deletable: false
     notes: 独立目录、端口、用户数据与启动项下验证历史版本升级、失败回滚和同版本覆盖；拒绝操作固定 AgentDock 管理员任务。
+
+  - path: packaging/windows/includes/native-launch.iss
+    class: packaging
+    owner: installer
+    public_contract: false
+    deletable: false
+    notes: Inno 的原生无控制台命令执行与后台运行时启动适配。
+
+  - path: scripts/test/test-windows-inno-isolated.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    notes: 使用独立 AppID、目录和端口验证真实 Inno 升级、故障恢复、卸载与窗口事件。
+
+  - path: scripts/test/test-windows-inventory-performance.ps1
+    class: test
+    owner: desktop
+    public_contract: false
+    deletable: true
+    notes: 在能力数据副本上比较新旧 Core 清单耗时和成员一致性。
+
+  - path: scripts/test/test-windows-native-setup-exec.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    notes: 原生执行器的 32/64 位进程、退出码、超时和可见控制台回归。
+
+  - path: scripts/test/test-windows-tunnel-lifecycle.ps1
+    class: test
+    owner: desktop
+    public_contract: false
+    deletable: false
+    notes: 隔离验证真实 Tunnel 重建、重复停止及启动和 Core 重载期间取消。
+
+  - path: scripts/test/testdata/native-setup/NativeSetupProbe.iss
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: true
+    notes: 在真实 Inno 父进程下验证原生执行器的最小安装器夹具。

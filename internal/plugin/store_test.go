@@ -58,8 +58,18 @@ func TestStoreInstallsDirectPackageAndPersistsMemberState(t *testing.T) {
 	}
 
 	member, ok, err := store.Skill("layout")
-	if err != nil || !ok || member.Plugin != "pcb" || member.Path != filepath.Join(wantRoot, "skills", "layout") || !member.Enabled {
+	if err != nil || !ok || member.Plugin != "pcb" || !member.Enabled {
 		t.Fatalf("skill member = %#v ok=%v err=%v", member, ok, err)
+	}
+	// macOS /var aliases and Windows 8.3 temporary paths resolve to their
+	// canonical spelling at the containment boundary. Verify file identity.
+	wantMember, err := os.Stat(filepath.Join(wantRoot, "skills", "layout"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	actualMember, err := os.Stat(member.Path)
+	if err != nil || !os.SameFile(wantMember, actualMember) {
+		t.Fatalf("skill path does not identify the installed member: path=%q err=%v", member.Path, err)
 	}
 	servers, err := store.MCPServers()
 	if err != nil {

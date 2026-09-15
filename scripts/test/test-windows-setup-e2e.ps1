@@ -207,8 +207,17 @@ function Assert-TaskStopKillsCore {
 }
 
 function Assert-ElevatedCoreLifecycle {
-    $stopOutput = @(& $binaryPath service stop --runtime-root $InstallRoot 2>&1)
-    if ($LASTEXITCODE -ne 0) {
+    # Windows PowerShell 5.1 wraps redirected native stderr in ErrorRecord,
+    # even for INFO diagnostics from a command that exits successfully.
+    $previousErrorAction = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $stopOutput = @(& $binaryPath service stop --runtime-root $InstallRoot 2>&1)
+        $stopExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+    if ($stopExitCode -ne 0) {
         throw "Elevated core stop failed: $($stopOutput -join [Environment]::NewLine)"
     }
     $stopDeadline = [DateTime]::UtcNow.AddSeconds(15)
@@ -227,8 +236,14 @@ function Assert-ElevatedCoreLifecycle {
         Start-Sleep -Milliseconds 250
     } while ($true)
 
-    $startOutput = @(& $binaryPath service start --runtime-root $InstallRoot 2>&1)
-    if ($LASTEXITCODE -ne 0) {
+    try {
+        $ErrorActionPreference = 'Continue'
+        $startOutput = @(& $binaryPath service start --runtime-root $InstallRoot 2>&1)
+        $startExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+    if ($startExitCode -ne 0) {
         throw "Elevated core start failed: $($startOutput -join [Environment]::NewLine)"
     }
     $health = Invoke-WebRequest -UseBasicParsing -Uri $healthUrl -TimeoutSec 5

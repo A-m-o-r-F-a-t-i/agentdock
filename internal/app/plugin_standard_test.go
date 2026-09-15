@@ -113,7 +113,8 @@ func TestNormalPluginDirectDisclosureAndHeavySwitch(t *testing.T) {
 }
 
 func TestPortableFixtureStandardStdioMCPRoundTrip(t *testing.T) {
-	if _, err := exec.LookPath("node"); err != nil {
+	node, err := exec.LookPath("node")
+	if err != nil {
 		t.Skip("Node.js is required by the portable MCP fixture")
 	}
 	root := t.TempDir()
@@ -132,15 +133,21 @@ func TestPortableFixtureStandardStdioMCPRoundTrip(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	started := time.Now()
+	failFixture := func(stage string, err error) {
+		t.Helper()
+		details, _ := json.Marshal(err)
+		t.Fatalf("portable stdio %s failed after %s (node=%q, root=%q): %v; details=%s", stage, time.Since(started), node, root, err, details)
+	}
 	if _, err := rt.Call(ctx, "plugin_manage", map[string]any{"action": "install", "source": source}); err != nil {
-		t.Fatal(err)
+		failFixture("install", err)
 	}
 	if _, err := rt.Call(ctx, "plugin_load", map[string]any{"name": "portable-demo"}); err != nil {
-		t.Fatal(err)
+		failFixture("load", err)
 	}
 	result, err := rt.Call(ctx, "mcp_tool_call", map[string]any{"name": "portable-echo:echo", "arguments": map[string]any{"text": "portable MCP round trip"}})
 	if err != nil {
-		t.Fatal(err)
+		failFixture("echo", err)
 	}
 	data, err := json.Marshal(result)
 	if err != nil {
