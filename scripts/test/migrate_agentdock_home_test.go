@@ -48,12 +48,24 @@ func TestAgentDockHomeMigrationUsesDirectPlugins(t *testing.T) {
 	}
 	writeJSONFile(t, filepath.Join(source, "mcp", "servers.json"), map[string]any{
 		"version": 1,
-		"servers": []map[string]any{{
-			"name": "demo-mcp", "description": "Demo MCP", "transport": "stdio",
-			"command": "node.exe", "args": []string{"server.mjs"}, "cwd": implementation,
-			"enabled": false, "timeout_ms": 1000,
-		}},
+		"servers": []map[string]any{
+			{
+				"name": "demo-mcp", "description": "Demo MCP", "transport": "stdio",
+				"command": "node.exe", "args": []string{"server.mjs"}, "cwd": implementation,
+				"enabled": false, "timeout_ms": 1000,
+			},
+			{
+				"name": "old-mcp", "description": "Old MCP", "transport": "stdio",
+				"command": "old.exe", "enabled": false, "timeout_ms": 1000,
+			},
+		},
 	})
+	if err := os.MkdirAll(filepath.Join(source, "env", "mcp"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "env", "mcp", "old-mcp.env"), []byte("SETTING=preserved\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	plan := filepath.Join(root, "plan.json")
 	writeJSONFile(t, plan, map[string]any{
 		"schema_version": 1,
@@ -66,7 +78,7 @@ func TestAgentDockHomeMigrationUsesDirectPlugins(t *testing.T) {
 				"command": "node.exe", "args": []string{"server.mjs"},
 			}},
 		}},
-		"archive_mcp_servers": []string{},
+		"archive_mcp_servers": []string{"old-mcp"},
 	})
 
 	command := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
@@ -79,6 +91,7 @@ func TestAgentDockHomeMigrationUsesDirectPlugins(t *testing.T) {
 		filepath.Join(destination, "plugins", "demo-plugin", ".agentdock-plugin", "plugin.json"),
 		filepath.Join(destination, "plugins", "demo-plugin", "skills", "demo", "SKILL.md"),
 		filepath.Join(destination, "skills", ".system", "agentdock-user-guide", "SKILL.md"),
+		filepath.Join(destination, "migration-archive", "mcp-env", "old-mcp.env"),
 		filepath.Join(destination, "migration-report.json"),
 	} {
 		if _, err := os.Stat(path); err != nil {
@@ -89,6 +102,7 @@ func TestAgentDockHomeMigrationUsesDirectPlugins(t *testing.T) {
 		filepath.Join(destination, "plugins", "cache"),
 		filepath.Join(destination, "plugins", "plugins.json"),
 		filepath.Join(destination, "skill-store"),
+		filepath.Join(destination, "env", "mcp", "old-mcp.env"),
 	} {
 		if _, err := os.Stat(forbidden); !os.IsNotExist(err) {
 			t.Fatalf("forbidden path exists: %s", forbidden)

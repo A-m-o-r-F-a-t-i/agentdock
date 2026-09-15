@@ -335,6 +335,7 @@ else {
     [pscustomobject]@{ version = 1; servers = @() }
 }
 $removedMcp = [ordered]@{}
+$archiveOnlyMcp = [ordered]@{}
 $migratedPlugins = @()
 $pluginPlan = $null
 if (-not [string]::IsNullOrWhiteSpace($PluginPlanPath)) {
@@ -438,6 +439,7 @@ if ($null -ne $pluginPlan) {
         $existing = Find-McpServer $mcpDocument $serverName
         if ($null -ne $existing) {
             $removedMcp[$serverName] = $existing
+            $archiveOnlyMcp[$serverName] = $true
         }
     }
 
@@ -451,6 +453,18 @@ if ($null -ne $pluginPlan) {
     Write-JsonFile $mcpRegistryPath $mcpDocument
     if ($removedMcp.Count -gt 0) {
         Write-JsonFile (Join-Path $archiveRoot 'removed-standalone-mcp.json') ([ordered]@{ version = 1; servers = @($removedMcp.Values) })
+    }
+    if ($archiveOnlyMcp.Count -gt 0) {
+        $mcpEnvironmentRoot = Join-Path (Join-Path $destination 'env') 'mcp'
+        $mcpEnvironmentArchive = Join-Path $archiveRoot 'mcp-env'
+        foreach ($serverName in @($archiveOnlyMcp.Keys)) {
+            $environmentPath = Join-Path $mcpEnvironmentRoot ($serverName + '.env')
+            if (-not (Test-Path -LiteralPath $environmentPath -PathType Leaf)) {
+                continue
+            }
+            New-Item -ItemType Directory -Path $mcpEnvironmentArchive -Force | Out-Null
+            Move-Item -LiteralPath $environmentPath -Destination (Join-Path $mcpEnvironmentArchive ($serverName + '.env')) -Force
+        }
     }
 }
 
@@ -491,6 +505,9 @@ $report = [ordered]@{
     migrated_plugins = @($migratedPlugins | Sort-Object)
     upgraded_core_skills = @($upgradedCoreSkills | Sort-Object)
     archived_mcp_servers = @($removedMcp.Keys | Sort-Object)
+    archived_mcp_environment_files = @($archiveOnlyMcp.Keys | Where-Object {
+        Test-Path -LiteralPath (Join-Path (Join-Path (Join-Path $destination 'migration-archive') 'mcp-env') ($_ + '.env'))
+    } | Sort-Object)
     excluded_top_level = $excludedTopLevel
     source_modified = $false
     plugin_cache_present = $false
