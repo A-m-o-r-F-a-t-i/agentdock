@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory=$true)][string]$BaselineArchive,
     [Parameter(Mandatory=$true)][string]$CloudflaredBinary,
     [Parameter(Mandatory=$true)][string]$ReportPath,
+    [string]$ExpectedVersion='1.0.0',
     [string]$InstallerPath='',
     [string]$BaselineInstallerPath='',
     [ValidateSet('script','setup')][string]$BaselineChannel='script',
@@ -136,10 +137,10 @@ try{
         Record-Case 'Failed trial restores prior Core, pointer, credentials and user data'
     }
     Run-Installer $Archive 'setup' $InstallerPath 'upgrade'
-    $targetVersion=Read-Health ''
-    if($targetVersion -ne '0.8.4'){throw "Upgrade reports unexpected version: $targetVersion"}
+    $targetVersion=Read-Health $ExpectedVersion
+    if($targetVersion -ne $ExpectedVersion){throw "Upgrade reports unexpected version: $targetVersion"}
     Assert-Preserved
-    Record-Case 'Upgrade to 0.8.4 commits and remains healthy'
+    Record-Case "Upgrade to $ExpectedVersion commits and remains healthy"
     Run-Installer $Archive 'setup' $InstallerPath 'same-version-repair'
     [void](Read-Health $targetVersion)
     Assert-Preserved
