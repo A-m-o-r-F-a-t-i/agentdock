@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string] $LauncherPath = (Join-Path $PSScriptRoot '..\install\launch-windows-process.ps1'),
+    [string] $LauncherPath = '',
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
     [string] $AgentDockBinary
@@ -9,6 +9,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+if ([string]::IsNullOrWhiteSpace($LauncherPath)) {
+    $LauncherPath = Join-Path $PSScriptRoot '..\install\launch-windows-process.ps1'
+}
 $resolvedLauncher = (Resolve-Path -LiteralPath $LauncherPath).Path
 $resolvedAgentDockBinary = (Resolve-Path -LiteralPath $AgentDockBinary).Path
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock runtime diagnostics test ' + [Guid]::NewGuid().ToString('N'))
@@ -66,6 +69,21 @@ try {
         -Arguments $arguments `
         -WaitForExit `
         -TimeoutSeconds 30
+
+    # Confirm JSON round-trips UTF-8 paths without host codepage substitution.
+    $payload = '{"path":"' + [char]0x6D4B + [char]0x8BD5 + ' with spaces"}'
+    [IO.File]::WriteAllText($childScript,
+        "[Console]::OutputEncoding=[Text.Encoding]::UTF8; [Console]::WriteLine('" + $payload + "'); exit 0",
+        [Text.UTF8Encoding]::new($true))
+    $returned = & $resolvedLauncher -FilePath (Join-Path $PSHOME 'powershell.exe') `
+        -AgentDockBinary $resolvedAgentDockBinary -Arguments $arguments -WaitForExit -PassThruOutput
+    if ($returned.Trim() -ne $payload) { throw 'UTF-8 Engine JSON was not preserved.' }
+
+    # Repeated fast no-wait launches must acknowledge Process.Start, not a timestamp.
+    for ($i = 0; $i -lt 5; $i++) {
+        & $resolvedLauncher -FilePath (Join-Path $env:WINDIR 'System32\cmd.exe') `
+            -AgentDockBinary $resolvedAgentDockBinary -Arguments '/c exit 0'
+    }
 
     $afterTasks = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName.StartsWith($taskPrefix) } | ForEach-Object TaskName)
     $newTasks = @($afterTasks | Where-Object { $_ -notin $beforeTasks })

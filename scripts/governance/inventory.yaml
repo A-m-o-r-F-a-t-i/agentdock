@@ -247,3 +247,17 @@ scripts:
     public_contract: false
     deletable: false
     notes: 容器启动边界，合理保留。
+
+  - path: scripts/test/test-agent-plugin-compatibility.py
+    class: test
+    owner: skill-runtime
+    public_contract: false
+    deletable: true
+    notes: 独立校验插件 Schema 与 MCP/Skill 可移植样本。
+
+  - path: scripts/test/test-windows-upgrade-isolated.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    notes: 独立目录、端口、用户数据与启动项下验证历史版本升级、失败回滚和同版本覆盖；拒绝操作固定 AgentDock 管理员任务。

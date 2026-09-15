@@ -69,7 +69,11 @@ type variant struct {
 	wReserved1 uint16
 	wReserved2 uint16
 	wReserved3 uint16
-	Val        int64
+	// The native union includes BRECORD (two pointers), so VARIANT is 24 bytes
+	// on Windows amd64/arm64 and 16 bytes on 386. A scalar-only union breaks
+	// DISPPARAMS argument stride and lets COM overwrite result buffers.
+	Val        uintptr
+	recordInfo uintptr
 }
 
 type dispParams struct {
@@ -245,6 +249,7 @@ func releaseDispatch(object *iDispatch) {
 }
 
 func invokeDispatch(object *iDispatch, name string, flags uint16, args ...variant) (variant, error) {
+	defer freeVariants(args)
 	dispID, err := dispatchID(object, name)
 	if err != nil {
 		return variant{}, err
@@ -278,10 +283,8 @@ func invokeDispatch(object *iDispatch, name string, flags uint16, args ...varian
 		0,
 	)
 	if hr != 0 {
-		freeVariants(args)
 		return variant{}, fmt.Errorf("%s HRESULT 0x%X", name, hr)
 	}
-	freeVariants(args)
 	return result, nil
 }
 
@@ -320,11 +323,11 @@ func dispatchID(object *iDispatch, name string) (int32, error) {
 func variantBSTR(value string) variant {
 	ptr, _ := syscall.UTF16PtrFromString(value)
 	bstr, _, _ := procSysAllocString.Call(uintptr(unsafe.Pointer(ptr)))
-	return variant{VT: vtBstr, Val: int64(bstr)}
+	return variant{VT: vtBstr, Val: bstr}
 }
 
 func variantInt32(value int32) variant {
-	return variant{VT: vtI4, Val: int64(value)}
+	return variant{VT: vtI4, Val: uintptr(uint32(value))}
 }
 
 func variantBool(value bool) variant {
@@ -340,7 +343,7 @@ func variantDispatch(value variant) *iDispatch {
 	if value.VT != 9 && value.VT != 13 {
 		return nil
 	}
-	// VARIANT 的 Val 是 8 字节 union。通过 union 存储槽本身恢复 COM 指针，
+	// 通过 VARIANT union 的首个指针宽度存储槽恢复 COM 指针，
 	// 不把整数临时值再转换成 unsafe.Pointer，避免破坏 Go 的指针生命周期规则。
 	return *(**iDispatch)(unsafe.Pointer(&value.Val))
 }
@@ -359,5 +362,12 @@ func variantString(value variant) string {
 }
 
 func variantInt(value variant) int64 {
-	return value.Val
+	switch value.VT {
+	case vtI4:
+		return int64(int32(value.Val))
+	case vtBool:
+		return int64(int16(value.Val))
+	default:
+		return int64(value.Val)
+	}
 }

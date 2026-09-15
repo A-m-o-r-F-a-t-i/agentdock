@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -44,12 +45,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	active, err := resolveActiveWithRecovery(root, store, layout)
+	tray := strings.EqualFold(filepath.Base(executable), updateengine.StableTrayShimName)
+	active, err := resolveActiveWithRecovery(root, store, layout, !tray && coreLaunchRequiresParentLifetime(os.Args[1:]))
 	if err != nil {
 		return err
 	}
 
-	tray := strings.EqualFold(filepath.Base(executable), updateengine.StableTrayShimName)
 	target := layout.GenerationCore(active.ActiveVersion)
 	if tray {
 		target = layout.GenerationTray(active.ActiveVersion)
@@ -109,10 +110,24 @@ func coreLaunchRequiresParentLifetime(args []string) bool {
 		strings.EqualFold(strings.TrimSpace(args[1]), "launch-core")
 }
 
-func resolveActiveWithRecovery(root string, store *updateengine.Store, layout updateengine.WindowsLayout) (updateengine.ActiveVersion, error) {
+func resolveActiveWithRecovery(root string, store *updateengine.Store, layout updateengine.WindowsLayout, allowInstallerHost ...bool) (updateengine.ActiveVersion, error) {
 	active, err := store.ReadActive()
 	if err != nil {
 		return updateengine.ActiveVersion{}, fmt.Errorf("read AgentDock active version: %w", err)
+	}
+
+	// An elevated Core task must enter through the stable, job-owning shim while
+	// Installer Engine is synchronously verifying its trial. Only that service
+	// host entry may use a matching live install journal; ordinary commands and
+	// abandoned trials retain the fail-closed behavior below.
+	if active.State == updateengine.StateTrial && len(allowInstallerHost) > 0 && allowInstallerHost[0] {
+		live, err := liveInstallerTrial(root, active)
+		if err != nil {
+			return updateengine.ActiveVersion{}, err
+		}
+		if live {
+			return active, nil
+		}
 	}
 
 	transaction, transactionErr := store.ReadTransaction()
@@ -196,4 +211,46 @@ func trayRequiresWait(args []string) bool {
 		}
 	}
 	return false
+}
+
+// liveInstallerTrial never commits, repairs, or discards installation state.
+func liveInstallerTrial(root string, active updateengine.ActiveVersion) (bool, error) {
+	data, err := os.ReadFile(filepath.Join(root, "install", "transaction.json"))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read installer trial: %w", err)
+	}
+	var transaction struct {
+		SchemaVersion int                `json:"schema_version"`
+		TransactionID string             `json:"transaction_id"`
+		Action        string             `json:"action"`
+		State         updateengine.State `json:"state"`
+		Phase         string             `json:"phase"`
+		TargetVersion string             `json:"target_version"`
+		InstallRoot   string             `json:"install_root"`
+		RuntimeRoot   string             `json:"runtime_root"`
+	}
+	if err := json.Unmarshal(data, &transaction); err != nil {
+		return false, fmt.Errorf("decode installer trial: %w", err)
+	}
+	if transaction.SchemaVersion != 1 || transaction.TransactionID == "" ||
+		transaction.TransactionID != active.TransactionID ||
+		(transaction.Action != "install" && transaction.Action != "repair") ||
+		transaction.State != updateengine.StateTrial || active.State != updateengine.StateTrial ||
+		(transaction.Phase != "start" && transaction.Phase != "health") ||
+		updateengine.NormalizeVersion(transaction.TargetVersion) != updateengine.NormalizeVersion(active.ActiveVersion) ||
+		!strings.EqualFold(filepath.Clean(transaction.InstallRoot), filepath.Clean(root)) ||
+		!strings.EqualFold(filepath.Clean(transaction.RuntimeRoot), filepath.Clean(root)) {
+		return false, nil
+	}
+	lock, acquired, err := processlock.TryAcquire(filepath.Join(root, "install", "transaction.lock"))
+	if err != nil {
+		return false, fmt.Errorf("probe installer trial lock: %w", err)
+	}
+	if acquired {
+		return false, lock.Release()
+	}
+	return true, nil
 }

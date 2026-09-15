@@ -35,7 +35,9 @@ function Invoke-SetupRuntimeProcess {
     param(
         [string] $FilePath,
         [string] $Arguments = '',
-        [switch] $WaitForExit
+        [switch] $WaitForExit,
+        [switch] $PassThruOutput,
+        [int] $TimeoutSeconds = 30
     )
 
     if ($InstallChannel -ne 'setup') {
@@ -48,11 +50,30 @@ function Invoke-SetupRuntimeProcess {
     # Inno Setup 6.7+ enables ProcessRedirectionTrustPolicy on its process tree.
     # Task Scheduler creates the long-lived runtime from a clean user process context
     # while Setup keeps RedirectionGuard enabled for install-time filesystem work.
+    # The validated payload core stays independent of trial/rollback pointers.
+    # The stable shim rejects an uncommitted installer generation, and an old
+    # generation may still contain the task-start bug being repaired.
     & $setupRuntimeLauncherPath `
         -FilePath $FilePath `
-        -AgentDockBinary $destinationBinary `
+        -AgentDockBinary $sourceBinary `
         -Arguments $Arguments `
-        -WaitForExit:$WaitForExit
+        -WaitForExit:$WaitForExit `
+        -PassThruOutput:$PassThruOutput `
+        -TimeoutSeconds $TimeoutSeconds
+}
+
+function ConvertTo-NativeArguments {
+    param([string[]] $Values)
+    # Windows CommandLineToArgvW/CRT quoting, including trailing backslashes.
+    return (($Values | ForEach-Object {
+        $value = [string] $_
+        if ($value -notmatch '[\s"]' -and $value.Length -gt 0) {
+            $value
+        } else {
+            $escaped = [regex]::Replace($value, '(\\*)"', '$1$1\"')
+            '"' + [regex]::Replace($escaped, '(\\+)$', '$1$1') + '"'
+        }
+    }) -join ' ')
 }
 
 function Get-AgentDockArchitecture {
@@ -81,14 +102,14 @@ function Get-ReleaseBaseUrl {
     }
 
     if ($RequestedVersion -eq 'latest') {
-        return 'https://github.com/uvwt/agentdock/releases/latest/download'
+        return 'https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/latest/download'
     }
 
     $normalizedVersion = $RequestedVersion
     if (-not $normalizedVersion.StartsWith('v')) {
         $normalizedVersion = "v$normalizedVersion"
     }
-    return "https://github.com/uvwt/agentdock/releases/download/$normalizedVersion"
+    return "https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/download/$normalizedVersion"
 }
 
 function Get-CloudflaredReleaseBaseUrl {
@@ -1827,9 +1848,20 @@ exit `$LASTEXITCODE
         }
         # Engine may replace stable shim/icon before returning an error; mark this before invocation so catch can restore them.
         $stableFilesMayBeReplaced = $true
-        $engineJson = (& $sourceBinary @engineArgs 2>$null | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0) {
-            throw 'Installer Engine failed to write the runtime generation and manifest.'
+        if ($InstallChannel -eq 'setup' -and $existingInstallDetected -and $RegisterStartup) {
+            # The upgrade Engine starts and verifies Core/Tunnel during its trial.
+            # Run that Engine outside Inno's inherited RedirectionGuard process tree,
+            # while retaining the same transactional Engine and the current user SID.
+            $engineJson = (Invoke-SetupRuntimeProcess -FilePath $sourceBinary `
+                -Arguments (ConvertTo-NativeArguments -Values $engineArgs) `
+                -WaitForExit -PassThruOutput -TimeoutSeconds 300 | Out-String).Trim()
+        } else {
+            $engineErrorPath = Join-Path $tempRoot 'installer-engine-error.log'
+            $engineJson = (& $sourceBinary @engineArgs 2>$engineErrorPath | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0) {
+                $engineDetails = (Get-Content -LiteralPath $engineErrorPath -Raw -ErrorAction SilentlyContinue)
+                throw "Installer Engine failed to write the runtime generation and manifest. $engineDetails"
+            }
         }
         # Engine already left a trial. Catch must abandon even if the JSON handshake is unreadable.
         $enginePrepared = $true
@@ -1889,7 +1921,7 @@ exit `$LASTEXITCODE
                 Start-AgentDockTask -AgentDockBinary $destinationBinary -ExpectedUserSid $taskUser.Sid
             } elseif ($InstallChannel -eq 'setup') {
                 Invoke-SetupRuntimeProcess `
-                    -FilePath $destinationBinary `
+                    -FilePath $sourceBinary `
                     -Arguments "service start --runtime-root `"$runtimeDir`"" `
                     -WaitForExit
             } else {
@@ -1904,7 +1936,7 @@ exit `$LASTEXITCODE
             if ($resolvedTunnelMode -ne 'none') {
                 if ($InstallChannel -eq 'setup') {
                     Invoke-SetupRuntimeProcess `
-                        -FilePath $destinationBinary `
+                        -FilePath $sourceBinary `
                         -Arguments "tunnel start --runtime-root `"$runtimeDir`"" `
                         -WaitForExit
                 } else {
@@ -1928,7 +1960,7 @@ exit `$LASTEXITCODE
         } elseif ($mustRestartExistingProcess) {
             if ($InstallChannel -eq 'setup') {
                 Invoke-SetupRuntimeProcess `
-                    -FilePath $destinationBinary `
+                    -FilePath $sourceBinary `
                     -Arguments "service start --runtime-root `"$runtimeDir`"" `
                     -WaitForExit
             } else {
@@ -1942,7 +1974,11 @@ exit `$LASTEXITCODE
         }
 
         if ($RegisterStartup -or $trayProcessWasRunning) {
-            Start-AgentDockTray -BinaryPath $destinationTrayBinary
+            $activationTrayBinary = $destinationTrayBinary
+            if ($enginePrepared -and -not $engineCommitted) {
+                $activationTrayBinary = Join-Path $generationBootstrapDirectory 'agentdock-tray.exe'
+            }
+            Start-AgentDockTray -BinaryPath $activationTrayBinary
         }
     } catch {
         if ($existingInstallDetected -or $effectivePrivilegeMode -ne 'standard') {
@@ -2154,7 +2190,7 @@ exit `$LASTEXITCODE
                 # source Core to become healthy before confirming the outer adapter rollback.
                 if ($InstallChannel -eq 'setup') {
                     Invoke-SetupRuntimeProcess `
-                        -FilePath $destinationBinary `
+                        -FilePath $sourceBinary `
                         -Arguments "service start --runtime-root `"$runtimeDir`"" `
                         -WaitForExit
                 } else {
@@ -2176,7 +2212,7 @@ exit `$LASTEXITCODE
                 # abandon so a regenerated Quick URL is projected into the final rollback result.
                 if ($InstallChannel -eq 'setup') {
                     Invoke-SetupRuntimeProcess `
-                        -FilePath $destinationBinary `
+                        -FilePath $sourceBinary `
                         -Arguments "tunnel start --runtime-root `"$runtimeDir`"" `
                         -WaitForExit
                 } else {

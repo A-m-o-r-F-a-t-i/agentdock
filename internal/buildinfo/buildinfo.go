@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const Version = "0.8.4-agent-plugins.1"
+const Version = "0.8.4"
 
 var (
 	Commit    string

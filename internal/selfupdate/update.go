@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	defaultReleaseAPI        = "https://api.github.com/repos/uvwt/agentdock/releases/latest"
+	defaultReleaseAPI        = "https://api.github.com/repos/A-m-o-r-F-a-t-i/agentdock/releases/latest"
 	maxReleaseArchiveBytes   = 256 << 20
 	maxDesktopArchiveBytes   = 512 << 20
 	maxExtractedPayloadBytes = 64 << 20
