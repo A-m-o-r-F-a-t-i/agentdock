@@ -26,7 +26,7 @@ func TestUninstallRejectsBundledSkill(t *testing.T) {
 	if err := os.MkdirAll(packagePath, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.ReplaceBundledSkills(context.Background(), []string{"demo"}); err != nil {
+	if err := state.ActivateBundled(context.Background(), "demo", "1.0.0"); err != nil {
 		t.Fatal(err)
 	}
 

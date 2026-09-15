@@ -94,10 +94,10 @@ func TestUninstallWholeSkillRemovesPackagesAndSelection(t *testing.T) {
 	if !reflect.DeepEqual(result.RemovedVersions, []string{"1.0.0", "2.0.0"}) || result.ActiveVersion != "2.0.0" {
 		t.Fatalf("unexpected whole Skill uninstall result: %#v", result)
 	}
-	if _, err := os.Stat(filepath.Join(store.Root(), "installed", "demo")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(store.Root(), "demo")); !os.IsNotExist(err) {
 		t.Fatalf("installed Skill directory still exists: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(store.Root(), "state", "demo.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(store.Root(), stateDirectory, "demo.json")); !os.IsNotExist(err) {
 		t.Fatalf("Skill selection state still exists: %v", err)
 	}
 	selection, err := store.Snapshot("demo")

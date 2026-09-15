@@ -169,7 +169,7 @@ func TestSkillStateDirUsesAgentDockHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SkillStateDir() error = %v", err)
 	}
-	want := filepath.Join(cfg.AgentDockHome, "skill-store")
+	want := filepath.Join(cfg.AgentDockHome, "skills")
 	if got != want {
 		t.Fatalf("SkillStateDir() = %q, want %q", got, want)
 	}

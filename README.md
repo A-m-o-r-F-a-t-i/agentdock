@@ -124,6 +124,7 @@ AgentDock exposes tools over MCP Streamable HTTP. The exact client syntax varies
 Official and community Skill sources live in [uvwt/agentdock-skills](https://github.com/uvwt/agentdock-skills). This repository only keeps core Skills that must ship with the AgentDock runtime, including bootstrap/security Skills and the built-in `agentdock-user-guide` official user guide.
 
 - Validate, install, uninstall, activate, enable, disable, and roll back Skill packages
+- Store active Skills in a [Codex-style visible directory tree](docs/skill-directory-layout.md) while keeping inactive versions and transaction state hidden
 - Stable, development, canary, and pinned release channels
 - Isolated environment variables and runtimes for each Skill
 - Register, enable, disable, refresh, and remove dynamic MCP servers

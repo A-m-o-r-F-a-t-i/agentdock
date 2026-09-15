@@ -125,24 +125,21 @@ function Assert-AgentDockHealthy {
     }
 
     $userHome = [Environment]::GetFolderPath('UserProfile')
-    $skillStore = Join-Path $userHome '.agentdock\skill-store'
-    $bundledPath = Join-Path $skillStore 'bundled-skills.json'
-    if (-not (Test-Path -LiteralPath $bundledPath -PathType Leaf)) {
-        throw "Bundled Skill list was not created: $bundledPath"
+    $skillRoot = Join-Path $userHome '.agentdock\skills'
+    $systemRoot = Join-Path $skillRoot '.system'
+    $systemMarker = Join-Path $systemRoot '.agentdock-system-skills.marker'
+    if (-not (Test-Path -LiteralPath $systemMarker -PathType Leaf)) {
+        throw "System Skill marker was not created: $systemMarker"
     }
-    $bundled = @((Get-Content -LiteralPath $bundledPath -Raw | ConvertFrom-Json).skills)
     foreach ($skill in @('agentdock-user-guide', 'skill-authoring', 'skill-installation')) {
-        if ($bundled -notcontains $skill) {
-            throw "Bundled Skill list does not contain $skill."
-        }
-        $statePath = Join-Path $skillStore "state\$skill.json"
+        $statePath = Join-Path $skillRoot ".state\$skill.json"
         $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-        if (-not $state.active_version) {
-            throw "Bundled Skill has no active version: $skill"
+        if (-not $state.active_version -or -not $state.system) {
+            throw "System Skill has no active system selection: $skill"
         }
-        $documentPath = Join-Path $skillStore "installed\$skill\$($state.active_version)\SKILL.md"
+        $documentPath = Join-Path $systemRoot "$skill\SKILL.md"
         if (-not (Test-Path -LiteralPath $documentPath -PathType Leaf)) {
-            throw "Bundled Skill document was not installed: $documentPath"
+            throw "System Skill document was not installed: $documentPath"
         }
     }
 }

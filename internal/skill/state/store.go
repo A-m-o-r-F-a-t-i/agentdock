@@ -19,6 +19,12 @@ import (
 )
 
 const (
+	systemDirectory             = ".system"
+	versionsDirectory           = ".versions"
+	stateDirectory              = ".state"
+	locksDirectory              = ".locks"
+	cacheDirectory              = ".cache"
+	tempDirectory               = ".tmp"
 	lockOwnerPrefix             = "owner-"
 	lockRetryInterval           = 25 * time.Millisecond
 	transientLockErrorRetryTime = 500 * time.Millisecond
@@ -28,18 +34,22 @@ type Selection struct {
 	ActiveVersion string    `json:"active_version,omitempty"`
 	History       []string  `json:"history,omitempty"`
 	Disabled      bool      `json:"disabled,omitempty"`
+	System        bool      `json:"system,omitempty"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
+// Store manages the Codex-style Skill tree rooted at ~/.agentdock/skills.
+// Active user Skills live directly under <root>/<name>, active bundled Skills
+// under <root>/.system/<name>, and inactive versions under .versions.
 type Store struct{ root string }
 
 func New(root string) (*Store, error) {
 	if strings.TrimSpace(root) == "" {
-		return nil, errors.New("skill state root is required")
+		return nil, errors.New("skill root is required")
 	}
 	abs, err := filepath.Abs(root)
 	if err != nil {
-		return nil, fmt.Errorf("resolve skill state root: %w", err)
+		return nil, fmt.Errorf("resolve skill root: %w", err)
 	}
 	s := &Store{root: abs}
 	if err := s.EnsureLayout(); err != nil {
@@ -51,18 +61,59 @@ func New(root string) (*Store, error) {
 func (s *Store) Root() string { return s.root }
 
 func (s *Store) EnsureLayout() error {
-	for _, name := range []string{"installed", "cache", "state", "locks", "tmp"} {
-		path := filepath.Join(s.root, name)
+	for _, path := range []string{
+		s.root,
+		filepath.Join(s.root, systemDirectory),
+		filepath.Join(s.root, versionsDirectory),
+		filepath.Join(s.root, stateDirectory),
+		filepath.Join(s.root, locksDirectory),
+		filepath.Join(s.root, cacheDirectory),
+		filepath.Join(s.root, tempDirectory),
+	} {
 		if err := os.MkdirAll(path, 0o700); err != nil {
-			return fmt.Errorf("create skill state directory %s: %w", name, err)
+			return fmt.Errorf("create skill directory %q: %w", path, err)
 		}
 		if err := securepath.EnsurePrivate(path); err != nil {
-			return fmt.Errorf("secure skill state directory %s: %w", name, err)
+			return fmt.Errorf("secure skill directory %q: %w", path, err)
 		}
 	}
 	return nil
 }
 
+func (s *Store) UserPath(skill string) (string, error) {
+	if err := validateIdentifier("skill", skill); err != nil {
+		return "", err
+	}
+	return filepath.Join(s.root, skill), nil
+}
+
+func (s *Store) SystemPath(skill string) (string, error) {
+	if err := validateIdentifier("skill", skill); err != nil {
+		return "", err
+	}
+	return filepath.Join(s.root, systemDirectory, skill), nil
+}
+
+func (s *Store) archivePath(skill, version string) (string, error) {
+	if err := validateIdentifier("skill", skill); err != nil {
+		return "", err
+	}
+	if err := validateIdentifier("version", version); err != nil {
+		return "", err
+	}
+	return filepath.Join(s.root, versionsDirectory, skill, version), nil
+}
+
+func (s *Store) activePath(skill string, system bool) (string, error) {
+	if system {
+		return s.SystemPath(skill)
+	}
+	return s.UserPath(skill)
+}
+
+// InstalledPath returns the physical directory for a particular installed
+// version. The active version resolves to its Codex-style visible directory;
+// inactive versions resolve to the hidden version archive.
 func (s *Store) InstalledPath(skill, version string) (string, error) {
 	if err := validateIdentifier("skill", skill); err != nil {
 		return "", err
@@ -70,90 +121,131 @@ func (s *Store) InstalledPath(skill, version string) (string, error) {
 	if err := validateIdentifier("version", version); err != nil {
 		return "", err
 	}
-	return filepath.Join(s.root, "installed", skill, version), nil
+	selection, err := s.load(skill)
+	if err != nil {
+		return "", err
+	}
+	if selection.ActiveVersion == version {
+		return s.activePath(skill, selection.System)
+	}
+	return s.archivePath(skill, version)
 }
 
 func (s *Store) CachePath(name string) (string, error) {
 	if err := validateIdentifier("cache name", name); err != nil {
 		return "", err
 	}
-	return filepath.Join(s.root, "cache", name), nil
+	return filepath.Join(s.root, cacheDirectory, name), nil
 }
 
 func (s *Store) TempPath(prefix string) (string, error) {
 	if err := validateIdentifier("temporary prefix", prefix); err != nil {
 		return "", err
 	}
-	return os.MkdirTemp(filepath.Join(s.root, "tmp"), prefix+"-")
+	return os.MkdirTemp(filepath.Join(s.root, tempDirectory), prefix+"-")
 }
 
 func (s *Store) IsInstalled(skill, version string) (bool, error) {
-	p, err := s.InstalledPath(skill, version)
+	path, err := s.InstalledPath(skill, version)
 	if err != nil {
 		return false, err
 	}
-	info, err := os.Stat(p)
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return info.IsDir(), nil
+	return regularDirectoryExists(path)
 }
 
 func (s *Store) ListVersions(skill string) ([]string, error) {
 	if err := validateIdentifier("skill", skill); err != nil {
 		return nil, err
 	}
-	entries, err := os.ReadDir(filepath.Join(s.root, "installed", skill))
-	if os.IsNotExist(err) {
-		return []string{}, nil
+	seen := map[string]struct{}{}
+	archiveRoot := filepath.Join(s.root, versionsDirectory, skill)
+	entries, err := os.ReadDir(archiveRoot)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
 	}
+	for _, entry := range entries {
+		if !entry.IsDir() || validateIdentifier("version", entry.Name()) != nil {
+			continue
+		}
+		seen[entry.Name()] = struct{}{}
+	}
+	selection, err := s.load(skill)
 	if err != nil {
 		return nil, err
 	}
-	versions := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() {
-			versions = append(versions, entry.Name())
+	if selection.ActiveVersion != "" {
+		activePath, pathErr := s.activePath(skill, selection.System)
+		if pathErr != nil {
+			return nil, pathErr
 		}
+		exists, statErr := regularDirectoryExists(activePath)
+		if statErr != nil {
+			return nil, statErr
+		}
+		if exists {
+			seen[selection.ActiveVersion] = struct{}{}
+		}
+	}
+	versions := make([]string, 0, len(seen))
+	for version := range seen {
+		versions = append(versions, version)
 	}
 	sort.Strings(versions)
 	return versions, nil
 }
 
 func (s *Store) ListSkills() ([]string, error) {
-	entries, err := os.ReadDir(filepath.Join(s.root, "installed"))
-	if os.IsNotExist(err) {
-		return []string{}, nil
-	}
-	if err != nil {
+	seen := map[string]struct{}{}
+	if err := collectSkillDirectories(s.root, true, seen); err != nil {
 		return nil, err
 	}
-	skills := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		if err := validateIdentifier("skill", entry.Name()); err != nil {
-			continue
-		}
-		skills = append(skills, entry.Name())
+	if err := collectSkillDirectories(filepath.Join(s.root, systemDirectory), false, seen); err != nil {
+		return nil, err
 	}
-	sort.Strings(skills)
-	return skills, nil
+	if err := collectSkillDirectories(filepath.Join(s.root, versionsDirectory), false, seen); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+func collectSkillDirectories(root string, skipHidden bool, out map[string]struct{}) error {
+	entries, err := os.ReadDir(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		name := entry.Name()
+		if skipHidden && strings.HasPrefix(name, ".") {
+			continue
+		}
+		if validateIdentifier("skill", name) != nil {
+			continue
+		}
+		out[name] = struct{}{}
+	}
+	return nil
 }
 
 func (s *Store) ActiveVersion(skill string) (string, error) {
 	if err := validateIdentifier("skill", skill); err != nil {
 		return "", err
 	}
-	state, err := s.load(skill)
+	selection, err := s.load(skill)
 	if err != nil {
 		return "", err
 	}
-	return state.ActiveVersion, nil
+	return selection.ActiveVersion, nil
 }
 
 func (s *Store) Snapshot(skill string) (Selection, error) {
@@ -163,46 +255,25 @@ func (s *Store) Snapshot(skill string) (Selection, error) {
 	return s.load(skill)
 }
 
-// RestoreSelection 恢复一次操作前保存的版本选择。
-// 它只用于安装事务回滚；正常版本切换应继续使用 Activate 记录历史。
-func (s *Store) RestoreSelection(ctx context.Context, skill string, selection Selection) error {
+// RestoreSelection restores both selection metadata and the visible active
+// directory. It is used by install/bootstrap transactions, not normal users.
+func (s *Store) RestoreSelection(ctx context.Context, skill string, target Selection) error {
 	if err := validateIdentifier("skill", skill); err != nil {
 		return err
 	}
-	if selection.ActiveVersion != "" {
-		if err := validateIdentifier("version", selection.ActiveVersion); err != nil {
-			return err
-		}
+	if err := validateSelection(target); err != nil {
+		return err
 	}
-	for _, version := range selection.History {
-		if err := validateIdentifier("version", version); err != nil {
-			return err
-		}
-	}
-
 	release, err := s.acquire(ctx, skill)
 	if err != nil {
 		return err
 	}
 	defer release()
-
-	if selection.ActiveVersion != "" {
-		installed, err := s.IsInstalled(skill, selection.ActiveVersion)
-		if err != nil {
-			return err
-		}
-		if !installed {
-			return fmt.Errorf("skill %s version %s is not installed", skill, selection.ActiveVersion)
-		}
+	current, err := s.load(skill)
+	if err != nil {
+		return err
 	}
-	if selection.ActiveVersion == "" && len(selection.History) == 0 && !selection.Disabled && selection.UpdatedAt.IsZero() {
-		path := filepath.Join(s.root, "state", skill+".json")
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove skill state: %w", err)
-		}
-		return nil
-	}
-	return s.save(skill, selection)
+	return s.applySelectionLocked(skill, current, target)
 }
 
 func (s *Store) Resolve(skill, version string) (string, error) {
@@ -216,46 +287,284 @@ func (s *Store) Resolve(skill, version string) (string, error) {
 		}
 		return s.InstalledPath(skill, version)
 	}
-	state, err := s.Snapshot(skill)
+	selection, err := s.Snapshot(skill)
 	if err != nil {
 		return "", err
 	}
-	if state.ActiveVersion == "" {
+	if selection.ActiveVersion == "" {
 		return "", fmt.Errorf("skill %s has no active version", skill)
 	}
-	return s.InstalledPath(skill, state.ActiveVersion)
+	path, err := s.activePath(skill, selection.System)
+	if err != nil {
+		return "", err
+	}
+	exists, err := regularDirectoryExists(path)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		return "", fmt.Errorf("skill %s active directory is missing", skill)
+	}
+	return path, nil
 }
 
 func (s *Store) Activate(ctx context.Context, skill, version string) error {
+	return s.activate(ctx, skill, version, nil)
+}
+
+// ActivateBundled activates a release-bundled Skill under skills/.system.
+func (s *Store) ActivateBundled(ctx context.Context, skill, version string) error {
+	system := true
+	return s.activate(ctx, skill, version, &system)
+}
+
+func (s *Store) activate(ctx context.Context, skill, version string, systemOverride *bool) error {
+	if err := validateIdentifier("skill", skill); err != nil {
+		return err
+	}
+	if err := validateIdentifier("version", version); err != nil {
+		return err
+	}
 	release, err := s.acquire(ctx, skill)
 	if err != nil {
 		return err
 	}
 	defer release()
 
-	// 安装存在性检查必须位于同一个 Skill 锁内；否则删除操作可能在检查后、
-	// 激活前移除目标版本，最终留下指向不存在目录的 active 状态。
-	installed, err := s.IsInstalled(skill, version)
+	current, err := s.load(skill)
 	if err != nil {
 		return err
 	}
-	if !installed {
-		return fmt.Errorf("skill %s version %s is not installed", skill, version)
+	system := current.System
+	if systemOverride != nil {
+		system = *systemOverride
 	}
-	state, err := s.load(skill)
-	if err != nil {
-		return err
+	target := current
+	if current.ActiveVersion != "" && current.ActiveVersion != version {
+		target.History = prependUnique(target.History, current.ActiveVersion, 20)
 	}
-	if state.ActiveVersion != "" && state.ActiveVersion != version {
-		state.History = prependUnique(state.History, state.ActiveVersion, 20)
-	}
-	state.ActiveVersion = version
-	state.UpdatedAt = time.Now().UTC()
+	target.ActiveVersion = version
+	target.System = system
+	target.UpdatedAt = time.Now().UTC()
+	return s.applySelectionLocked(skill, current, target)
+}
 
-	if err := s.save(skill, state); err != nil {
+// SetBundled changes only the active directory class. The package and version
+// remain unchanged while moving between skills/<name> and skills/.system/<name>.
+func (s *Store) SetBundled(ctx context.Context, skill string, bundled bool) error {
+	if err := validateIdentifier("skill", skill); err != nil {
 		return err
+	}
+	release, err := s.acquire(ctx, skill)
+	if err != nil {
+		return err
+	}
+	defer release()
+	current, err := s.load(skill)
+	if err != nil {
+		return err
+	}
+	if current.ActiveVersion == "" {
+		return fmt.Errorf("skill %s has no active version", skill)
+	}
+	if current.System == bundled {
+		return nil
+	}
+	target := current
+	target.System = bundled
+	target.UpdatedAt = time.Now().UTC()
+	return s.applySelectionLocked(skill, current, target)
+}
+
+func (s *Store) applySelectionLocked(skill string, current, target Selection) error {
+	if err := validateSelection(target); err != nil {
+		return err
+	}
+
+	if current.ActiveVersion == target.ActiveVersion && target.ActiveVersion != "" {
+		currentPath, err := s.activePath(skill, current.System)
+		if err != nil {
+			return err
+		}
+		exists, err := regularDirectoryExists(currentPath)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("skill %s active version %s is not installed", skill, current.ActiveVersion)
+		}
+		targetPath, err := s.activePath(skill, target.System)
+		if err != nil {
+			return err
+		}
+		moved := false
+		if !samePath(currentPath, targetPath) {
+			if exists, err := pathExists(targetPath); err != nil {
+				return err
+			} else if exists {
+				return fmt.Errorf("skill %s target active directory already exists", skill)
+			}
+			if err := os.MkdirAll(filepath.Dir(targetPath), 0o700); err != nil {
+				return err
+			}
+			if err := os.Rename(currentPath, targetPath); err != nil {
+				return fmt.Errorf("move active skill directory: %w", err)
+			}
+			moved = true
+		}
+		if err := s.persistSelection(skill, target); err != nil {
+			if moved {
+				return errors.Join(err, renameRollback(targetPath, currentPath))
+			}
+			return err
+		}
+		return nil
+	}
+
+	var currentPath, currentArchive string
+	if current.ActiveVersion != "" {
+		var err error
+		currentPath, err = s.activePath(skill, current.System)
+		if err != nil {
+			return err
+		}
+		exists, err := regularDirectoryExists(currentPath)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("skill %s active version %s is not installed", skill, current.ActiveVersion)
+		}
+		currentArchive, err = s.archivePath(skill, current.ActiveVersion)
+		if err != nil {
+			return err
+		}
+		if exists, err := pathExists(currentArchive); err != nil {
+			return err
+		} else if exists {
+			return fmt.Errorf("skill %s archived version %s already exists", skill, current.ActiveVersion)
+		}
+	}
+
+	var targetArchive, targetPath string
+	if target.ActiveVersion != "" {
+		var err error
+		targetArchive, err = s.archivePath(skill, target.ActiveVersion)
+		if err != nil {
+			return err
+		}
+		exists, err := regularDirectoryExists(targetArchive)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("skill %s version %s is not installed", skill, target.ActiveVersion)
+		}
+		targetPath, err = s.activePath(skill, target.System)
+		if err != nil {
+			return err
+		}
+		if !samePath(targetPath, currentPath) {
+			if exists, err := pathExists(targetPath); err != nil {
+				return err
+			} else if exists {
+				return fmt.Errorf("skill %s target active directory already exists", skill)
+			}
+		}
+	}
+
+	currentMoved := false
+	if current.ActiveVersion != "" {
+		if err := os.MkdirAll(filepath.Dir(currentArchive), 0o700); err != nil {
+			return err
+		}
+		if err := os.Rename(currentPath, currentArchive); err != nil {
+			return fmt.Errorf("archive current skill version: %w", err)
+		}
+		currentMoved = true
+	}
+
+	targetMoved := false
+	if target.ActiveVersion != "" {
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0o700); err != nil {
+			if currentMoved {
+				return errors.Join(err, renameRollback(currentArchive, currentPath))
+			}
+			return err
+		}
+		if err := os.Rename(targetArchive, targetPath); err != nil {
+			if currentMoved {
+				return errors.Join(fmt.Errorf("activate skill version: %w", err), renameRollback(currentArchive, currentPath))
+			}
+			return fmt.Errorf("activate skill version: %w", err)
+		}
+		targetMoved = true
+	}
+
+	if err := s.persistSelection(skill, target); err != nil {
+		var rollbackErrors []error
+		if targetMoved {
+			rollbackErrors = append(rollbackErrors, renameRollback(targetPath, targetArchive))
+		}
+		if currentMoved {
+			rollbackErrors = append(rollbackErrors, renameRollback(currentArchive, currentPath))
+		}
+		return errors.Join(append([]error{err}, rollbackErrors...)...)
 	}
 	return nil
+}
+
+func validateSelection(selection Selection) error {
+	if selection.ActiveVersion != "" {
+		if err := validateIdentifier("version", selection.ActiveVersion); err != nil {
+			return err
+		}
+	}
+	for _, version := range selection.History {
+		if err := validateIdentifier("version", version); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func renameRollback(source, destination string) error {
+	if source == "" || destination == "" {
+		return nil
+	}
+	if err := os.Rename(source, destination); err != nil {
+		return fmt.Errorf("rollback directory move %q to %q: %w", source, destination, err)
+	}
+	return nil
+}
+
+func regularDirectoryExists(path string) (bool, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return false, fmt.Errorf("skill path %q is not a regular directory", path)
+	}
+	return true, nil
+}
+
+func pathExists(path string) (bool, error) {
+	_, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func samePath(left, right string) bool {
+	if left == "" || right == "" {
+		return false
+	}
+	return filepath.Clean(left) == filepath.Clean(right)
 }
 
 // SetEnabled persists the Skill's base availability without changing its active
@@ -301,14 +610,14 @@ func (s *Store) Enabled(skill string) (bool, error) {
 }
 
 func (s *Store) PreviousVersion(skill string) (string, error) {
-	state, err := s.Snapshot(skill)
+	selection, err := s.Snapshot(skill)
 	if err != nil {
 		return "", err
 	}
-	for _, version := range state.History {
-		installed, checkErr := s.IsInstalled(skill, version)
-		if checkErr != nil {
-			return "", checkErr
+	for _, version := range selection.History {
+		installed, err := s.IsInstalled(skill, version)
+		if err != nil {
+			return "", err
 		}
 		if installed {
 			return version, nil
@@ -318,7 +627,10 @@ func (s *Store) PreviousVersion(skill string) (string, error) {
 }
 
 func (s *Store) RemoveVersion(ctx context.Context, skill, version string) error {
-	if _, err := s.InstalledPath(skill, version); err != nil {
+	if err := validateIdentifier("skill", skill); err != nil {
+		return err
+	}
+	if err := validateIdentifier("version", version); err != nil {
 		return err
 	}
 	release, err := s.acquire(ctx, skill)
@@ -326,43 +638,60 @@ func (s *Store) RemoveVersion(ctx context.Context, skill, version string) error 
 		return err
 	}
 	defer release()
-
-	active, err := s.ActiveVersion(skill)
+	selection, err := s.load(skill)
 	if err != nil {
 		return err
 	}
-	if active == version {
+	if selection.ActiveVersion == version {
 		return fmt.Errorf("cannot remove active skill version %s", version)
 	}
-	p, err := s.InstalledPath(skill, version)
+	path, err := s.archivePath(skill, version)
 	if err != nil {
 		return err
 	}
-	return os.RemoveAll(p)
+	exists, err := regularDirectoryExists(path)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("skill %s version %s is not installed", skill, version)
+	}
+	return os.RemoveAll(path)
 }
 
 func (s *Store) load(skill string) (Selection, error) {
-	path := filepath.Join(s.root, "state", skill+".json")
+	path := filepath.Join(s.root, stateDirectory, skill+".json")
 	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return Selection{}, nil
 	}
 	if err != nil {
 		return Selection{}, fmt.Errorf("read skill state: %w", err)
 	}
-	var state Selection
-	if err := json.Unmarshal(data, &state); err != nil {
+	var selection Selection
+	if err := json.Unmarshal(data, &selection); err != nil {
 		return Selection{}, fmt.Errorf("decode skill state: %w", err)
 	}
-	return state, nil
+	return selection, nil
 }
 
-func (s *Store) save(skill string, state Selection) error {
-	data, err := json.MarshalIndent(state, "", "  ")
+func (s *Store) persistSelection(skill string, selection Selection) error {
+	if selection.ActiveVersion == "" && len(selection.History) == 0 && !selection.Disabled && !selection.System && selection.UpdatedAt.IsZero() {
+		path := filepath.Join(s.root, stateDirectory, skill+".json")
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("remove skill state: %w", err)
+		}
+		return nil
+	}
+	return s.save(skill, selection)
+}
+
+func (s *Store) save(skill string, selection Selection) error {
+	data, err := json.MarshalIndent(selection, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode skill state: %w", err)
 	}
-	path := filepath.Join(s.root, "state", skill+".json")
+	path := filepath.Join(s.root, stateDirectory, skill+".json")
 	if err := atomicfile.Write(path, data, 0o600); err != nil {
 		return fmt.Errorf("replace skill state: %w", err)
 	}
@@ -377,7 +706,7 @@ func (s *Store) acquire(ctx context.Context, skill string) (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("create skill lock owner: %w", err)
 	}
-	lockPath := filepath.Join(s.root, "locks", skill+".lock")
+	lockPath := filepath.Join(s.root, locksDirectory, skill+".lock")
 	ticker := time.NewTicker(lockRetryInterval)
 	defer ticker.Stop()
 	var transientErrorSince time.Time
@@ -394,8 +723,6 @@ func (s *Store) acquire(ctx context.Context, skill string) (func(), error) {
 		if os.IsExist(err) {
 			transientErrorSince = time.Time{}
 		} else if isTransientLockContention(err) {
-			// Windows 删除目录时可能短暂处于 delete-pending 状态，此时同路径 Mkdir
-			// 返回 Access Denied。只在有限窗口内重试，避免把真实权限错误无限掩盖。
 			if transientErrorSince.IsZero() {
 				transientErrorSince = time.Now()
 			} else if time.Since(transientErrorSince) >= transientLockErrorRetryTime {

@@ -46,7 +46,11 @@ print -- '[macos] fresh'
 run_install
 assert_committed
 [[ -x "$install_dir/agentdock" ]]
-[[ -f "$state_dir/skill-store/bundled-skills.json" ]]
+[[ -f "$state_dir/skills/.system/.agentdock-system-skills.marker" ]]
+for skill in agentdock-user-guide skill-authoring skill-installation; do
+  [[ -f "$state_dir/skills/.system/$skill/SKILL.md" ]]
+  [[ "$(python3 -c 'import json,sys; state=json.load(open(sys.argv[1])); print(str(bool(state.get("system"))).lower())' "$state_dir/skills/.state/$skill.json")" = "true" ]]
+done
 
 print -- '[macos] repair'
 run_install

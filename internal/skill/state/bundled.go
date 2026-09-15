@@ -2,7 +2,7 @@ package state
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,47 +12,58 @@ import (
 )
 
 const (
-	bundledSkillsFile = "bundled-skills.json"
-	bundledSkillsLock = "_bundled_skills"
+	systemSkillsMarker = ".agentdock-system-skills.marker"
+	bundledSkillsLock  = "_bundled_skills"
 )
 
-type bundledSkillsDocument struct {
-	Skills []string `json:"skills"`
-}
-
-// BundledSkills 返回当前由 AgentDock 随附管理的 Skill 名称。
-// 版本和摘要仍由 installed/ 与 state/ 负责，避免在清单中重复保存。
+// BundledSkills returns active Skill directories under skills/.system. The
+// directory class is the source of truth, matching Codex's visible layout.
 func (s *Store) BundledSkills() ([]string, error) {
-	data, err := os.ReadFile(filepath.Join(s.root, bundledSkillsFile))
-	if os.IsNotExist(err) {
+	entries, err := os.ReadDir(filepath.Join(s.root, systemDirectory))
+	if errors.Is(err, os.ErrNotExist) {
 		return []string{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read bundled skills: %w", err)
+		return nil, fmt.Errorf("read system skills: %w", err)
 	}
-	var document bundledSkillsDocument
-	if err := json.Unmarshal(data, &document); err != nil {
-		return nil, fmt.Errorf("decode bundled skills: %w", err)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+		if validateIdentifier("skill", entry.Name()) != nil {
+			continue
+		}
+		names = append(names, entry.Name())
 	}
-	return normalizeBundledSkills(document.Skills)
+	sort.Strings(names)
+	return names, nil
 }
 
 func (s *Store) IsBundled(skill string) (bool, error) {
 	if err := validateIdentifier("skill", skill); err != nil {
 		return false, err
 	}
-	names, err := s.BundledSkills()
+	selection, err := s.load(skill)
 	if err != nil {
 		return false, err
 	}
-	index := sort.SearchStrings(names, skill)
-	return index < len(names) && names[index] == skill, nil
+	if selection.ActiveVersion != "" && selection.System {
+		return true, nil
+	}
+	path, err := s.SystemPath(skill)
+	if err != nil {
+		return false, err
+	}
+	return regularDirectoryExists(path)
 }
 
-// ReplaceBundledSkills 原子替换内置清单。调用方应在所有随附 Skill
-// 安装成功后再提交名单，避免留下“已内置但未安装”的半完成状态。
+// ReplaceBundledSkills reconciles the exact system-Skill set. Existing system
+// Skills removed from a release become ordinary user-visible Skills instead of
+// being deleted. The operation rolls back directory classification changes if
+// any move or marker update fails.
 func (s *Store) ReplaceBundledSkills(ctx context.Context, skills []string) error {
-	names, err := normalizeBundledSkills(skills)
+	desired, err := normalizeBundledSkills(skills)
 	if err != nil {
 		return err
 	}
@@ -62,12 +73,58 @@ func (s *Store) ReplaceBundledSkills(ctx context.Context, skills []string) error
 	}
 	defer release()
 
-	data, err := json.MarshalIndent(bundledSkillsDocument{Skills: names}, "", "  ")
+	current, err := s.BundledSkills()
 	if err != nil {
-		return fmt.Errorf("encode bundled skills: %w", err)
+		return err
 	}
-	if err := atomicfile.Write(filepath.Join(s.root, bundledSkillsFile), data, 0o600); err != nil {
-		return fmt.Errorf("replace bundled skills: %w", err)
+	currentSet := make(map[string]struct{}, len(current))
+	desiredSet := make(map[string]struct{}, len(desired))
+	for _, name := range current {
+		currentSet[name] = struct{}{}
+	}
+	for _, name := range desired {
+		desiredSet[name] = struct{}{}
+	}
+
+	type classificationChange struct {
+		name string
+		from bool
+	}
+	changes := make([]classificationChange, 0)
+	rollback := func(cause error) error {
+		errs := []error{cause}
+		for index := len(changes) - 1; index >= 0; index-- {
+			change := changes[index]
+			if revertErr := s.SetBundled(context.WithoutCancel(ctx), change.name, change.from); revertErr != nil {
+				errs = append(errs, fmt.Errorf("restore bundled classification for %s: %w", change.name, revertErr))
+			}
+		}
+		return errors.Join(errs...)
+	}
+
+	for _, name := range desired {
+		if _, exists := currentSet[name]; exists {
+			continue
+		}
+		if err := s.SetBundled(ctx, name, true); err != nil {
+			return rollback(fmt.Errorf("classify bundled skill %s: %w", name, err))
+		}
+		changes = append(changes, classificationChange{name: name, from: false})
+	}
+	for _, name := range current {
+		if _, exists := desiredSet[name]; exists {
+			continue
+		}
+		if err := s.SetBundled(ctx, name, false); err != nil {
+			return rollback(fmt.Errorf("unclassify removed bundled skill %s: %w", name, err))
+		}
+		changes = append(changes, classificationChange{name: name, from: true})
+	}
+
+	marker := []byte("managed by AgentDock\n")
+	markerPath := filepath.Join(s.root, systemDirectory, systemSkillsMarker)
+	if err := atomicfile.Write(markerPath, marker, 0o600); err != nil {
+		return rollback(fmt.Errorf("write system Skill marker: %w", err))
 	}
 	return nil
 }
