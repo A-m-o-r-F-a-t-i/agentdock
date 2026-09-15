@@ -21,9 +21,15 @@ type Manager struct {
 	mu         sync.RWMutex
 	store      *store
 	envs       *envstore.Store
+	external   ExternalServerProvider
 	servers    map[string]ServerConfig
 	states     map[string]*serverState
 }
+
+// ExternalServerProvider supplies dynamic MCP definitions owned by direct
+// heavy-plugin packages. Provider results are merged in memory and are never
+// persisted into the standalone mcp/servers.json registry.
+type ExternalServerProvider func() (map[string]ServerConfig, error)
 
 type serverState struct {
 	mu            sync.Mutex
@@ -57,6 +63,27 @@ func NewManager(agentDockHome string, provided ...*envstore.Store) (*Manager, er
 	return &Manager{store: registry, envs: envs, servers: servers, states: states}, nil
 }
 
+func (m *Manager) SetExternalServerProvider(provider ExternalServerProvider) error {
+	m.registryMu.Lock()
+	defer m.registryMu.Unlock()
+	if err := m.ensureOpenLocked(); err != nil {
+		return err
+	}
+	m.external = provider
+	servers, err := m.store.load()
+	if err != nil {
+		return newError("MCP_REGISTRY_READ_FAILED", "read dynamic MCP registry", true, nil, err)
+	}
+	combined, err := m.mergeExternalLocked(servers)
+	if err != nil {
+		return err
+	}
+	m.mu.Lock()
+	staleStates := m.replaceRegistryLocked(combined)
+	m.mu.Unlock()
+	return closeServerStates(staleStates)
+}
+
 func (m *Manager) Add(cfg ServerConfig) (ServerSummary, error) {
 	cfg = normalizeServerConfig(cfg)
 	if err := validateServerConfig(cfg); err != nil {
@@ -66,6 +93,13 @@ func (m *Manager) Add(cfg ServerConfig) (ServerSummary, error) {
 	defer m.registryMu.Unlock()
 	if err := m.ensureOpenLocked(); err != nil {
 		return ServerSummary{}, err
+	}
+	external, err := m.externalServersLocked()
+	if err != nil {
+		return ServerSummary{}, err
+	}
+	if _, exists := external[cfg.Name]; exists {
+		return ServerSummary{}, newError("MCP_SERVER_MANAGED_BY_PLUGIN", "dynamic MCP server is owned by an installed plugin", false, map[string]any{"server": cfg.Name}, nil)
 	}
 	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
 		if _, exists := servers[cfg.Name]; exists {
@@ -82,8 +116,12 @@ func (m *Manager) Add(cfg ServerConfig) (ServerSummary, error) {
 		return ServerSummary{}, newError("MCP_REGISTRY_WRITE_FAILED", "persist dynamic MCP server", false, map[string]any{"server": cfg.Name}, err)
 	}
 
+	combined, err := m.mergeExternalLocked(servers)
+	if err != nil {
+		return ServerSummary{}, err
+	}
 	m.mu.Lock()
-	staleStates := m.replaceRegistryLocked(servers)
+	staleStates := m.replaceRegistryLocked(combined)
 	state := m.states[cfg.Name]
 	m.mu.Unlock()
 	closeServerStates(staleStates)
@@ -96,6 +134,13 @@ func (m *Manager) Remove(name string) error {
 	defer m.registryMu.Unlock()
 	if err := m.ensureOpenLocked(); err != nil {
 		return err
+	}
+	external, err := m.externalServersLocked()
+	if err != nil {
+		return err
+	}
+	if _, exists := external[name]; exists {
+		return newError("MCP_SERVER_MANAGED_BY_PLUGIN", "dynamic MCP server is owned by an installed plugin", false, map[string]any{"server": name}, nil)
 	}
 	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
 		if _, exists := servers[name]; !exists {
@@ -111,9 +156,12 @@ func (m *Manager) Remove(name string) error {
 		}
 		return newError("MCP_REGISTRY_WRITE_FAILED", "remove dynamic MCP server", false, map[string]any{"server": name}, err)
 	}
-
+	combined, err := m.mergeExternalLocked(servers)
+	if err != nil {
+		return err
+	}
 	m.mu.Lock()
-	staleStates := m.replaceRegistryLocked(servers)
+	staleStates := m.replaceRegistryLocked(combined)
 	m.mu.Unlock()
 	return closeServerStates(staleStates)
 }
@@ -124,6 +172,13 @@ func (m *Manager) SetEnabled(name string, enabled bool) (ServerSummary, error) {
 	defer m.registryMu.Unlock()
 	if err := m.ensureOpenLocked(); err != nil {
 		return ServerSummary{}, err
+	}
+	external, err := m.externalServersLocked()
+	if err != nil {
+		return ServerSummary{}, err
+	}
+	if _, exists := external[name]; exists {
+		return ServerSummary{}, newError("MCP_SERVER_MANAGED_BY_PLUGIN", "dynamic MCP server state is managed by its plugin", false, map[string]any{"server": name}, nil)
 	}
 	var selected ServerConfig
 	servers, err := m.store.update(func(servers map[string]ServerConfig) error {
@@ -143,9 +198,12 @@ func (m *Manager) SetEnabled(name string, enabled bool) (ServerSummary, error) {
 		}
 		return ServerSummary{}, newError("MCP_REGISTRY_WRITE_FAILED", "persist dynamic MCP server state", false, map[string]any{"server": name}, err)
 	}
-
+	combined, err := m.mergeExternalLocked(servers)
+	if err != nil {
+		return ServerSummary{}, err
+	}
 	m.mu.Lock()
-	staleStates := m.replaceRegistryLocked(servers)
+	staleStates := m.replaceRegistryLocked(combined)
 	state := m.states[name]
 	m.mu.Unlock()
 	if err := closeServerStates(staleStates); err != nil {
@@ -190,6 +248,50 @@ func closeServerStates(states []*serverState) error {
 	return result
 }
 
+func (m *Manager) externalServersLocked() (map[string]ServerConfig, error) {
+	if m.external == nil {
+		return map[string]ServerConfig{}, nil
+	}
+	provided, err := m.external()
+	if err != nil {
+		return nil, newError("MCP_PLUGIN_REGISTRY_READ_FAILED", "read plugin-owned MCP servers", true, nil, err)
+	}
+	servers := make(map[string]ServerConfig, len(provided))
+	for key, raw := range provided {
+		name := strings.TrimSpace(key)
+		cfg := normalizeServerConfig(raw)
+		if cfg.Name == "" {
+			cfg.Name = name
+		}
+		if name == "" || cfg.Name != name {
+			return nil, newError("MCP_PLUGIN_CONFIG_INVALID", "plugin MCP map key and server name must match", false, map[string]any{"key": key, "server": cfg.Name}, nil)
+		}
+		if err := validateServerConfig(cfg); err != nil {
+			return nil, newError("MCP_PLUGIN_CONFIG_INVALID", err.Error(), false, map[string]any{"server": name}, err)
+		}
+		servers[name] = cfg
+	}
+	return servers, nil
+}
+
+func (m *Manager) mergeExternalLocked(standalone map[string]ServerConfig) (map[string]ServerConfig, error) {
+	combined := make(map[string]ServerConfig, len(standalone))
+	for name, cfg := range standalone {
+		combined[name] = cfg
+	}
+	external, err := m.externalServersLocked()
+	if err != nil {
+		return nil, err
+	}
+	for name, cfg := range external {
+		if _, exists := combined[name]; exists {
+			return nil, newError("MCP_SERVER_CONFLICT", "plugin MCP server conflicts with a standalone registration", false, map[string]any{"server": name}, nil)
+		}
+		combined[name] = cfg
+	}
+	return combined, nil
+}
+
 func (m *Manager) syncRegistry() error {
 	m.registryMu.Lock()
 	defer m.registryMu.Unlock()
@@ -200,8 +302,12 @@ func (m *Manager) syncRegistry() error {
 	if err != nil {
 		return newError("MCP_REGISTRY_READ_FAILED", "read dynamic MCP registry", true, nil, err)
 	}
+	combined, err := m.mergeExternalLocked(servers)
+	if err != nil {
+		return err
+	}
 	m.mu.Lock()
-	staleStates := m.replaceRegistryLocked(servers)
+	staleStates := m.replaceRegistryLocked(combined)
 	m.mu.Unlock()
 	return closeServerStates(staleStates)
 }

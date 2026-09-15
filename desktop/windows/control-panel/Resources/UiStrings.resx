@@ -696,10 +696,37 @@ Update now?</value>
     <value>Capabilities</value>
   </data>
   <data name="CapabilitiesDescription" xml:space="preserve">
-    <value>Enable or disable individual Skills and MCP servers. Heavy plugins group related capabilities behind one description; plugin members are revealed to the model only after the plugin is loaded.</value>
+    <value>Install self-contained heavy-plugin folders or ZIP packages. Each plugin directly carries its Skills, MCP definitions, implementation files, and local state; no plugin cache layer is used.</value>
   </data>
   <data name="AddPlugin" xml:space="preserve">
-    <value>Add plugin</value>
+    <value>Install plugin package</value>
+  </data>
+  <data name="UpdatePlugin" xml:space="preserve">
+    <value>Update package</value>
+  </data>
+  <data name="PluginPackageMetadata" xml:space="preserve">
+    <value>Version {0} · {1}</value>
+  </data>
+  <data name="ChoosePluginFolder" xml:space="preserve">
+    <value>Choose plugin folder</value>
+  </data>
+  <data name="ChoosePluginZip" xml:space="preserve">
+    <value>Choose plugin ZIP</value>
+  </data>
+  <data name="PluginSourceHelp" xml:space="preserve">
+    <value>Select a plugin directory or ZIP containing .agentdock-plugin/plugin.json. AgentDock copies the complete package directly to ~/.agentdock/plugins/&lt;name&gt; without a cache layer.</value>
+  </data>
+  <data name="UpdatePluginSourceHelp" xml:space="preserve">
+    <value>Select a complete replacement package for plugin {0}. The package manifest name must match, and compatible enable/disable state is preserved.</value>
+  </data>
+  <data name="PluginSourceRequired" xml:space="preserve">
+    <value>Select an existing plugin directory or ZIP archive.</value>
+  </data>
+  <data name="InstallingPluginPackage" xml:space="preserve">
+    <value>Installing plugin package {0}…</value>
+  </data>
+  <data name="UpdatingPluginPackage" xml:space="preserve">
+    <value>Updating plugin {0}…</value>
   </data>
   <data name="RefreshCapabilities" xml:space="preserve">
     <value>Refresh capabilities</value>
@@ -723,7 +750,7 @@ Update now?</value>
     <value>Loaded {0} plugins, {1} Skills, and {2} MCP servers.</value>
   </data>
   <data name="NoPlugins" xml:space="preserve">
-    <value>No plugins are configured.</value>
+    <value>No self-contained plugins are installed.</value>
   </data>
   <data name="NoStandaloneSkills" xml:space="preserve">
     <value>No standalone Skills are available.</value>
@@ -774,7 +801,7 @@ Update now?</value>
     <value>Saving plugin {0}…</value>
   </data>
   <data name="ConfirmRemovePlugin" xml:space="preserve">
-    <value>Remove plugin {0}? Its member Skills and MCP servers remain installed and return to the standalone lists.</value>
+    <value>Remove plugin {0}? This deletes its complete self-contained directory, including plugin Skills and bundled MCP implementation files. External credentials under env/mcp are not deleted.</value>
   </data>
   <data name="RemovingPlugin" xml:space="preserve">
     <value>Removing plugin {0}…</value>

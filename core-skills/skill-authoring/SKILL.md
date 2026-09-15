@@ -1,7 +1,7 @@
 ---
 name: skill-authoring
 description: 创建、设计、修改、升级、重构和验证 AgentDock Skill 时使用；负责可移植核心、文档、引用、辅助脚本、测试、版本和本地安装验证。
-version: 1.2.0
+version: 1.3.0
 ---
 
 # Skill Authoring
@@ -109,6 +109,14 @@ skills/<skill-name>/
 
 不要为了形式创建空目录，也不要把普通集成重新放回 AgentDock 主仓库。
 
+需要把 Skill 随自包含重插件发布时，目标插件源码中的放置位置是：
+
+```text
+<plugin-root>/skills/<skill-name>/
+```
+
+该目录仍然是完整、可移植的普通 Skill 包。插件清单不重复列出 Skill；AgentDock 从 `skills/*/SKILL.md` 自动发现成员。Skill 不得依赖插件安装后的绝对路径，也不得越过自身包根目录读取同插件的其他私有文件；跨成员协作应通过明确工具或环境契约完成。
+
 ### 4. 编写 Frontmatter
 
 当前 AgentDock 正式解析：
@@ -147,7 +155,7 @@ printf '%s' '{"skill_action":"status"}' | python3 run.py
 
 不得把以下内容作为核心运行前提：
 
-- `~/.agentdock/skill-store/installed/...`；
+- `~/.agentdock/skills/<skill-name>`、`~/.agentdock/skills/.system/<skill-name>` 或 `~/.agentdock/skills/.versions/...`；
 - 固定安装版本号；
 - `AGENTDOCK_DIR`、`AGENTDOCK_HOME` 或 `AGENTDOCK_SKILL_DIR` 用于定位包内脚本或私有数据；
 - `skill_env`、`exec_command` 或 `skill://`；

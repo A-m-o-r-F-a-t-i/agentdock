@@ -172,6 +172,12 @@ public sealed class PluginCapabilityInfo
     [JsonPropertyName("description")]
     public string Description { get; set; } = "";
 
+    [JsonPropertyName("version")]
+    public string Version { get; set; } = "";
+
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = "";
+
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; } = true;
 
@@ -202,6 +208,9 @@ public sealed class SkillCapabilityInfo
     [JsonPropertyName("bundled")]
     public bool Bundled { get; set; }
 
+    [JsonPropertyName("plugin")]
+    public string Plugin { get; set; } = "";
+
     public string Identifier => string.IsNullOrWhiteSpace(Skill) ? Name : Skill;
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? Identifier : Name;
 }
@@ -216,6 +225,9 @@ public sealed class McpCapabilityInfo
 
     [JsonPropertyName("transport")]
     public string Transport { get; set; } = "";
+
+    [JsonPropertyName("plugin")]
+    public string Plugin { get; set; } = "";
 
     [JsonPropertyName("enabled")]
     public bool Enabled { get; set; } = true;

@@ -14,12 +14,24 @@ const runtimeAPISource = "agentdock-api"
 
 type PluginMembershipLookup func(string) (plugin string, enabled bool, owned bool, err error)
 
+type PluginSkill struct {
+	Name    string
+	Plugin  string
+	Path    string
+	Enabled bool
+}
+
+type PluginSkillLookup func(string) (PluginSkill, bool, error)
+type PluginSkillsLookup func() ([]PluginSkill, error)
+
 type Service struct {
 	manager          *skills.Manager
 	state            *skillstate.Store
 	ws               *workspace.Workspace
 	envs             *envstore.Store
 	pluginMembership PluginMembershipLookup
+	pluginSkill      PluginSkillLookup
+	pluginSkills     PluginSkillsLookup
 }
 
 func New(cfg config.Config, ws *workspace.Workspace, envs *envstore.Store) (*Service, error) {
@@ -42,8 +54,45 @@ func (s *Service) SetPluginMembershipLookup(lookup PluginMembershipLookup) {
 	s.pluginMembership = lookup
 }
 
+func (s *Service) SetPluginSkillProvider(lookup PluginSkillLookup, list PluginSkillsLookup) error {
+	if list != nil {
+		members, err := list()
+		if err != nil {
+			return err
+		}
+		standalone, err := s.state.ListSkills()
+		if err != nil {
+			return err
+		}
+		names := make(map[string]struct{}, len(standalone))
+		for _, name := range standalone {
+			names[name] = struct{}{}
+		}
+		for _, member := range members {
+			if _, exists := names[member.Name]; exists {
+				return toolErrorDetails("PLUGIN_SKILL_CONFLICT", "plugin Skill conflicts with an installed standalone Skill", "validation", map[string]any{"skill": member.Name, "plugin": member.Plugin})
+			}
+		}
+	}
+	s.pluginSkill = lookup
+	s.pluginSkills = list
+	return nil
+}
+
 func (s *Service) ResolveActive(skill string) (string, error) {
 	skill = strings.TrimSpace(skill)
+	if s.pluginSkill != nil {
+		member, found, err := s.pluginSkill(skill)
+		if err != nil {
+			return "", toolErrorCause("PLUGIN_STATE_INVALID", "resolve plugin Skill", "runtime", map[string]any{"skill": skill}, err)
+		}
+		if found {
+			if !member.Enabled {
+				return "", toolErrorDetails("PLUGIN_MEMBER_DISABLED", "plugin Skill is disabled", "validation", map[string]any{"skill": skill, "plugin": member.Plugin})
+			}
+			return member.Path, nil
+		}
+	}
 	if err := s.ensureAvailable(skill); err != nil {
 		return "", err
 	}
@@ -56,6 +105,18 @@ func (s *Service) ResolveActive(skill string) (string, error) {
 
 func (s *Service) ensureAvailable(skill string) error {
 	skill = strings.TrimSpace(skill)
+	if s.pluginSkill != nil {
+		member, found, err := s.pluginSkill(skill)
+		if err != nil {
+			return toolErrorCause("PLUGIN_STATE_INVALID", "read plugin Skill availability", "runtime", map[string]any{"skill": skill}, err)
+		}
+		if found {
+			if !member.Enabled {
+				return toolErrorDetails("PLUGIN_MEMBER_DISABLED", "plugin Skill is disabled", "validation", map[string]any{"skill": skill, "plugin": member.Plugin})
+			}
+			return nil
+		}
+	}
 	selection, err := s.state.Snapshot(skill)
 	if err != nil {
 		return toolErrorDetails("SKILL_STATE_INVALID", "read Skill availability: "+err.Error(), "runtime", map[string]any{"skill": skill})
@@ -77,11 +138,39 @@ func (s *Service) ensureAvailable(skill string) error {
 }
 
 func (s *Service) baseEnabled(skill string) (bool, error) {
+	if s.pluginSkill != nil {
+		member, found, err := s.pluginSkill(strings.TrimSpace(skill))
+		if err != nil {
+			return false, err
+		}
+		if found {
+			return member.Enabled, nil
+		}
+	}
 	selection, err := s.state.Snapshot(strings.TrimSpace(skill))
 	if err != nil {
 		return false, err
 	}
 	return !selection.Disabled, nil
+}
+
+func (s *Service) rejectPluginManagedSkill(skill, action string) error {
+	if s.pluginSkill == nil {
+		return nil
+	}
+	member, found, err := s.pluginSkill(strings.TrimSpace(skill))
+	if err != nil {
+		return toolErrorCause("PLUGIN_STATE_INVALID", "inspect plugin Skill ownership", "runtime", map[string]any{"skill": skill}, err)
+	}
+	if !found {
+		return nil
+	}
+	return toolErrorDetails(
+		"PLUGIN_MEMBER_MANAGED",
+		"plugin-contained Skills are installed, updated, removed, and switched through plugin_manage",
+		"validation",
+		map[string]any{"skill": skill, "plugin": member.Plugin, "action": action},
+	)
 }
 
 func (s *Service) scopedEnvAction(kind envstore.ScopeKind, name, action string, request PackageRequest) (Result, error) {

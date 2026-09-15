@@ -107,6 +107,23 @@ func (s *Service) list() (Result, error) {
 			"updated_at":     selection.UpdatedAt,
 		})
 	}
+	if s.pluginSkills != nil {
+		members, listErr := s.pluginSkills()
+		if listErr != nil {
+			return nil, skillToolError(listErr)
+		}
+		for _, member := range members {
+			document, loadErr := skills.LoadSkillDocument(member.Path)
+			if loadErr != nil {
+				return nil, skillToolError(loadErr)
+			}
+			items = append(items, map[string]any{
+				"skill": member.Name, "name": document.Name, "description": document.Description,
+				"versions": []string{document.Version}, "active_version": document.Version,
+				"enabled": member.Enabled, "bundled": false, "plugin": member.Plugin,
+			})
+		}
+	}
 	return Result{"action": "list", "count": len(items), "skills": items}, nil
 }
 
@@ -115,6 +132,27 @@ func (s *Service) inspect(request InspectRequest) (Result, error) {
 	skill, err := input.requiredSkill()
 	if err != nil {
 		return nil, err
+	}
+	if s.pluginSkill != nil {
+		member, found, lookupErr := s.pluginSkill(skill)
+		if lookupErr != nil {
+			return nil, skillToolError(lookupErr)
+		}
+		if found {
+			doc, loadErr := skills.LoadSkillDocument(member.Path)
+			if loadErr != nil {
+				return nil, skillToolError(loadErr)
+			}
+			if input.Version != "" && input.Version != doc.Version {
+				return nil, toolErrorDetails("SKILL_VERSION_NOT_FOUND", "plugin Skill exposes only the version carried by its plugin package", "not_found", map[string]any{"skill": skill, "version": input.Version, "plugin": member.Plugin})
+			}
+			return Result{
+				"action": "inspect", "skill": skill, "versions": []string{doc.Version},
+				"selection": map[string]any{"active_version": doc.Version, "disabled": !member.Enabled},
+				"enabled":   member.Enabled, "bundled": false, "plugin": member.Plugin,
+				"version": doc.Version, "document": doc,
+			}, nil
+		}
 	}
 	versions, err := s.state.ListVersions(skill)
 	if err != nil {
@@ -191,6 +229,17 @@ func (s *Service) skillInstall(ctx context.Context, input skillToolInput) (Resul
 	if err != nil {
 		return nil, err
 	}
+	preflight, err := s.manager.Validate(ctx, skills.ValidateRequest{
+		Source: resolved, DigestSHA256: input.Digest, MaxBytes: input.MaxBytes,
+	})
+	if err != nil {
+		return nil, skillToolError(err)
+	}
+	if preflight.Valid && strings.TrimSpace(preflight.Document.Name) != "" {
+		if err := s.rejectPluginManagedSkill(preflight.Document.Name, "install"); err != nil {
+			return nil, err
+		}
+	}
 	result, err := s.manager.Install(ctx, skills.InstallRequest{
 		Source:       resolved,
 		DigestSHA256: input.Digest,
@@ -208,6 +257,9 @@ func (s *Service) skillUninstall(ctx context.Context, input skillToolInput) (Res
 	if err != nil {
 		return nil, err
 	}
+	if err := s.rejectPluginManagedSkill(skill, "uninstall"); err != nil {
+		return nil, err
+	}
 	result, err := s.manager.Uninstall(ctx, skill, input.Version)
 	if err != nil {
 		return nil, skillToolError(err)
@@ -218,6 +270,9 @@ func (s *Service) skillUninstall(ctx context.Context, input skillToolInput) (Res
 func (s *Service) skillActivate(ctx context.Context, input skillToolInput) (Result, error) {
 	skill, err := input.requiredSkill()
 	if err != nil {
+		return nil, err
+	}
+	if err := s.rejectPluginManagedSkill(skill, "activate"); err != nil {
 		return nil, err
 	}
 	if input.Version == "" {
@@ -235,6 +290,9 @@ func (s *Service) skillSetEnabled(ctx context.Context, input skillToolInput, ena
 	if err != nil {
 		return nil, err
 	}
+	if err := s.rejectPluginManagedSkill(skill, input.Action); err != nil {
+		return nil, err
+	}
 	selection, err := s.state.SetEnabled(ctx, skill, enabled)
 	if err != nil {
 		return nil, skillToolError(err)
@@ -249,6 +307,9 @@ func (s *Service) skillSetEnabled(ctx context.Context, input skillToolInput, ena
 func (s *Service) skillRollback(ctx context.Context, input skillToolInput) (Result, error) {
 	skill, err := input.requiredSkill()
 	if err != nil {
+		return nil, err
+	}
+	if err := s.rejectPluginManagedSkill(skill, "rollback"); err != nil {
 		return nil, err
 	}
 	result, err := s.manager.Rollback(ctx, skill)

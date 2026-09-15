@@ -6,6 +6,14 @@
 review_threshold_lines: 300
 
 scripts:
+  - path: scripts/migrate/migrate-agentdock-home.ps1
+    class: dev
+    owner: skill-runtime
+    public_contract: false
+    deletable: true
+    oversize_justification: 显式、离线、可回滚地迁移旧 Skill store 与独立 MCP 到 Codex 风格 Skill 树和自包含重插件；需要在一个事务入口内处理多版本归档、核心 Skill 替换、MCP 实现复制、源目录指纹、迁移报告和 Windows ACL。
+    notes: 只允许源目录与目标目录不同；不原地修改运行中的 AgentDock home，也不会生成 plugins/cache 或中央 plugins.json。
+
   - path: scripts/install/install.sh
     class: bootstrap
     owner: installer

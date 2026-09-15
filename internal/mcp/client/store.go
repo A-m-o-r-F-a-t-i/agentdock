@@ -213,6 +213,13 @@ func validateServerConfig(cfg ServerConfig) error {
 	return nil
 }
 
+// ValidateServerConfig validates one canonical dynamic MCP server definition.
+// Self-contained heavy plugins use the same transport and environment contract
+// as standalone MCP registrations.
+func ValidateServerConfig(cfg ServerConfig) error {
+	return validateServerConfig(normalizeServerConfig(cfg))
+}
+
 func isReservedMCPHeader(name string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "accept", "connection", "content-length", "content-type", "host", "mcp-protocol-version", "mcp-session-id", "transfer-encoding", "user-agent":

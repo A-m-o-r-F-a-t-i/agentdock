@@ -127,13 +127,15 @@ AgentDock 通过 MCP Streamable HTTP 提供工具能力。下面是一个通用�
 
 官方与社区 Skill 源码统一维护在 [uvwt/agentdock-skills](https://github.com/uvwt/agentdock-skills)。本仓库只保留必须随 AgentDock 运行时发布的核心 Skill，包括自举/安全相关 Skill，以及内置的 `agentdock-user-guide` 官方用户指南。
 
-- Skill 包校验、安装、卸载、激活和回滚
+- Skill 包校验、安装、卸载、激活、启停和回滚
+- 当前激活 Skill 使用[与 Codex 一致的可见目录结构](docs/skill-directory-layout.md)，非激活版本和事务状态保存在隐藏目录
 - 稳定版、开发版、Canary 和固定版本通道
 - Skill 独立环境变量与运行环境
 - 动态 MCP Server 注册、启停、刷新和移除
 - Streamable HTTP 与 stdio 传输
 - 工具搜索、Schema 检查和受控调用
 - MCP Server 之间的配置隔离
+- 安装[自包含重插件](docs/heavy-plugins.md)：插件直接携带 Skill、MCP 定义、实现文件和开关，按两层渐进式方式暴露能力，不增加插件 cache 中间层
 
 ### 原生 ACP 
 

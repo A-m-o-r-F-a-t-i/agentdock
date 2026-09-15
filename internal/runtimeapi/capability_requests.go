@@ -30,7 +30,7 @@ func decodeRuntimeSkillRequest(body []byte) (map[string]any, error) {
 	}
 	action := strings.ToLower(strings.TrimSpace(request.Action))
 	if action != "enable" && action != "disable" {
-		return nil, runtimeCapabilityRequestError("SKILL_ACTION_UNSUPPORTED", "Runtime API only supports enable or disable for Skills")
+		return nil, runtimeCapabilityRequestError("SKILL_ACTION_UNSUPPORTED", "Runtime API only supports enable or disable for standalone Skills")
 	}
 	if strings.TrimSpace(request.Skill) == "" {
 		return nil, runtimeCapabilityRequestError("SKILL_NAME_REQUIRED", "Skill name is required")
@@ -39,16 +39,17 @@ func decodeRuntimeSkillRequest(body []byte) (map[string]any, error) {
 }
 
 type runtimePluginManageRequest struct {
-	Action      string   `json:"action"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Enabled     *bool    `json:"enabled"`
-	Skills      []string `json:"skills"`
-	MCPServers  []string `json:"mcp_servers"`
+	Action     string `json:"action"`
+	Name       string `json:"name"`
+	Source     string `json:"source"`
+	MemberType string `json:"member_type"`
+	Member     string `json:"member"`
 }
 
 var runtimePluginManageActions = map[string]bool{
-	"upsert": true, "remove": true, "enable": true, "disable": true,
+	"validate": true, "install": true, "update": true,
+	"remove": true, "enable": true, "disable": true,
+	"member_enable": true, "member_disable": true,
 }
 
 func decodeRuntimePluginRequest(body []byte) (map[string]any, error) {
@@ -70,20 +71,33 @@ func decodeRuntimePluginRequest(body []byte) (map[string]any, error) {
 		return nil, runtimeCapabilityRequestError("PLUGIN_ACTION_UNSUPPORTED", "plugin action is not available through the Runtime API")
 	}
 	args := map[string]any{"action": action}
-	if request.Name != "" {
+	switch action {
+	case "validate", "install":
+		if strings.TrimSpace(request.Source) == "" {
+			return nil, runtimeCapabilityRequestError("PLUGIN_SOURCE_REQUIRED", "plugin directory or ZIP source is required")
+		}
+		args["source"] = request.Source
+	case "update":
+		if strings.TrimSpace(request.Name) == "" {
+			return nil, runtimeCapabilityRequestError("PLUGIN_NAME_REQUIRED", "plugin name is required for update")
+		}
+		if strings.TrimSpace(request.Source) == "" {
+			return nil, runtimeCapabilityRequestError("PLUGIN_SOURCE_REQUIRED", "plugin directory or ZIP source is required")
+		}
 		args["name"] = request.Name
-	}
-	if request.Description != "" {
-		args["description"] = request.Description
-	}
-	if request.Enabled != nil {
-		args["enabled"] = *request.Enabled
-	}
-	if request.Skills != nil {
-		args["skills"] = request.Skills
-	}
-	if request.MCPServers != nil {
-		args["mcp_servers"] = request.MCPServers
+		args["source"] = request.Source
+	case "member_enable", "member_disable":
+		if strings.TrimSpace(request.Name) == "" || strings.TrimSpace(request.MemberType) == "" || strings.TrimSpace(request.Member) == "" {
+			return nil, runtimeCapabilityRequestError("PLUGIN_MEMBER_REQUIRED", "plugin name, member_type, and member are required")
+		}
+		args["name"] = request.Name
+		args["member_type"] = request.MemberType
+		args["member"] = request.Member
+	default:
+		if strings.TrimSpace(request.Name) == "" {
+			return nil, runtimeCapabilityRequestError("PLUGIN_NAME_REQUIRED", "plugin name is required")
+		}
+		args["name"] = request.Name
 	}
 	return args, nil
 }

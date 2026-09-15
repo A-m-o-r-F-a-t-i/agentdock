@@ -11,7 +11,7 @@ func pluginToolSpecs() []ToolSpec {
 		{
 			Name: "plugin_manage", Contract: pluginToolContract,
 			Title:       "Manage heavy plugins",
-			Description: "Create, inspect, enable, disable, or remove heavy plugins that group related document Skills and dynamic MCP servers behind one domain capability.",
+			Description: "Validate, install, update, inspect, switch, or remove self-contained heavy-plugin directories or ZIP packages. Each installed plugin directly owns its Skills, MCP definitions, implementation files, and state without a cache layer.",
 			Annotations: mutatingToolAnnotations(true, false),
 			Handler: typedToolHandler("plugin_manage", func(ctx context.Context, r *Runtime, request toolplugin.ManageRequest) (Result, error) {
 				return r.plugins.Manage(ctx, request)

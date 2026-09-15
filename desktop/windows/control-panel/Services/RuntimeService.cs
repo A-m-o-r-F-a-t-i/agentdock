@@ -200,18 +200,35 @@ public sealed class RuntimeService : IDisposable
             new { action = enabled ? "enable" : "disable", name },
             cancellationToken);
 
-    public async Task UpsertPluginAsync(PluginCapabilityInfo plugin, CancellationToken cancellationToken = default) =>
+    public async Task InstallPluginAsync(string source, CancellationToken cancellationToken = default) =>
+        _ = await SendRuntimeApiAsync<JsonElement>(
+            HttpMethod.Post,
+            "/internal/runtime/plugins",
+            new { action = "install", source },
+            cancellationToken);
+
+    public async Task UpdatePluginAsync(string name, string source, CancellationToken cancellationToken = default) =>
+        _ = await SendRuntimeApiAsync<JsonElement>(
+            HttpMethod.Post,
+            "/internal/runtime/plugins",
+            new { action = "update", name, source },
+            cancellationToken);
+
+    public async Task SetPluginMemberEnabledAsync(
+        string plugin,
+        string memberType,
+        string member,
+        bool enabled,
+        CancellationToken cancellationToken = default) =>
         _ = await SendRuntimeApiAsync<JsonElement>(
             HttpMethod.Post,
             "/internal/runtime/plugins",
             new
             {
-                action = "upsert",
-                name = plugin.Name,
-                description = plugin.Description,
-                enabled = plugin.Enabled,
-                skills = plugin.Skills,
-                mcp_servers = plugin.McpServers
+                action = enabled ? "member_enable" : "member_disable",
+                name = plugin,
+                member_type = memberType,
+                member
             },
             cancellationToken);
 

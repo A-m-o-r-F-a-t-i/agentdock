@@ -12,6 +12,7 @@ type CapabilityItem struct {
 	File        string
 	Bundled     bool
 	Enabled     bool
+	Plugin      string
 }
 
 func (s *Service) CapabilityItems() ([]CapabilityItem, error) {
@@ -19,8 +20,22 @@ func (s *Service) CapabilityItems() ([]CapabilityItem, error) {
 	if err != nil {
 		return nil, err
 	}
+	if s.pluginSkills != nil {
+		members, listErr := s.pluginSkills()
+		if listErr != nil {
+			return nil, listErr
+		}
+		for _, member := range members {
+			names = append(names, member.Name)
+		}
+	}
 	items := make([]CapabilityItem, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
 	for _, name := range names {
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
 		item, found, itemErr := s.CapabilityItem(name)
 		if itemErr != nil {
 			return nil, itemErr
@@ -40,6 +55,25 @@ func (s *Service) CapabilityItems() ([]CapabilityItem, error) {
 // plugin-level overlay. plugin_load calls it only after validating the plugin.
 func (s *Service) CapabilityItem(name string) (CapabilityItem, bool, error) {
 	name = strings.TrimSpace(name)
+	if s.pluginSkill != nil {
+		member, found, err := s.pluginSkill(name)
+		if err != nil {
+			return CapabilityItem{}, false, err
+		}
+		if found {
+			if skills.ValidatePackage(member.Path) != nil {
+				return CapabilityItem{}, false, nil
+			}
+			doc, loadErr := skills.LoadSkillDocument(member.Path)
+			if loadErr != nil {
+				return CapabilityItem{}, false, nil
+			}
+			return CapabilityItem{
+				Name: name, Description: strings.TrimSpace(doc.Description), File: "skill://" + name + "/SKILL.md",
+				Bundled: false, Enabled: member.Enabled, Plugin: member.Plugin,
+			}, true, nil
+		}
+	}
 	packageDir, resolveErr := s.state.Resolve(name, "")
 	if resolveErr != nil || skills.ValidatePackage(packageDir) != nil {
 		return CapabilityItem{}, false, nil
@@ -74,9 +108,24 @@ func (s *Service) RuntimeSkills() (Result, error) {
 		if strings.TrimSpace(skill) == "" || strings.TrimSpace(version) == "" {
 			continue
 		}
-		packageDir, err := s.state.InstalledPath(skill, version)
-		if err != nil {
-			return nil, skillToolError(err)
+		packageDir := ""
+		if s.pluginSkill != nil {
+			member, found, lookupErr := s.pluginSkill(skill)
+			if lookupErr != nil {
+				return nil, lookupErr
+			}
+			if found {
+				packageDir = member.Path
+				item["plugin"] = member.Plugin
+				item["enabled"] = member.Enabled
+			}
+		}
+		if packageDir == "" {
+			var pathErr error
+			packageDir, pathErr = s.state.InstalledPath(skill, version)
+			if pathErr != nil {
+				return nil, skillToolError(pathErr)
+			}
 		}
 		document, err := skills.LoadSkillDocument(packageDir)
 		if err != nil {
@@ -89,11 +138,13 @@ func (s *Service) RuntimeSkills() (Result, error) {
 		item["name"] = document.Name
 		item["description"] = document.Description
 		item["file_count"] = len(files)
-		selection, selectionErr := s.state.Snapshot(skill)
-		if selectionErr != nil {
-			return nil, skillToolError(selectionErr)
+		if _, exists := item["plugin"]; !exists {
+			selection, selectionErr := s.state.Snapshot(skill)
+			if selectionErr != nil {
+				return nil, skillToolError(selectionErr)
+			}
+			item["enabled"] = !selection.Disabled
 		}
-		item["enabled"] = !selection.Disabled
 	}
 	result["source"] = runtimeAPISource
 	return result, nil
@@ -111,7 +162,7 @@ func (s *Service) RuntimeSkill(skill string) (Result, error) {
 	if strings.TrimSpace(version) == "" {
 		return result, nil
 	}
-	packageDir, err := s.state.InstalledPath(skill, version)
+	packageDir, _, err := s.runtimeSkillPackageDir(skill)
 	if err != nil {
 		return nil, skillToolError(err)
 	}

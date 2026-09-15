@@ -33,7 +33,7 @@ func TestRuntimeAPISkillFilesStayInsideActivePackage(t *testing.T) {
 		t.Fatalf("install skill: %v", err)
 	}
 
-	installedDir := filepath.Join(cfg.AgentDockHome, "skill-store", "installed", "demo-skill", "0.1.0")
+	installedDir := filepath.Join(cfg.AgentDockHome, "skills", "demo-skill")
 	outside := filepath.Join(t.TempDir(), "outside-secret.txt")
 	writeTestFile(t, outside, "must not be exposed")
 	symlinkCreated := os.Symlink(outside, filepath.Join(installedDir, "outside-link.txt")) == nil

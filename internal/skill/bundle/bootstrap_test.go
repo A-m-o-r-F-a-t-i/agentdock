@@ -171,7 +171,7 @@ func TestBootstrapRestoresStateWhenActivationFails(t *testing.T) {
 	if len(bundled) != 0 {
 		t.Fatalf("BundledSkills() after rollback = %#v", bundled)
 	}
-	if _, err := os.Stat(filepath.Join(state.Root(), "bundled-skills.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(state.Root(), ".system", ".agentdock-system-skills.marker")); !os.IsNotExist(err) {
 		t.Fatalf("failed bootstrap created bundled list: %v", err)
 	}
 }
@@ -190,7 +190,7 @@ func bootstrapWithBlockedSecondActivation(
 	if err != nil {
 		t.Fatal(err)
 	}
-	lockPath := filepath.Join(state.Root(), "locks", second.Name+".lock")
+	lockPath := filepath.Join(state.Root(), ".locks", second.Name+".lock")
 	if err := os.Mkdir(lockPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func waitForSelection(
 
 func newTestManager(t *testing.T) (*skillstate.Store, *skills.Manager) {
 	t.Helper()
-	state, err := skillstate.New(filepath.Join(t.TempDir(), "skill-store"))
+	state, err := skillstate.New(filepath.Join(t.TempDir(), "skills"))
 	if err != nil {
 		t.Fatal(err)
 	}

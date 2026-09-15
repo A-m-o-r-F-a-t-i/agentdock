@@ -15,11 +15,13 @@ type SkillItem struct {
 	File        string `json:"file"`
 	Bundled     bool   `json:"bundled"`
 	Enabled     bool   `json:"enabled"`
+	Plugin      string `json:"plugin,omitempty"`
 }
 
 type MCPItem struct {
 	Name          string        `json:"name"`
 	Description   string        `json:"description"`
+	Plugin        string        `json:"plugin,omitempty"`
 	Status        string        `json:"status"`
 	ToolCount     int           `json:"tool_count"`
 	LastErrorCode string        `json:"last_error_code,omitempty"`
@@ -93,20 +95,33 @@ func (s *Service) Manage(_ context.Context, request ManageRequest) (Result, erro
 			return nil, pluginToolError(err)
 		}
 		return Result{"action": action, "plugin": definition}, nil
-	case "upsert":
-		definition := registry.Definition{
-			Name: request.Name, Description: request.Description,
-			Enabled: boolValue(request.Enabled, true),
-			Skills:  append([]string(nil), request.Skills...), MCPServers: append([]string(nil), request.MCPServers...),
-		}
-		if err := s.validateMembers(definition); err != nil {
-			return nil, err
-		}
-		stored, err := s.store.Upsert(definition)
+	case "validate":
+		definition, err := s.store.Validate(request.Source)
 		if err != nil {
 			return nil, pluginToolError(err)
 		}
-		return Result{"action": action, "plugin": stored}, nil
+		return Result{"action": action, "valid": true, "plugin": definition}, nil
+	case "install", "update":
+		candidate, validateErr := s.store.Validate(request.Source)
+		if validateErr != nil {
+			return nil, pluginToolError(validateErr)
+		}
+		if action == "update" {
+			if strings.TrimSpace(request.Name) == "" {
+				return nil, toolErrorDetails("PLUGIN_NAME_REQUIRED", "plugin name is required for update", "validation", nil)
+			}
+			if candidate.Name != strings.TrimSpace(request.Name) {
+				return nil, toolErrorDetails("PLUGIN_UPDATE_NAME_MISMATCH", "selected package does not match the plugin being updated", "validation", map[string]any{"expected": strings.TrimSpace(request.Name), "actual": candidate.Name})
+			}
+		}
+		if ownershipErr := s.validateInstallOwnership(candidate); ownershipErr != nil {
+			return nil, ownershipErr
+		}
+		definition, err := s.store.Install(request.Source, action == "update")
+		if err != nil {
+			return nil, pluginToolError(err)
+		}
+		return Result{"action": action, "plugin": definition}, nil
 	case "remove":
 		if err := s.store.Remove(request.Name); err != nil {
 			return nil, pluginToolError(err)
@@ -118,11 +133,40 @@ func (s *Service) Manage(_ context.Context, request ManageRequest) (Result, erro
 			return nil, pluginToolError(err)
 		}
 		return Result{"action": action, "plugin": definition}, nil
+	case "member_enable", "member_disable":
+		definition, err := s.store.SetMemberEnabled(request.Name, request.MemberType, request.Member, action == "member_enable")
+		if err != nil {
+			return nil, pluginToolError(err)
+		}
+		return Result{"action": action, "plugin": definition, "member_type": request.MemberType, "member": request.Member}, nil
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported plugin_manage action", "validation", map[string]any{
-			"action": action, "allowed": []string{"list", "inspect", "upsert", "remove", "enable", "disable"},
+			"action":  action,
+			"allowed": []string{"list", "inspect", "validate", "install", "update", "remove", "enable", "disable", "member_enable", "member_disable"},
 		})
 	}
+}
+
+func (s *Service) validateInstallOwnership(candidate registry.Definition) error {
+	for _, name := range candidate.Skills {
+		item, found, err := s.skillLookup(name)
+		if err != nil {
+			return toolErrorCause("PLUGIN_MEMBER_LOOKUP_FAILED", "check Skill ownership before plugin install", "runtime", map[string]any{"skill": name}, err)
+		}
+		if found && item.Plugin != candidate.Name {
+			return toolErrorDetails("PLUGIN_MEMBER_CONFLICT", "plugin Skill conflicts with an existing standalone or plugin-owned Skill", "validation", map[string]any{"member_type": "skill", "member": name, "owner": item.Plugin})
+		}
+	}
+	for _, name := range candidate.MCPServers {
+		item, found, err := s.mcpLookup(context.Background(), name, false)
+		if err != nil {
+			return toolErrorCause("PLUGIN_MEMBER_LOOKUP_FAILED", "check MCP ownership before plugin install", "runtime", map[string]any{"mcp_server": name}, err)
+		}
+		if found && item.Plugin != candidate.Name {
+			return toolErrorDetails("PLUGIN_MEMBER_CONFLICT", "plugin MCP server conflicts with an existing standalone or plugin-owned server", "validation", map[string]any{"member_type": "mcp_server", "member": name, "owner": item.Plugin})
+		}
+	}
+	return nil
 }
 
 func (s *Service) Load(ctx context.Context, request LoadRequest) (Result, error) {
@@ -134,7 +178,7 @@ func (s *Service) Load(ctx context.Context, request LoadRequest) (Result, error)
 		return nil, toolErrorDetails("PLUGIN_DISABLED", "plugin is disabled", "validation", map[string]any{"plugin": definition.Name})
 	}
 
-	skills := make([]SkillItem, 0, len(definition.Skills))
+	skillItems := make([]SkillItem, 0, len(definition.Skills))
 	mcpServers := make([]MCPItem, 0, len(definition.MCPServers))
 	unavailable := make([]map[string]any, 0)
 	for _, name := range definition.Skills {
@@ -150,7 +194,7 @@ func (s *Service) Load(ctx context.Context, request LoadRequest) (Result, error)
 			unavailable = append(unavailable, map[string]any{"type": "skill", "name": name, "reason": reason})
 			continue
 		}
-		skills = append(skills, item)
+		skillItems = append(skillItems, item)
 	}
 	for _, name := range definition.MCPServers {
 		item, found, lookupErr := s.mcpLookup(ctx, name, true)
@@ -175,38 +219,20 @@ func (s *Service) Load(ctx context.Context, request LoadRequest) (Result, error)
 	}
 
 	instructions := []string{}
-	if len(skills) > 0 {
+	if len(skillItems) > 0 {
 		instructions = append(instructions, "Read a returned Skill entry point before applying its domain workflow.")
 	}
 	if len(mcpServers) > 0 {
 		instructions = append(instructions, "Select a returned MCP tool description, inspect its qualified_name, then call it. Use mcp_tool_search with the returned server name to refresh or narrow the index.")
 	}
 	return Result{
-		"plugin": map[string]any{"name": definition.Name, "description": definition.Description, "enabled": definition.Enabled},
-		"skills": skills, "mcp_servers": mcpServers, "unavailable_members": unavailable, "instructions": instructions,
+		"plugin": map[string]any{
+			"name": definition.Name, "description": definition.Description,
+			"version": definition.Version, "path": definition.Path, "enabled": definition.Enabled,
+		},
+		"skills": skillItems, "mcp_servers": mcpServers,
+		"unavailable_members": unavailable, "instructions": instructions,
 	}, nil
-}
-
-func (s *Service) validateMembers(definition registry.Definition) error {
-	for _, name := range definition.Skills {
-		_, found, err := s.skillLookup(strings.TrimSpace(name))
-		if err != nil {
-			return toolErrorCause("PLUGIN_MEMBER_LOOKUP_FAILED", "validate plugin Skill member", "runtime", map[string]any{"skill": name}, err)
-		}
-		if !found {
-			return toolErrorDetails("PLUGIN_MEMBER_NOT_FOUND", "plugin Skill member is not installed and active", "validation", map[string]any{"member_type": "skill", "member": name})
-		}
-	}
-	for _, name := range definition.MCPServers {
-		_, found, err := s.mcpLookup(context.Background(), strings.TrimSpace(name), false)
-		if err != nil {
-			return toolErrorCause("PLUGIN_MEMBER_LOOKUP_FAILED", "validate plugin MCP member", "runtime", map[string]any{"mcp_server": name}, err)
-		}
-		if !found {
-			return toolErrorDetails("PLUGIN_MEMBER_NOT_FOUND", "plugin MCP server is not registered", "validation", map[string]any{"member_type": "mcp_server", "member": name})
-		}
-	}
-	return nil
 }
 
 func pluginToolError(err error) error {
@@ -215,10 +241,10 @@ func pluginToolError(err error) error {
 		return toolErrorCause("PLUGIN_ERROR", err.Error(), "runtime", nil, err)
 	}
 	category := "validation"
-	if registryErr.Code == "PLUGIN_STORE_READ_FAILED" || registryErr.Code == "PLUGIN_STORE_WRITE_FAILED" || registryErr.Code == "PLUGIN_STORE_LOCK_FAILED" {
+	switch registryErr.Code {
+	case "PLUGIN_STORE_READ_FAILED", "PLUGIN_STORE_WRITE_FAILED", "PLUGIN_STORE_LOCK_FAILED", "PLUGIN_STATE_WRITE_FAILED", "PLUGIN_INSTALL_FAILED":
 		category = "runtime"
-	}
-	if registryErr.Code == "PLUGIN_NOT_FOUND" {
+	case "PLUGIN_NOT_FOUND", "PLUGIN_MEMBER_NOT_FOUND":
 		category = "not_found"
 	}
 	message := registryErr.Message

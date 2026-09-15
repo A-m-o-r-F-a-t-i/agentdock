@@ -330,7 +330,11 @@ func installDocumentSkillForTest(t *testing.T, rt *Runtime, name, version, descr
 	if err := state.Activate(context.Background(), name, version); err != nil {
 		t.Fatal(err)
 	}
-	return packageDir
+	activeDir, err := state.Resolve(name, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return activeDir
 }
 
 func TestSkillCapabilityIndexOmitsLegacyExecutableSkills(t *testing.T) {

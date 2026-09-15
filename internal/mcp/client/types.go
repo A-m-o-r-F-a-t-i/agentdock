@@ -56,6 +56,7 @@ type ServerSummary struct {
 	Name          string `json:"name"`
 	Description   string `json:"description"`
 	Transport     string `json:"transport"`
+	Plugin        string `json:"plugin,omitempty"`
 	Enabled       bool   `json:"enabled"`
 	Status        string `json:"status"`
 	ToolCount     int    `json:"tool_count"`
@@ -97,6 +98,13 @@ func normalizeServerConfig(cfg ServerConfig) ServerConfig {
 	cfg.EnvFromEnv = cloneStringMap(cfg.EnvFromEnv)
 	cfg.RuntimeEnv = cloneStringMap(cfg.RuntimeEnv)
 	return cfg
+}
+
+// NormalizeServerConfig applies the same canonicalization used by the
+// standalone dynamic MCP registry. Heavy-plugin manifests use it before
+// exposing their embedded server definitions to the runtime.
+func NormalizeServerConfig(cfg ServerConfig) ServerConfig {
+	return normalizeServerConfig(cfg)
 }
 
 func cloneStringMap(input map[string]string) map[string]string {

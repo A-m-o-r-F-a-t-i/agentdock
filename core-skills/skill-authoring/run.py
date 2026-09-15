@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-VERSION = "1.1.3"
+VERSION = "1.1.4"
 MAX_FILES = 500
 MAX_TEXT_BYTES = 1 << 20
 HOST_METADATA_FILES = {".agentdock-install.json"}
@@ -35,7 +35,10 @@ RULES = (
             r"(?:"
             r"(?:~|\$HOME|\$\{HOME\}|/[A-Za-z0-9._-]+)?/?\.agentdock"
             r"|\$AGENTDOCK_HOME|\$\{AGENTDOCK_HOME\}"
-            r")/skill-store/installed/[a-z][a-z0-9-]*/v?\d+\.\d+\.\d+",
+            r")/skills/(?:"
+            r"(?:\.system/)?[a-z][a-z0-9-]*"
+            r"|\.versions/[a-z][a-z0-9-]*/v?\d+\.\d+\.\d+"
+            r")",
             re.I,
         ),
         "不应硬编码 AgentDock 已安装版本目录。",

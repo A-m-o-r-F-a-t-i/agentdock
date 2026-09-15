@@ -11,6 +11,42 @@ import (
 	"time"
 )
 
+func TestStoreUsesCodexStyleTreeWithoutMigratingLegacyStore(t *testing.T) {
+	home := t.TempDir()
+	legacyDocument := filepath.Join(home, "skill-store", "installed", "legacy-skill", "1.0.0", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(legacyDocument), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacyDocument, []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := New(filepath.Join(home, "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{systemDirectory, versionsDirectory, stateDirectory, locksDirectory, cacheDirectory, tempDirectory} {
+		info, err := os.Stat(filepath.Join(store.Root(), name))
+		if err != nil || !info.IsDir() {
+			t.Fatalf("layout directory %s: info=%v err=%v", name, info, err)
+		}
+	}
+	names, err := store.ListSkills()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 0 {
+		t.Fatalf("new Skill tree imported legacy entries: %#v", names)
+	}
+	data, err := os.ReadFile(legacyDocument)
+	if err != nil {
+		t.Fatalf("legacy store was changed: %v", err)
+	}
+	if string(data) != "legacy" {
+		t.Fatalf("legacy document changed to %q", data)
+	}
+}
+
 func TestStoreSupportsMultipleVersionsAndAtomicActivation(t *testing.T) {
 	store, err := New(t.TempDir())
 	if err != nil {
@@ -49,7 +85,7 @@ func TestStoreSupportsMultipleVersionsAndAtomicActivation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Base(resolved) != "1.1.0" {
+	if filepath.Base(resolved) != "demo-skill" {
 		t.Fatalf("active version resolved to %q", resolved)
 	}
 	explicit, err := store.Resolve("demo-skill", "1.0.0")
@@ -73,7 +109,7 @@ func TestAcquireRemovesOnlySafeStaleLocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lockPath := filepath.Join(store.Root(), "locks", "demo.lock")
+	lockPath := filepath.Join(store.Root(), locksDirectory, "demo.lock")
 	if err := os.Mkdir(lockPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +155,7 @@ func TestStaleLockReleaseCannotDeleteReplacementOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lockPath := filepath.Join(store.Root(), "locks", "demo.lock")
+	lockPath := filepath.Join(store.Root(), locksDirectory, "demo.lock")
 	firstOwner := lockOwnerName(t, lockPath)
 	staleAt := time.Now().Add(-11 * time.Minute)
 	if err := os.Chtimes(lockPath, staleAt, staleAt); err != nil {
@@ -183,7 +219,7 @@ func TestActivateKeepsPreviousStateWhenAtomicSaveFails(t *testing.T) {
 	if err := store.Activate(context.Background(), "demo", "1.0.0"); err != nil {
 		t.Fatal(err)
 	}
-	stateDir := filepath.Join(store.Root(), "state")
+	stateDir := filepath.Join(store.Root(), stateDirectory)
 	if err := os.Chmod(stateDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +242,7 @@ func TestActivateKeepsPreviousStateWhenAtomicSaveFails(t *testing.T) {
 	}
 }
 
-func TestActivationDoesNotCreateLegacyActiveSymlink(t *testing.T) {
+func TestActivationCreatesCodexStyleVisibleDirectory(t *testing.T) {
 	store, err := New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -221,8 +257,23 @@ func TestActivationDoesNotCreateLegacyActiveSymlink(t *testing.T) {
 	if err := store.Activate(context.Background(), "demo", "1.0.0"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(store.Root(), "active")); !os.IsNotExist(err) {
-		t.Fatalf("legacy active directory exists: %v", err)
+	resolved, err := store.Resolve("demo", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(store.Root(), "demo")
+	if resolved != want {
+		t.Fatalf("active path = %q, want %q", resolved, want)
+	}
+	info, err := os.Lstat(resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("active path is not a regular directory: %v", info.Mode())
+	}
+	if _, err := os.Stat(filepath.Join(store.Root(), "installed")); !os.IsNotExist(err) {
+		t.Fatalf("legacy installed directory exists: %v", err)
 	}
 }
 

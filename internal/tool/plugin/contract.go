@@ -12,12 +12,14 @@ func InputSchema(name string) (map[string]any, bool) {
 	switch name {
 	case ToolManage:
 		return toolcontract.InputObject(map[string]any{
-			"action":      map[string]any{"type": "string", "description": "Plugin registry action.", "enum": []string{"list", "inspect", "upsert", "remove", "enable", "disable"}},
-			"name":        stringProp("Stable plugin identifier."),
-			"description": stringProp("Short domain capability description exposed before plugin loading."),
-			"enabled":     toolcontract.Boolean("Plugin master switch. Defaults to true for upsert."),
-			"skills":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Installed document Skill names owned by the plugin."},
-			"mcp_servers": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Registered dynamic MCP server names owned by the plugin."},
+			"action": map[string]any{
+				"type": "string", "description": "Direct heavy-plugin package action.",
+				"enum": []string{"list", "inspect", "validate", "install", "update", "remove", "enable", "disable", "member_enable", "member_disable"},
+			},
+			"name":        stringProp("Installed plugin identifier for inspect, remove, switch, or member actions."),
+			"source":      stringProp("Local plugin directory or ZIP archive for validate, install, or update. It must contain .agentdock-plugin/plugin.json."),
+			"member_type": map[string]any{"type": "string", "enum": []string{"skill", "mcp_server"}, "description": "Plugin member kind for member_enable/member_disable."},
+			"member":      stringProp("Plugin-owned Skill or MCP server name for member_enable/member_disable."),
 		}, "action"), true
 	case ToolLoad:
 		return toolcontract.InputObject(map[string]any{
@@ -38,19 +40,22 @@ func OutputSchema(name string) (map[string]any, bool) {
 	switch name {
 	case ToolManage:
 		return toolcontract.OutputObject(map[string]any{
-			"action":  stringProp("Completed plugin registry action."),
-			"plugins": arrayProp("Registered plugin definitions."),
-			"plugin":  objectProp("Plugin definition."),
-			"count":   intProp("Registered plugin count."),
-			"name":    stringProp("Plugin name."),
-			"removed": boolProp("Whether the plugin definition was removed."),
+			"action":      stringProp("Completed direct-plugin package action."),
+			"plugins":     arrayProp("Installed self-contained plugin definitions."),
+			"plugin":      objectProp("Installed or validated plugin definition."),
+			"count":       intProp("Installed plugin count."),
+			"name":        stringProp("Plugin name."),
+			"member_type": stringProp("Changed plugin member type."),
+			"member":      stringProp("Changed plugin member name."),
+			"valid":       boolProp("Whether a plugin source passed validation."),
+			"removed":     boolProp("Whether the plugin directory was removed."),
 		}), true
 	case ToolLoad:
 		return toolcontract.OutputObject(map[string]any{
-			"plugin":              objectProp("Loaded plugin summary."),
-			"skills":              arrayProp("Enabled Skill descriptions and skill:// entry points."),
-			"mcp_servers":         arrayProp("Enabled dynamic MCP server descriptions and their lazily loaded MCP tool names, qualified names, and descriptions."),
-			"unavailable_members": arrayProp("Configured members that are missing, disabled at their base level, or whose MCP tool discovery failed."),
+			"plugin":              objectProp("Loaded plugin summary, version, and installed path."),
+			"skills":              arrayProp("Enabled plugin-contained Skill descriptions and skill:// entry points."),
+			"mcp_servers":         arrayProp("Enabled plugin-contained MCP server descriptions and lazily loaded tool index."),
+			"unavailable_members": arrayProp("Plugin members that are disabled, missing, or whose MCP tool discovery failed."),
 			"instructions":        stringArrayProp("Progressive-disclosure next actions."),
 		}), true
 	default:

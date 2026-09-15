@@ -22,7 +22,10 @@ func TestLegacyChannelsAreIgnoredAndRemovedOnNextSave(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	statePath := filepath.Join(store.Root(), "state", "demo-skill.json")
+	if err := store.Activate(context.Background(), "demo-skill", "1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	statePath := filepath.Join(store.Root(), stateDirectory, "demo-skill.json")
 	legacy := `{
   "active_version": "1.0.0",
   "channels": {"stable": "1.0.0", "canary": "1.1.0"},

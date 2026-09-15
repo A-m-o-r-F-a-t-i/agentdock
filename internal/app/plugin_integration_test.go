@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/config"
+	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
+	pluginregistry "github.com/uvwt/agentdock/internal/plugin"
 )
 
 func TestHeavyPluginProgressiveDisclosureAndAvailabilityOverlay(t *testing.T) {
@@ -26,21 +29,13 @@ func TestHeavyPluginProgressiveDisclosureAndAvailabilityOverlay(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = rt.Close() })
-	installDocumentSkillForTest(t, rt, "pcb-layout", "1.0.0", "Plan and verify PCB layout.")
-
 	mcpServer := newPluginTestMCPServer(t)
 	defer mcpServer.Close()
-	if _, err := rt.Call(context.Background(), "mcp_manage", map[string]any{
-		"action": "add", "name": "easyeda-test", "description": "EasyEDA test tools.",
-		"transport": "streamable_http", "url": mcpServer.URL, "enabled": true, "timeout_ms": 2000,
-	}); err != nil {
-		t.Fatalf("add MCP server: %v", err)
-	}
+	pluginSource := writeAppPluginPackage(t, root, mcpServer.URL)
 	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
-		"action": "upsert", "name": "pcb", "description": "PCB design capabilities.",
-		"skills": []string{"pcb-layout"}, "mcp_servers": []string{"easyeda-test"}, "enabled": true,
+		"action": "install", "source": pluginSource,
 	}); err != nil {
-		t.Fatalf("upsert plugin: %v", err)
+		t.Fatalf("install plugin: %v", err)
 	}
 
 	contextResult, err := rt.Call(context.Background(), "agentdock_context", map[string]any{})
@@ -118,7 +113,7 @@ func TestHeavyPluginProgressiveDisclosureAndAvailabilityOverlay(t *testing.T) {
 	}
 	assertToolErrorCode(t, callPluginLoad(rt, "pcb"), "PLUGIN_DISABLED")
 	_, _, resolveErr := rt.skills.ResolveResource("skill://pcb-layout/SKILL.md")
-	assertToolErrorCode(t, resolveErr, "PLUGIN_DISABLED")
+	assertToolErrorCode(t, resolveErr, "PLUGIN_MEMBER_DISABLED")
 	_, searchErr := rt.Call(context.Background(), "mcp_tool_search", map[string]any{"query": "anything", "server": "easyeda-test"})
 	assertToolErrorCode(t, searchErr, "PLUGIN_DISABLED")
 
@@ -128,7 +123,9 @@ func TestHeavyPluginProgressiveDisclosureAndAvailabilityOverlay(t *testing.T) {
 	if _, _, err := rt.skills.ResolveResource("skill://pcb-layout/SKILL.md"); err != nil {
 		t.Fatalf("resolve re-enabled plugin Skill: %v", err)
 	}
-	if _, err := rt.Call(context.Background(), "skill_package", map[string]any{"action": "disable", "skill": "pcb-layout"}); err != nil {
+	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
+		"action": "member_disable", "name": "pcb", "member_type": "skill", "member": "pcb-layout",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err = rt.Call(context.Background(), "plugin_load", map[string]any{"name": "pcb"})
@@ -146,7 +143,44 @@ func TestHeavyPluginProgressiveDisclosureAndAvailabilityOverlay(t *testing.T) {
 		t.Fatalf("base-disabled plugin load = %#v", baseDisabled)
 	}
 	_, _, resolveErr = rt.skills.ResolveResource("skill://pcb-layout/SKILL.md")
-	assertToolErrorCode(t, resolveErr, "SKILL_DISABLED")
+	assertToolErrorCode(t, resolveErr, "PLUGIN_MEMBER_DISABLED")
+}
+
+func writeAppPluginPackage(t *testing.T, parent, mcpURL string) string {
+	t.Helper()
+	root := filepath.Join(parent, "pcb-plugin-source")
+	meta := filepath.Join(root, pluginregistry.ManifestDirectory)
+	skillDir := filepath.Join(root, "skills", "pcb-layout")
+	if err := os.MkdirAll(meta, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	document := "---\nname: pcb-layout\ndescription: Plan and verify PCB layout.\nversion: 1.0.0\n---\n\n# PCB layout\n"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(document), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := pluginregistry.Manifest{
+		SchemaVersion: 1,
+		Name:          "pcb",
+		Description:   "PCB design capabilities.",
+		Version:       "1.0.0",
+		MCPServers: map[string]mcpclient.ServerConfig{
+			"easyeda-test": {
+				Description: "EasyEDA test tools.", Transport: mcpclient.TransportStreamableHTTP,
+				URL: mcpURL, Enabled: true, TimeoutMS: 2000,
+			},
+		},
+	}
+	data, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(meta, pluginregistry.ManifestFilename), append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
 }
 
 func callPluginLoad(rt *Runtime, name string) error {

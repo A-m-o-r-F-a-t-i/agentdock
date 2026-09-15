@@ -696,10 +696,37 @@
     <value>功能与插件</value>
   </data>
   <data name="CapabilitiesDescription" xml:space="preserve">
-    <value>可独立启用或停用 Skill 与 MCP 服务。重插件把同一领域的能力收拢到一层描述下，模型加载插件后才会看到其中成员的说明。</value>
+    <value>安装自包含的重插件目录或 ZIP 包。每个插件直接携带自己的 Skill、MCP 定义、实现文件和本地状态，不使用插件缓存中间层。</value>
   </data>
   <data name="AddPlugin" xml:space="preserve">
-    <value>添加插件</value>
+    <value>安装插件包</value>
+  </data>
+  <data name="UpdatePlugin" xml:space="preserve">
+    <value>更新插件包</value>
+  </data>
+  <data name="PluginPackageMetadata" xml:space="preserve">
+    <value>版本 {0} · {1}</value>
+  </data>
+  <data name="ChoosePluginFolder" xml:space="preserve">
+    <value>选择插件目录</value>
+  </data>
+  <data name="ChoosePluginZip" xml:space="preserve">
+    <value>选择插件 ZIP</value>
+  </data>
+  <data name="PluginSourceHelp" xml:space="preserve">
+    <value>选择包含 .agentdock-plugin/plugin.json 的插件目录或 ZIP。AgentDock 会把完整插件直接复制到 ~/.agentdock/plugins/&lt;name&gt;，不会增加 cache 中间层。</value>
+  </data>
+  <data name="UpdatePluginSourceHelp" xml:space="preserve">
+    <value>请选择插件 {0} 的完整替换包。包内清单名称必须一致，已有的兼容启用/停用状态会保留。</value>
+  </data>
+  <data name="PluginSourceRequired" xml:space="preserve">
+    <value>请选择一个存在的插件目录或 ZIP 压缩包。</value>
+  </data>
+  <data name="InstallingPluginPackage" xml:space="preserve">
+    <value>正在安装插件包 {0}…</value>
+  </data>
+  <data name="UpdatingPluginPackage" xml:space="preserve">
+    <value>正在更新插件 {0}…</value>
   </data>
   <data name="RefreshCapabilities" xml:space="preserve">
     <value>刷新功能列表</value>
@@ -723,7 +750,7 @@
     <value>已载入 {0} 个插件、{1} 个 Skill 和 {2} 个 MCP 服务。</value>
   </data>
   <data name="NoPlugins" xml:space="preserve">
-    <value>尚未配置插件。</value>
+    <value>尚未安装自包含插件。</value>
   </data>
   <data name="NoStandaloneSkills" xml:space="preserve">
     <value>没有独立 Skill。</value>
@@ -774,7 +801,7 @@
     <value>正在保存插件 {0}…</value>
   </data>
   <data name="ConfirmRemovePlugin" xml:space="preserve">
-    <value>删除插件 {0}？其中的 Skill 与 MCP 服务会保留，并重新显示在独立功能列表中。</value>
+    <value>要删除插件 {0} 吗？这会删除它完整的自包含目录，包括插件内 Skill 和随包 MCP 实现文件；env/mcp 下的外部凭据不会删除。</value>
   </data>
   <data name="RemovingPlugin" xml:space="preserve">
     <value>正在删除插件 {0}…</value>

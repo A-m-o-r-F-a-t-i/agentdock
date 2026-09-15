@@ -82,6 +82,20 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := mcpClients.SetExternalServerProvider(func() (map[string]mcpclient.ServerConfig, error) {
+		members, providerErr := pluginStore.MCPServers()
+		if providerErr != nil {
+			return nil, providerErr
+		}
+		servers := make(map[string]mcpclient.ServerConfig, len(members))
+		for name, member := range members {
+			servers[name] = member.Config
+		}
+		return servers, nil
+	}); err != nil {
+		_ = mcpClients.Close()
+		return nil, fmt.Errorf("initialize plugin MCP provider: %w", err)
+	}
 	tasks, err := taskstate.New(filepath.Join(cfg.AgentDockHome, "tasks"))
 	if err != nil {
 		_ = mcpClients.Close()
@@ -93,6 +107,30 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		toolNames: toolNames, toolValidators: toolValidators,
 		commandCtx: commandCtx, commandCancel: commandCancel,
 	}
+	if err := runtime.skills.SetPluginSkillProvider(
+		func(name string) (toolskill.PluginSkill, bool, error) {
+			member, found, lookupErr := pluginStore.Skill(name)
+			return toolskill.PluginSkill{
+				Name: member.Name, Plugin: member.Plugin, Path: member.Path, Enabled: member.Enabled,
+			}, found, lookupErr
+		},
+		func() ([]toolskill.PluginSkill, error) {
+			members, lookupErr := pluginStore.Skills()
+			if lookupErr != nil {
+				return nil, lookupErr
+			}
+			items := make([]toolskill.PluginSkill, 0, len(members))
+			for _, member := range members {
+				items = append(items, toolskill.PluginSkill{
+					Name: member.Name, Plugin: member.Plugin, Path: member.Path, Enabled: member.Enabled,
+				})
+			}
+			return items, nil
+		},
+	); err != nil {
+		_ = mcpClients.Close()
+		return nil, fmt.Errorf("initialize plugin Skill provider: %w", err)
+	}
 	runtime.command = toolcommand.New(func() config.Config { return runtime.cfg }, ws, envs, skills.ResolveActive, runtime.commandExecutionContext)
 	runtime.files = toolfile.New(ws, skills.ResolveResource, runtime.command.CommandEnv)
 	runtime.dynamicMCP = toolmcp.New(mcpClients, envs)
@@ -102,7 +140,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 			item, found, lookupErr := runtime.skills.CapabilityItem(name)
 			return toolplugin.SkillItem{
 				Name: item.Name, Description: item.Description, File: item.File,
-				Bundled: item.Bundled, Enabled: item.Enabled,
+				Bundled: item.Bundled, Enabled: item.Enabled, Plugin: item.Plugin,
 			}, found, lookupErr
 		},
 		func(ctx context.Context, name string, expand bool) (toolplugin.MCPItem, bool, error) {
@@ -123,7 +161,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 				})
 			}
 			return toolplugin.MCPItem{
-				Name: item.Name, Description: item.Description, Status: item.Status,
+				Name: item.Name, Description: item.Description, Plugin: item.Plugin, Status: item.Status,
 				ToolCount: item.ToolCount, LastErrorCode: item.LastErrorCode,
 				ToolLoadError: item.ToolLoadError, Enabled: item.Enabled, Tools: mappedTools,
 			}, found, lookupErr

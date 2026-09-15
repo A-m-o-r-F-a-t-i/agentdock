@@ -1,7 +1,7 @@
 ---
 name: skill-installation
 description: 审查、安装、配置、激活、验证、更新、回滚和卸载 AgentDock Skill 时使用；负责来源校验、安全评估、环境配置和已安装版本验收。
-version: 1.2.1
+version: 1.3.0
 ---
 
 # Skill Installation
@@ -34,6 +34,42 @@ version: 1.2.1
 5. 环境变量只通过 AgentDock 的 Skill 独立环境管理能力配置。
 6. 安装成功不等于可用；必须验证当前激活版本、索引、正文、引用和只读状态。
 7. 回滚只切换已安装版本，不删除私有状态，也不覆盖共享环境配置。
+
+## Codex 风格目录布局
+
+新安装使用以下结构：
+
+```text
+~/.agentdock/skills/
+├── <skill-name>/                    # 当前激活的用户 Skill
+├── .system/<skill-name>/            # 当前激活的内置 Skill
+├── .versions/<skill-name>/<version>/# 未激活版本与回滚版本
+├── .state/<skill-name>.json         # 版本、禁用状态与分类元数据
+├── .cache/                          # 下载与校验缓存
+├── .locks/                          # 安装、激活和卸载锁
+└── .tmp/                            # 同一文件系统内的事务暂存
+```
+
+顶层用户目录与 `.system` 目录刻意兼容 Codex 的 Skill 发现方式；多版本、回滚和事务状态放在隐藏目录中。不要手工拼接这些路径：读取正文使用 `skill://<name>/...`，运行脚本使用绑定了 `skill` 的 `exec_command`，版本管理使用 `skill_package`。
+
+旧的 `~/.agentdock/skill-store/` 不会被新源码自动迁移或合并。迁移必须作为独立、显式、可回滚的操作处理，不能在普通启动或安装过程中静默执行。
+
+环境变量和私有运行数据继续与安装包隔离：
+
+- `~/.agentdock/env/skill/<skill-name>.env`；
+- `~/.agentdock/skill-data/<skill-name>/`。
+
+### 插件内 Skill 的边界
+
+自包含重插件中的 Skill 位于 `~/.agentdock/plugins/<plugin>/skills/<skill-name>`，其安装、更新、删除和启停由插件包与 `plugin_manage` 统一管理。遇到插件内 Skill 时：
+
+- 不要把它再次安装到 `~/.agentdock/skills/<skill-name>`；
+- 不要使用独立 `skill_package activate/uninstall/enable/disable` 改写其状态；
+- 更新整个插件时重新审查插件清单、全部 Skill、MCP 定义、脚本和二进制；
+- 环境变量仍通过按 Skill/MCP 名称隔离的正式环境管理能力配置，不写入插件包；
+- `skill://<name>/...` 与绑定 Skill 的 `exec_command` 会解析到插件携带的当前成员目录。
+
+插件目录或 ZIP 的完整审查不能由单个 Skill 的 `skill_package validate` 代替；应先使用 `plugin_manage validate`，再按本 Skill 的安全规则审查每个包含的 Skill。
 
 ## 标准流程
 

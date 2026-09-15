@@ -119,7 +119,7 @@ func Bootstrap(ctx context.Context, state *skillstate.Store, manager *skills.Man
 
 	activated := make([]candidate, 0, len(candidates))
 	for _, item := range candidates {
-		if err := state.Activate(ctx, item.manifest.Name, item.manifest.Version); err != nil {
+		if err := state.ActivateBundled(ctx, item.manifest.Name, item.manifest.Version); err != nil {
 			rollbackErr := rollbackBootstrap(context.WithoutCancel(ctx), state, activated, installed, snapshots)
 			return Result{}, errors.Join(fmt.Errorf("activate bundled skill %s: %w", item.manifest.Name, err), rollbackErr)
 		}

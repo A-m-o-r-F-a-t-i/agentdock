@@ -17,6 +17,9 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 	switch action {
 	case "list":
 		servers := s.mcpClients.List()
+		for index := range servers {
+			servers[index].Plugin = s.pluginName(servers[index].Name)
+		}
 		return Result{"action": action, "servers": servers, "count": len(servers)}, nil
 	case "inspect":
 		name := request.Name
@@ -24,6 +27,7 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		if err != nil {
 			return nil, dynamicMCPToolError(err)
 		}
+		summary.Plugin = s.pluginName(summary.Name)
 		return Result{"action": action, "server": summary, "config": cfg}, nil
 	case "add":
 		cfg := mcpclient.ServerConfig{

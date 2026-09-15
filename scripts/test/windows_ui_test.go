@@ -245,11 +245,16 @@ func TestWindowsControlPanelManagesHeavyPluginsWithoutDuplicateTopLevelRows(t *t
 		},
 		"MainWindow.Capabilities.cs": {
 			`SetPluginEnabledAsync`,
+			`InstallPluginAsync`,
+			`UpdatePluginAsync`,
+			`SetPluginMemberEnabledAsync`,
 			`SetSkillEnabledAsync`,
 			`SetMcpEnabledAsync`,
-			`ownedSkills.Contains(skill.Identifier)`,
-			`ownedMcpServers.Contains(server.Name)`,
-			`ShowPluginDialog`,
+			`string.IsNullOrWhiteSpace(skill.Plugin)`,
+			`string.IsNullOrWhiteSpace(server.Plugin)`,
+			`ShowPluginSourceDialog`,
+			`Forms.FolderBrowserDialog`,
+			`OpenFileDialog`,
 		},
 		filepath.Join("Services", "RuntimeService.cs"): {
 			`"/internal/runtime/plugins"`,
@@ -285,7 +290,10 @@ func TestWindowsControlPanelManagesHeavyPluginsWithoutDuplicateTopLevelRows(t *t
 			t.Fatalf("read %s: %v", resourceFile, err)
 		}
 		content := string(data)
-		for _, key := range []string{"Capabilities", "CapabilitiesDescription", "AddPlugin", "PluginMemberSelectionHelp"} {
+		for _, key := range []string{
+			"Capabilities", "CapabilitiesDescription", "AddPlugin", "UpdatePlugin",
+			"PluginSourceHelp", "UpdatePluginSourceHelp", "PluginPackageMetadata",
+		} {
 			if !strings.Contains(content, `name="`+key+`"`) {
 				t.Fatalf("Windows heavy-plugin localization missing %q in %s", key, resourceFile)
 			}

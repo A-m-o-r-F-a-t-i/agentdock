@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	skills "github.com/uvwt/agentdock/internal/skill"
 )
 
 const (
@@ -112,6 +114,19 @@ func (s *Service) runtimeSkillPackageDir(skill string) (string, string, error) {
 	skill = strings.TrimSpace(skill)
 	if skill == "" || filepath.Base(skill) != skill || strings.ContainsAny(skill, `/\\`) || strings.Contains(skill, "..") {
 		return "", "", toolErrorDetails("INVALID_SKILL", "invalid skill name", "validation", map[string]any{"skill": skill})
+	}
+	if s.pluginSkill != nil {
+		member, found, err := s.pluginSkill(skill)
+		if err != nil {
+			return "", "", toolErrorCause("PLUGIN_STATE_INVALID", "resolve plugin Skill package", "runtime", map[string]any{"skill": skill}, err)
+		}
+		if found {
+			document, loadErr := skills.LoadSkillDocument(member.Path)
+			if loadErr != nil {
+				return "", "", skillToolError(loadErr)
+			}
+			return member.Path, document.Version, nil
+		}
 	}
 	selection, err := s.state.Snapshot(skill)
 	if err != nil {

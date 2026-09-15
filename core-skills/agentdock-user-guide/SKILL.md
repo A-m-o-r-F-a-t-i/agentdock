@@ -1,7 +1,7 @@
 ---
 name: agentdock-user-guide
 description: 当用户询问 AgentDock 是什么、如何使用、配置在哪里、不同平台或安装方式怎样修改配置并生效、如何重启或验证配置、如何发现并配置 Codex/Claude/Grok 等 Coding Agent 的 ACP，以及常见运行问题时使用；覆盖 macOS Desktop、Windows Desktop、Linux 服务、Docker 和直接运行二进制，不用于源码开发与贡献流程。
-version: 1.3.0
+version: 1.4.1
 ---
 
 # AgentDock User Guide
@@ -54,6 +54,55 @@ AgentDock 的用户文档独立维护在 [uvwt/agentdock-docs](https://github.co
 AgentDock 主仓库的 `core-skills/` 只保留必须随 AgentDock 运行时一起安装和升级的内置核心 Skill；需要查找、阅读、贡献或发布其他 Skill 时，应优先查看 AgentDock Skills 仓库。安装第三方或社区 Skill 前仍应进行来源和安全审查。
 
 官方仓库：<https://github.com/uvwt/agentdock-skills>
+
+### Skill 与重插件目录
+
+当前 AgentDock 使用接近 Codex 的 Skill 可见目录：
+
+```text
+~/.agentdock/skills/<skill-name>/
+~/.agentdock/skills/.system/<bundled-skill>/
+```
+
+多版本、回滚与事务元数据保存在 `skills/.versions`、`.state`、`.locks`、`.cache` 和 `.tmp`。不要让用户手工操作这些隐藏目录；安装、激活、回滚和卸载应使用 `skill_package`。旧的 `~/.agentdock/skill-store` 不会在普通启动时被静默迁移。
+
+重插件不是对现有 Skill/MCP 的逻辑分组，而是自包含安装单元：
+
+```text
+~/.agentdock/plugins/<plugin-name>/
+├── .agentdock-plugin/plugin.json
+├── .agentdock-plugin/state.json
+├── skills/<skill-name>/
+├── bin/
+├── scripts/
+└── assets/
+```
+
+插件可以直接携带一个或多个 Skill、MCP 定义以及实现文件。AgentDock 不创建 `plugins/cache`，也不维护中心 `plugins.json` 作为成员事实源。插件目录或 ZIP 中必须包含 `.agentdock-plugin/plugin.json`；安装后，完整包直接位于 `plugins/<name>`。
+
+管理规则：
+
+- 安装、更新、删除整个插件使用 `plugin_manage` 或 Windows 控制面板“功能与插件”页；
+- 插件更新必须使用同名完整替换包，并保留兼容的总开关与成员开关；
+- 插件内 Skill/MCP 的开关通过插件状态管理，不能再用独立 Skill/MCP 的安装、更新、删除接口修改；
+- 删除插件会删除插件自身目录及其中的 Skill、MCP 实现文件，但不会自动删除 `env/mcp` 中独立保存的凭据；
+- `agentdock_context` 只暴露插件第一层领域描述；命中该领域后先调用 `plugin_load`，再读取展开的 Skill 或 MCP 工具；
+- 无服务器限定的普通 `mcp_tool_search` 不搜索尚未展开的插件 MCP。
+
+从旧的逻辑分组格式迁移时，必须在停止 Core 后对副本执行显式迁移：把成员 Skill 复制进插件目录，把 MCP 定义写入插件清单，移除迁移副本里的重复独立注册，并保留成员开关。不要在运行中的真实 `~/.agentdock` 上静默改造。
+
+Windows 源码树提供离线迁移入口：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+  .\scripts\migrate\migrate-agentdock-home.ps1 `
+  -SourceHome "$HOME\.agentdock" `
+  -DestinationHome "D:\AgentDock-Delivery\.agentdock" `
+  -RepositoryRoot "$PWD" `
+  -PluginPlanPath "$env:TEMP\agentdock-plugin-migration-plan.json"
+```
+
+迁移计划应放在仓库外，因为其中可能包含本机实现路径。脚本只读取源目录并写入独立目标，前后计算稳定指纹，替换为当前源码树携带的 Core Skill，生成 `migration-report.json`，并把目标 ACL 收紧到当前用户和 `SYSTEM`。源与目标相同、目标位于源目录内部、目标出现 `plugins/cache`/中央 `plugins.json` 或残留 `skill-store` 都会失败。
 
 ### ChatGPT 的工具 Schema 缓存
 

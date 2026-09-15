@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -15,7 +16,7 @@ class SkillAuthoringLintTests(unittest.TestCase):
         env = os.environ.copy()
         env["PYTHONDONTWRITEBYTECODE"] = "1"
         proc = subprocess.run(
-            [str(ROOT / "run.py")],
+            [sys.executable, str(ROOT / "run.py")],
             input=json.dumps(payload),
             text=True,
             capture_output=True,
@@ -121,7 +122,7 @@ description: Demo.
 version: 1.0.0
 ---
 
-运行 `python3 ~/.agentdock/skill-store/installed/demo-skill/1.0.0/run.py`。
+运行 `python3 ~/.agentdock/skills/demo-skill/run.py`。
 """, "from pathlib import Path\nPath('~/.agentdock/env/skill/demo-skill.env').expanduser().read_text()\n")
         self.addCleanup(temp.cleanup)
 
@@ -140,7 +141,7 @@ version: 1.0.0
 ---
 
 ```bash
-SKILL_DIR="$AGENTDOCK_HOME/skill-store/installed/demo-skill/1.0.0"
+SKILL_DIR="$AGENTDOCK_HOME/skills/.versions/demo-skill/1.0.0"
 python3 "$SKILL_DIR/run.py"
 ```
 """)
@@ -180,7 +181,7 @@ version: 1.0.0
 
 - `AGENTDOCK_SKILL_DIR`
 - `AGENTDOCK_DIR`
-- `~/.agentdock/skill-store/installed/demo-skill/1.0.0`
+- `~/.agentdock/skills/demo-skill`
 """)
         self.addCleanup(temp.cleanup)
 

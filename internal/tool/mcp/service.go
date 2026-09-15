@@ -28,6 +28,7 @@ func (s *Service) SetPluginMembershipLookup(lookup PluginMembershipLookup) {
 type CapabilityItem struct {
 	Name          string
 	Description   string
+	Plugin        string
 	Enabled       bool
 	Status        string
 	ToolCount     int
@@ -51,7 +52,8 @@ func (s *Service) CapabilityItems() []CapabilityItem {
 			continue
 		}
 		items = append(items, CapabilityItem{
-			Name: server.Name, Description: server.Description, Enabled: server.Enabled, Status: server.Status,
+			Name: server.Name, Description: server.Description, Plugin: s.pluginName(server.Name),
+			Enabled: server.Enabled, Status: server.Status,
 			ToolCount: server.ToolCount, LastErrorCode: server.LastErrorCode,
 		})
 	}
@@ -68,9 +70,21 @@ func (s *Service) CapabilityItem(name string) (CapabilityItem, bool, error) {
 		return CapabilityItem{}, false, err
 	}
 	return CapabilityItem{
-		Name: server.Name, Description: server.Description, Enabled: server.Enabled, Status: server.Status,
+		Name: server.Name, Description: server.Description, Plugin: s.pluginName(server.Name),
+		Enabled: server.Enabled, Status: server.Status,
 		ToolCount: server.ToolCount, LastErrorCode: server.LastErrorCode,
 	}, true, nil
+}
+
+func (s *Service) pluginName(name string) string {
+	if s.pluginMembership == nil {
+		return ""
+	}
+	plugin, _, owned, err := s.pluginMembership(strings.TrimSpace(name))
+	if err != nil || !owned {
+		return ""
+	}
+	return plugin
 }
 
 // PluginCapabilityItem expands the complete MCP tool-description index only

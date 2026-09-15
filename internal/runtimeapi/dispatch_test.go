@@ -121,13 +121,12 @@ func TestDispatchCapabilityManagementRequests(t *testing.T) {
 
 	if _, err := Dispatch(context.Background(), runtime, Request{
 		Method: "POST", Path: "/internal/runtime/plugins",
-		Body: []byte(`{"action":"upsert","name":"pcb","description":"PCB tools","enabled":true,"skills":["layout"],"mcp_servers":["easyeda"]}`),
+		Body: []byte(`{"action":"install","source":"D:\\packages\\pcb.zip"}`),
 	}); err != nil {
 		t.Fatal(err)
 	}
 	wantPlugin := map[string]any{
-		"action": "upsert", "name": "pcb", "description": "PCB tools", "enabled": true,
-		"skills": []string{"layout"}, "mcp_servers": []string{"easyeda"},
+		"action": "install", "source": `D:\packages\pcb.zip`,
 	}
 	if !reflect.DeepEqual(runtime.pluginArgs, wantPlugin) {
 		t.Fatalf("plugin args = %#v, want %#v", runtime.pluginArgs, wantPlugin)

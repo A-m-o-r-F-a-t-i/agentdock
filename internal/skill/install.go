@@ -118,6 +118,11 @@ func (m *Manager) finishInstall(ctx context.Context, req InstallRequest, doc Ski
 		if err := m.State.Activate(ctx, doc.Name, doc.Version); err != nil {
 			return InstallResult{}, packageError(ErrInstallFailed, "activate", err)
 		}
+		activePath, err := m.State.Resolve(doc.Name, "")
+		if err != nil {
+			return InstallResult{}, packageError(ErrInstallFailed, "activate.resolve", err)
+		}
+		result.Path = activePath
 		result.Activated = true
 	}
 	return result, nil

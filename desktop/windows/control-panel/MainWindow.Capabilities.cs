@@ -1,7 +1,8 @@
-using System.Text.RegularExpressions;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Microsoft.Win32;
 using Button = System.Windows.Controls.Button;
 using CheckBox = System.Windows.Controls.CheckBox;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
@@ -10,15 +11,12 @@ using Orientation = System.Windows.Controls.Orientation;
 using TextBox = System.Windows.Controls.TextBox;
 using Brushes = System.Windows.Media.Brushes;
 using Color = System.Windows.Media.Color;
+using Forms = System.Windows.Forms;
 
 namespace AgentDock.ControlPanel;
 
 public partial class MainWindow
 {
-    private static readonly Regex PluginIdentifierPattern = new(
-        "^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$",
-        RegexOptions.CultureInvariant | RegexOptions.Compiled);
-
     private readonly SemaphoreSlim _capabilityGate = new(1, 1);
     private CapabilityInventory _capabilityInventory = new();
     private bool _updatingCapabilities;
@@ -115,20 +113,16 @@ public partial class MainWindow
                 PluginListPanel.Children.Add(BuildEmptyCapabilityText("NoPlugins"));
             }
 
-            var ownedSkills = plugins
-                .SelectMany(plugin => plugin.Skills ?? [])
-                .ToHashSet(StringComparer.Ordinal);
-            var ownedMcpServers = plugins
-                .SelectMany(plugin => plugin.McpServers ?? [])
-                .ToHashSet(StringComparer.Ordinal);
+            var ownedSkills = plugins.SelectMany(plugin => plugin.Skills ?? []).ToHashSet(StringComparer.Ordinal);
+            var ownedMcpServers = plugins.SelectMany(plugin => plugin.McpServers ?? []).ToHashSet(StringComparer.Ordinal);
 
             var standaloneSkills = _capabilityInventory.Skills
-                .Where(skill => !ownedSkills.Contains(skill.Identifier))
+                .Where(skill => string.IsNullOrWhiteSpace(skill.Plugin) && !ownedSkills.Contains(skill.Identifier))
                 .OrderBy(skill => skill.DisplayName, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
             foreach (var skill in standaloneSkills)
             {
-                StandaloneSkillListPanel.Children.Add(BuildSkillCapabilityRow(skill, nested: false));
+                StandaloneSkillListPanel.Children.Add(BuildSkillCapabilityRow(skill, nested: false, pluginName: ""));
             }
             if (standaloneSkills.Count == 0)
             {
@@ -136,12 +130,12 @@ public partial class MainWindow
             }
 
             var standaloneMcp = _capabilityInventory.McpServers
-                .Where(server => !ownedMcpServers.Contains(server.Name))
+                .Where(server => string.IsNullOrWhiteSpace(server.Plugin) && !ownedMcpServers.Contains(server.Name))
                 .OrderBy(server => server.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
             foreach (var server in standaloneMcp)
             {
-                StandaloneMcpListPanel.Children.Add(BuildMcpCapabilityRow(server, nested: false));
+                StandaloneMcpListPanel.Children.Add(BuildMcpCapabilityRow(server, nested: false, pluginName: ""));
             }
             if (standaloneMcp.Count == 0)
             {
@@ -170,14 +164,14 @@ public partial class MainWindow
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center
         };
-        var edit = new Button
+        var update = new Button
         {
-            Content = UiText.Get("Edit"),
+            Content = UiText.Get("UpdatePlugin"),
             Tag = plugin.Name,
             MinWidth = 70,
             Margin = new Thickness(8, 0, 0, 0)
         };
-        edit.Click += PluginEditButton_Click;
+        update.Click += PluginUpdateButton_Click;
         var remove = new Button
         {
             Content = UiText.Get("Delete"),
@@ -198,11 +192,11 @@ public partial class MainWindow
         toggle.Unchecked += PluginToggle_Changed;
 
         Grid.SetColumn(title, 0);
-        Grid.SetColumn(edit, 1);
+        Grid.SetColumn(update, 1);
         Grid.SetColumn(remove, 2);
         Grid.SetColumn(toggle, 3);
         header.Children.Add(title);
-        header.Children.Add(edit);
+        header.Children.Add(update);
         header.Children.Add(remove);
         header.Children.Add(toggle);
         content.Children.Add(header);
@@ -211,18 +205,29 @@ public partial class MainWindow
             Text = plugin.Description,
             Foreground = new SolidColorBrush(Color.FromRgb(102, 112, 133)),
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 6, 0, 10)
+            Margin = new Thickness(0, 6, 0, 3)
+        });
+        content.Children.Add(new TextBlock
+        {
+            Text = UiText.Format("PluginPackageMetadata", plugin.Version, plugin.Path),
+            Foreground = new SolidColorBrush(Color.FromRgb(102, 112, 133)),
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 10)
         });
 
-        var skillsByName = _capabilityInventory.Skills.ToDictionary(skill => skill.Identifier, StringComparer.Ordinal);
-        var mcpByName = _capabilityInventory.McpServers.ToDictionary(server => server.Name, StringComparer.Ordinal);
+        var skillsByName = _capabilityInventory.Skills
+            .GroupBy(skill => skill.Identifier, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var mcpByName = _capabilityInventory.McpServers
+            .GroupBy(server => server.Name, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         if ((plugin.Skills?.Count ?? 0) > 0)
         {
             content.Children.Add(BuildPluginSectionTitle(UiText.Get("PluginSkills")));
             foreach (var name in (plugin.Skills ?? []).OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
             {
                 content.Children.Add(skillsByName.TryGetValue(name, out var skill)
-                    ? BuildSkillCapabilityRow(skill, nested: true)
+                    ? BuildSkillCapabilityRow(skill, nested: true, pluginName: plugin.Name)
                     : BuildUnavailableCapabilityRow("Skill", name));
             }
         }
@@ -232,7 +237,7 @@ public partial class MainWindow
             foreach (var name in (plugin.McpServers ?? []).OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
             {
                 content.Children.Add(mcpByName.TryGetValue(name, out var server)
-                    ? BuildMcpCapabilityRow(server, nested: true)
+                    ? BuildMcpCapabilityRow(server, nested: true, pluginName: plugin.Name)
                     : BuildUnavailableCapabilityRow("MCP", name));
             }
         }
@@ -256,7 +261,7 @@ public partial class MainWindow
         Margin = new Thickness(0, 8, 0, 3)
     };
 
-    private Border BuildSkillCapabilityRow(SkillCapabilityInfo skill, bool nested)
+    private Border BuildSkillCapabilityRow(SkillCapabilityInfo skill, bool nested, string pluginName)
     {
         var details = skill.Description;
         var metadata = new List<string>();
@@ -283,11 +288,11 @@ public partial class MainWindow
             title,
             details,
             skill.Enabled,
-            new CapabilityToggleTarget("skill", skill.Identifier),
+            new CapabilityToggleTarget("skill", skill.Identifier, pluginName),
             nested);
     }
 
-    private Border BuildMcpCapabilityRow(McpCapabilityInfo server, bool nested)
+    private Border BuildMcpCapabilityRow(McpCapabilityInfo server, bool nested, string pluginName)
     {
         var metadata = UiText.Format("McpStatusSummary", server.Status, server.ToolCount);
         var details = string.IsNullOrWhiteSpace(server.Description)
@@ -301,7 +306,7 @@ public partial class MainWindow
             server.Name,
             details,
             server.Enabled,
-            new CapabilityToggleTarget("mcp", server.Name),
+            new CapabilityToggleTarget("mcp", server.Name, pluginName),
             nested);
     }
 
@@ -400,9 +405,15 @@ public partial class MainWindow
         var pendingKey = enabled ? "EnablingCapability" : "DisablingCapability";
         await ExecuteCapabilityActionAsync(
             UiText.Format(pendingKey, target.Name),
-            target.Kind == "skill"
-                ? () => _runtime.SetSkillEnabledAsync(target.Name, enabled)
-                : () => _runtime.SetMcpEnabledAsync(target.Name, enabled));
+            string.IsNullOrWhiteSpace(target.Plugin)
+                ? target.Kind == "skill"
+                    ? () => _runtime.SetSkillEnabledAsync(target.Name, enabled)
+                    : () => _runtime.SetMcpEnabledAsync(target.Name, enabled)
+                : () => _runtime.SetPluginMemberEnabledAsync(
+                    target.Plugin,
+                    target.Kind == "skill" ? "skill" : "mcp_server",
+                    target.Name,
+                    enabled));
     }
 
     private async void AddPluginButton_Click(object sender, RoutedEventArgs e)
@@ -411,35 +422,30 @@ public partial class MainWindow
         {
             return;
         }
-        var plugin = ShowPluginDialog(null);
-        if (plugin is null)
+        var source = ShowPluginSourceDialog(pluginName: null);
+        if (string.IsNullOrWhiteSpace(source))
         {
             return;
         }
         await ExecuteCapabilityActionAsync(
-            UiText.Format("SavingPlugin", plugin.Name),
-            () => _runtime.UpsertPluginAsync(plugin));
+            UiText.Format("InstallingPluginPackage", Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))),
+            () => _runtime.InstallPluginAsync(source));
     }
 
-    private async void PluginEditButton_Click(object sender, RoutedEventArgs e)
+    private async void PluginUpdateButton_Click(object sender, RoutedEventArgs e)
     {
         if (_updatingCapabilities || sender is not Button button || button.Tag is not string name)
         {
             return;
         }
-        var existing = _capabilityInventory.Plugins.FirstOrDefault(plugin => plugin.Name == name);
-        if (existing is null)
-        {
-            return;
-        }
-        var plugin = ShowPluginDialog(existing);
-        if (plugin is null)
+        var source = ShowPluginSourceDialog(name);
+        if (string.IsNullOrWhiteSpace(source))
         {
             return;
         }
         await ExecuteCapabilityActionAsync(
-            UiText.Format("SavingPlugin", plugin.Name),
-            () => _runtime.UpsertPluginAsync(plugin));
+            UiText.Format("UpdatingPluginPackage", name),
+            () => _runtime.UpdatePluginAsync(name, source));
     }
 
     private async void PluginRemoveButton_Click(object sender, RoutedEventArgs e)
@@ -463,110 +469,72 @@ public partial class MainWindow
             () => _runtime.RemovePluginAsync(name));
     }
 
-    private PluginCapabilityInfo? ShowPluginDialog(PluginCapabilityInfo? existing)
+    private string? ShowPluginSourceDialog(string? pluginName)
     {
-        var editing = existing is not null;
+        var updating = !string.IsNullOrWhiteSpace(pluginName);
         var dialog = new Window
         {
-            Title = UiText.Get(editing ? "EditPlugin" : "AddPlugin"),
+            Title = UiText.Get(updating ? "UpdatePlugin" : "AddPlugin"),
             Owner = this,
             Width = 680,
-            Height = 720,
+            Height = 280,
             MinWidth = 560,
-            MinHeight = 520,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ResizeMode = ResizeMode.CanResize,
+            ResizeMode = ResizeMode.NoResize,
             ShowInTaskbar = false
         };
-
-        var nameInput = new TextBox
+        var pathInput = new TextBox
         {
-            Text = existing?.Name ?? "",
-            IsReadOnly = editing,
-            Margin = new Thickness(0, 5, 0, 10)
+            Margin = new Thickness(0, 6, 0, 10),
+            MinHeight = 30,
+            VerticalContentAlignment = VerticalAlignment.Center
         };
-        var descriptionInput = new TextBox
+        var chooseFolder = new Button
         {
-            Text = existing?.Description ?? "",
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.Wrap,
-            MinHeight = 70,
-            MaxHeight = 120,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            Margin = new Thickness(0, 5, 0, 10)
+            Content = UiText.Get("ChoosePluginFolder"),
+            MinWidth = 120,
+            Height = 32
         };
-        var enabledInput = new CheckBox
+        chooseFolder.Click += (_, _) =>
         {
-            Content = UiText.Get("EnablePluginAfterSaving"),
-            IsChecked = existing?.Enabled ?? true,
-            Margin = new Thickness(0, 0, 0, 12)
-        };
-
-        var otherPlugins = _capabilityInventory.Plugins
-            .Where(plugin => existing is null || plugin.Name != existing.Name)
-            .ToList();
-        var unavailableSkills = otherPlugins
-            .SelectMany(plugin => plugin.Skills ?? [])
-            .ToHashSet(StringComparer.Ordinal);
-        var unavailableMcp = otherPlugins
-            .SelectMany(plugin => plugin.McpServers ?? [])
-            .ToHashSet(StringComparer.Ordinal);
-        var selectedSkills = (existing?.Skills ?? []).ToHashSet(StringComparer.Ordinal);
-        var selectedMcp = (existing?.McpServers ?? []).ToHashSet(StringComparer.Ordinal);
-        var skillChecks = new Dictionary<string, CheckBox>(StringComparer.Ordinal);
-        var mcpChecks = new Dictionary<string, CheckBox>(StringComparer.Ordinal);
-
-        var members = new StackPanel();
-        members.Children.Add(new TextBlock
-        {
-            Text = UiText.Get("PluginMemberSelectionHelp"),
-            Foreground = new SolidColorBrush(Color.FromRgb(102, 112, 133)),
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 10)
-        });
-        members.Children.Add(new TextBlock { Text = UiText.Get("PluginSkills"), FontWeight = FontWeights.SemiBold });
-        foreach (var skill in _capabilityInventory.Skills
-                     .Where(skill => !unavailableSkills.Contains(skill.Identifier))
-                     .OrderBy(skill => skill.DisplayName, StringComparer.CurrentCultureIgnoreCase))
-        {
-            var check = new CheckBox
+            using var picker = new Forms.FolderBrowserDialog
             {
-                Content = string.Equals(skill.DisplayName, skill.Identifier, StringComparison.Ordinal)
-                    ? skill.DisplayName
-                    : $"{skill.DisplayName} ({skill.Identifier})",
-                IsChecked = selectedSkills.Contains(skill.Identifier),
-                ToolTip = skill.Description,
-                Margin = new Thickness(12, 6, 0, 0)
+                Description = UiText.Get("ChoosePluginFolder"),
+                UseDescriptionForTitle = true,
+                ShowNewFolderButton = false
             };
-            skillChecks[skill.Identifier] = check;
-            members.Children.Add(check);
-        }
-        members.Children.Add(new TextBlock
-        {
-            Text = UiText.Get("PluginMcpServers"),
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 14, 0, 0)
-        });
-        foreach (var server in _capabilityInventory.McpServers
-                     .Where(server => !unavailableMcp.Contains(server.Name))
-                     .OrderBy(server => server.Name, StringComparer.OrdinalIgnoreCase))
-        {
-            var check = new CheckBox
+            if (picker.ShowDialog() == Forms.DialogResult.OK)
             {
-                Content = server.Name,
-                IsChecked = selectedMcp.Contains(server.Name),
-                ToolTip = server.Description,
-                Margin = new Thickness(12, 6, 0, 0)
-            };
-            mcpChecks[server.Name] = check;
-            members.Children.Add(check);
-        }
-
-        var save = new Button
+                pathInput.Text = picker.SelectedPath;
+            }
+        };
+        var chooseZip = new Button
         {
-            Content = UiText.Get("Save"),
+            Content = UiText.Get("ChoosePluginZip"),
+            MinWidth = 120,
+            Height = 32,
+            Margin = new Thickness(8, 0, 0, 0)
+        };
+        chooseZip.Click += (_, _) =>
+        {
+            var picker = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = UiText.Get("ChoosePluginZip"),
+                Filter = "AgentDock plugin (*.zip)|*.zip|All files (*.*)|*.*",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+            if (picker.ShowDialog(dialog) == true)
+            {
+                pathInput.Text = picker.FileName;
+            }
+        };
+
+        var accept = new Button
+        {
+            Content = UiText.Get(updating ? "UpdatePlugin" : "AddPlugin"),
             IsDefault = true,
-            MinWidth = 88,
+            MinWidth = 96,
             Height = 32,
             Margin = new Thickness(8, 0, 0, 0)
         };
@@ -578,85 +546,49 @@ public partial class MainWindow
             Height = 32,
             Margin = new Thickness(8, 0, 0, 0)
         };
-        save.Click += (_, _) =>
+        accept.Click += (_, _) =>
         {
-            var name = nameInput.Text.Trim();
-            if (!PluginIdentifierPattern.IsMatch(name))
+            var source = pathInput.Text.Trim();
+            if (source.Length == 0 || (!Directory.Exists(source) && !File.Exists(source)))
             {
-                MessageBox.Show(dialog, UiText.Get("PluginNameInvalid"), "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
-                nameInput.Focus();
-                return;
-            }
-            if (!editing && _capabilityInventory.Plugins.Any(plugin => plugin.Name == name))
-            {
-                MessageBox.Show(dialog, UiText.Get("PluginNameExists"), "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
-                nameInput.Focus();
-                return;
-            }
-            if (descriptionInput.Text.Trim().Length == 0)
-            {
-                MessageBox.Show(dialog, UiText.Get("PluginDescriptionRequired"), "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
-                descriptionInput.Focus();
-                return;
-            }
-            if (!skillChecks.Values.Any(check => check.IsChecked == true) &&
-                !mcpChecks.Values.Any(check => check.IsChecked == true))
-            {
-                MessageBox.Show(dialog, UiText.Get("PluginMemberRequired"), "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show(dialog, UiText.Get("PluginSourceRequired"), "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
+                pathInput.Focus();
                 return;
             }
             dialog.DialogResult = true;
         };
 
+        var sourceButtons = new StackPanel { Orientation = Orientation.Horizontal };
+        sourceButtons.Children.Add(chooseFolder);
+        sourceButtons.Children.Add(chooseZip);
         var body = new StackPanel { Margin = new Thickness(18) };
-        body.Children.Add(new TextBlock { Text = UiText.Get("PluginName"), FontWeight = FontWeights.SemiBold });
-        body.Children.Add(nameInput);
-        body.Children.Add(new TextBlock { Text = UiText.Get("PluginDescription"), FontWeight = FontWeights.SemiBold });
-        body.Children.Add(descriptionInput);
-        body.Children.Add(enabledInput);
-        body.Children.Add(members);
-
-        var scroller = new ScrollViewer
+        body.Children.Add(new TextBlock
         {
-            Content = body,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
-        };
+            Text = updating
+                ? UiText.Format("UpdatePluginSourceHelp", pluginName!)
+                : UiText.Get("PluginSourceHelp"),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new SolidColorBrush(Color.FromRgb(102, 112, 133))
+        });
+        body.Children.Add(pathInput);
+        body.Children.Add(sourceButtons);
+
         var rightButtons = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
             Margin = new Thickness(18, 10, 18, 18)
         };
-        rightButtons.Children.Add(save);
+        rightButtons.Children.Add(accept);
         rightButtons.Children.Add(cancel);
         var layout = new DockPanel();
         DockPanel.SetDock(rightButtons, Dock.Bottom);
         layout.Children.Add(rightButtons);
-        layout.Children.Add(scroller);
+        layout.Children.Add(body);
         dialog.Content = layout;
-        dialog.Loaded += (_, _) => nameInput.Focus();
-        if (dialog.ShowDialog() != true)
-        {
-            return null;
-        }
-
-        return new PluginCapabilityInfo
-        {
-            Name = nameInput.Text.Trim(),
-            Description = descriptionInput.Text.Trim(),
-            Enabled = enabledInput.IsChecked == true,
-            Skills = skillChecks
-                .Where(pair => pair.Value.IsChecked == true)
-                .Select(pair => pair.Key)
-                .OrderBy(value => value, StringComparer.Ordinal)
-                .ToList(),
-            McpServers = mcpChecks
-                .Where(pair => pair.Value.IsChecked == true)
-                .Select(pair => pair.Key)
-                .OrderBy(value => value, StringComparer.Ordinal)
-                .ToList()
-        };
+        dialog.Loaded += (_, _) => pathInput.Focus();
+        return dialog.ShowDialog() == true ? pathInput.Text.Trim() : null;
     }
 
-    private sealed record CapabilityToggleTarget(string Kind, string Name);
+    private sealed record CapabilityToggleTarget(string Kind, string Name, string Plugin);
 }
