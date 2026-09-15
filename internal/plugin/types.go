@@ -3,48 +3,83 @@ package plugin
 import mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 
 const (
-	ManifestDirectory = ".agentdock-plugin"
-	ManifestFilename  = "plugin.json"
-	StateFilename     = "state.json"
+	ManifestDirectory  = ""
+	ManifestFilename   = "plugin.json"
+	MCPFilename        = "mcp.json"
+	StateFilename      = "state.json"
+	ManifestSchema     = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+	MCPSchema          = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+	ExtensionNamespace = "io.github.uvwt.agentdock"
 )
 
-// Manifest is the portable, self-contained heavy-plugin descriptor. The
-// plugin directory is the installation unit: document Skills live under
-// skills/<name>, MCP implementations and assets may live anywhere else in the
-// same package, and MCP server definitions stay in this manifest.
+// Manifest contains only the portable Agent Plugins 1.0.0 fields.
+// Installation state and credential references belong to the host store.
 type Manifest struct {
-	SchemaVersion int                               `json:"schema_version"`
-	Name          string                            `json:"name"`
-	Description   string                            `json:"description"`
-	Version       string                            `json:"version"`
-	MCPServers    map[string]mcpclient.ServerConfig `json:"mcpServers,omitempty"`
+	Schema      string            `json:"$schema"`
+	Name        string            `json:"name"`
+	Version     string            `json:"version,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Author      map[string]string `json:"author,omitempty"`
+	Homepage    string            `json:"homepage,omitempty"`
+	Repository  string            `json:"repository,omitempty"`
+	License     string            `json:"license,omitempty"`
+	Keywords    []string          `json:"keywords,omitempty"`
+	Extensions  map[string]any    `json:"extensions,omitempty"`
 }
 
-// State is installation-local and is never accepted from an untrusted plugin
-// package. Missing member entries default to enabled so adding a new member in
-// a plugin update does not silently hide it.
+type MCPConfig struct {
+	Schema     string               `json:"$schema"`
+	MCPServers map[string]MCPServer `json:"mcpServers"`
+}
+
+type MCPServer struct {
+	Type    string            `json:"type"`
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	Cwd     string            `json:"cwd,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// HostConfig is stored outside the package. Actual secrets remain in env/mcp.
+type HostConfig struct {
+	MCPServers map[string]MCPHostConfig `json:"mcp_servers,omitempty"`
+}
+
+type MCPHostConfig struct {
+	Description string            `json:"description,omitempty"`
+	HeaderEnv   map[string]string `json:"header_env,omitempty"`
+	EnvFromEnv  map[string]string `json:"env_from_env,omitempty"`
+	TimeoutMS   int               `json:"timeout_ms,omitempty"`
+	Command     string            `json:"command,omitempty"`
+}
+
+// State is never imported from an untrusted plugin package. Heavy is a host
+// override; nil follows the default supplied in the namespaced extension.
 type State struct {
 	Enabled    bool            `json:"enabled"`
+	Heavy      *bool           `json:"heavy,omitempty"`
 	Skills     map[string]bool `json:"skills,omitempty"`
 	MCPServers map[string]bool `json:"mcpServers,omitempty"`
 }
 
-// Definition is the management/API view derived from one installed plugin
-// directory. Skills and MCP servers are discovered from package contents, not
-// from a central logical grouping registry.
 type Definition struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
 	Version     string   `json:"version"`
 	Path        string   `json:"path"`
 	Enabled     bool     `json:"enabled"`
+	Heavy       bool     `json:"heavy"`
 	Skills      []string `json:"skills,omitempty"`
 	MCPServers  []string `json:"mcp_servers,omitempty"`
+	Diagnostics []string `json:"diagnostics,omitempty"`
 }
 
 type Membership struct {
 	Plugin  string `json:"plugin"`
 	Enabled bool   `json:"enabled"`
+	Heavy   bool   `json:"heavy"`
 }
 
 type SkillMember struct {

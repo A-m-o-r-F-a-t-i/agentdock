@@ -61,10 +61,7 @@ func (s *Service) CapabilityItem(name string) (CapabilityItem, bool, error) {
 			return CapabilityItem{}, false, err
 		}
 		if found {
-			if skills.ValidatePackage(member.Path) != nil {
-				return CapabilityItem{}, false, nil
-			}
-			doc, loadErr := skills.LoadSkillDocument(member.Path)
+			doc, loadErr := skills.LoadPortableSkillDocument(member.Path)
 			if loadErr != nil {
 				return CapabilityItem{}, false, nil
 			}
@@ -105,7 +102,8 @@ func (s *Service) RuntimeSkills() (Result, error) {
 	for _, item := range items {
 		skill, _ := item["skill"].(string)
 		version, _ := item["active_version"].(string)
-		if strings.TrimSpace(skill) == "" || strings.TrimSpace(version) == "" {
+		_, owned := item["plugin"]
+		if strings.TrimSpace(skill) == "" || (!owned && strings.TrimSpace(version) == "") {
 			continue
 		}
 		packageDir := ""
@@ -127,7 +125,12 @@ func (s *Service) RuntimeSkills() (Result, error) {
 				return nil, skillToolError(pathErr)
 			}
 		}
-		document, err := skills.LoadSkillDocument(packageDir)
+		var document skills.SkillDocument
+		if _, owned := item["plugin"]; owned {
+			document, err = skills.LoadPortableSkillDocument(packageDir)
+		} else {
+			document, err = skills.LoadSkillDocument(packageDir)
+		}
 		if err != nil {
 			return nil, skillToolError(err)
 		}
@@ -159,7 +162,8 @@ func (s *Service) RuntimeSkill(skill string) (Result, error) {
 	result["files"] = []runtimeSkillFile{}
 	result["file_count"] = 0
 	version, _ := result["version"].(string)
-	if strings.TrimSpace(version) == "" {
+	_, owned := result["plugin"]
+	if !owned && strings.TrimSpace(version) == "" {
 		return result, nil
 	}
 	packageDir, _, err := s.runtimeSkillPackageDir(skill)

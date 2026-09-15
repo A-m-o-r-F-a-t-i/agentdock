@@ -160,7 +160,6 @@
                        TextWrapping="Wrap"
                        Margin="0,0,0,14" />
             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-              <Button Content="{local:Loc AddPlugin}" Click="AddPluginButton_Click" />
               <Button Content="{local:Loc RefreshCapabilities}" Click="RefreshCapabilitiesButton_Click" />
             </StackPanel>
             <TextBlock x:Name="CapabilityStatusText"
@@ -180,6 +179,62 @@
             <GroupBox Header="{local:Loc StandaloneMcpServers}">
               <StackPanel x:Name="StandaloneMcpListPanel" />
             </GroupBox>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="{local:Loc RuntimeConfiguration}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+          <StackPanel x:Name="RuntimeOptionsPanel" Margin="18" Loaded="RuntimeOptionsPanel_Loaded">
+            <TextBlock Text="{local:Loc RuntimeConfigurationHelp}" TextWrapping="Wrap" Foreground="#667085" Margin="0,0,0,14" />
+            <GroupBox Header="{local:Loc WorkspaceAndInstructions}">
+              <StackPanel>
+                <TextBlock Text="{local:Loc DefaultGlobalWorkspace}" Margin="0,0,0,5" />
+                <DockPanel Margin="0,0,0,12">
+                  <Button DockPanel.Dock="Right" Content="{local:Loc Browse}" Margin="8,0,0,0" Click="DefaultWorkspaceBrowse_Click" />
+                  <TextBox x:Name="DefaultWorkspaceTextBox" VerticalContentAlignment="Center" />
+                </DockPanel>
+                <CheckBox x:Name="AgentsAutoLoadCheckBox" Content="{local:Loc AutoLoadAgentsRules}" Margin="0,0,0,12" />
+                <TextBlock Text="{local:Loc ExtraInstructionsFile}" Margin="0,0,0,5" />
+                <DockPanel Margin="0,0,0,6">
+                  <Button DockPanel.Dock="Right" Content="{local:Loc Browse}" Tag="instructions" Margin="8,0,0,0" Click="RuntimeFileBrowse_Click" />
+                  <TextBox x:Name="ExtraInstructionsTextBox" VerticalContentAlignment="Center" />
+                </DockPanel>
+                <TextBlock Text="{local:Loc ExtraInstructionsHelp}" TextWrapping="Wrap" Foreground="#667085" />
+              </StackPanel>
+            </GroupBox>
+            <GroupBox Header="{local:Loc ProcessAndNetwork}">
+              <StackPanel>
+                <TextBlock Text="{local:Loc BrowserExecutable}" Margin="0,0,0,5" />
+                <DockPanel Margin="0,0,0,12">
+                  <Button DockPanel.Dock="Right" Content="{local:Loc Browse}" Tag="browser" Margin="8,0,0,0" Click="RuntimeFileBrowse_Click" />
+                  <TextBox x:Name="BrowserExecutableTextBox" VerticalContentAlignment="Center" />
+                </DockPanel>
+                <TextBlock Text="{local:Loc TrustedProxyNetworks}" Margin="0,0,0,5" />
+                <TextBox x:Name="TrustedProxyTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="52" Margin="0,0,0,6" />
+                <TextBlock Text="{local:Loc TrustedProxyNetworksHelp}" TextWrapping="Wrap" Foreground="#667085" Margin="0,0,0,12" />
+                <TextBlock Text="{local:Loc CommandEnvironmentReferences}" Margin="0,0,0,5" />
+                <TextBox x:Name="CommandEnvReferencesTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="58" Margin="0,0,0,6" />
+                <TextBlock Text="{local:Loc CommandEnvironmentHelp}" TextWrapping="Wrap" Foreground="#667085" Margin="0,0,0,12" />
+                <TextBlock Text="{local:Loc AcpConcurrency}" Margin="0,0,0,5" />
+                <TextBox x:Name="AcpConcurrencyTextBox" Width="180" HorizontalAlignment="Left" Margin="0,0,0,12" />
+                <TextBlock Text="{local:Loc AcpInteractionTimeout}" Margin="0,0,0,5" />
+                <TextBox x:Name="AcpTimeoutTextBox" Width="180" HorizontalAlignment="Left" />
+              </StackPanel>
+            </GroupBox>
+            <GroupBox Header="{local:Loc ConfigurationLocations}">
+              <StackPanel>
+                <TextBlock Text="{local:Loc AgentDockDataDirectory}" Margin="0,0,0,5" />
+                <TextBox x:Name="AgentDockHomeTextBox" IsReadOnly="True" Margin="0,0,0,12" />
+                <TextBlock Text="{local:Loc ConfigurationFiles}" Margin="0,0,0,5" />
+                <TextBox x:Name="RuntimeConfigurationPathsTextBox" IsReadOnly="True" TextWrapping="Wrap" />
+              </StackPanel>
+            </GroupBox>
+            <TextBlock x:Name="RuntimeOptionsStatusText" TextWrapping="Wrap" Foreground="#475467" MinHeight="22" Margin="0,0,0,8" />
+            <StackPanel Orientation="Horizontal">
+              <Button x:Name="SaveRuntimeOptionsButton" Content="{local:Loc SaveAndRestart}" Click="SaveRuntimeOptions_Click" />
+              <Button x:Name="ReloadRuntimeOptionsButton" Content="{local:Loc ReloadConfiguration}" Click="ReloadRuntimeOptions_Click" />
+            </StackPanel>
           </StackPanel>
         </ScrollViewer>
       </TabItem>

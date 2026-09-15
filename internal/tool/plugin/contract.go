@@ -13,11 +13,11 @@ func InputSchema(name string) (map[string]any, bool) {
 	case ToolManage:
 		return toolcontract.InputObject(map[string]any{
 			"action": map[string]any{
-				"type": "string", "description": "Direct heavy-plugin package action.",
-				"enum": []string{"list", "inspect", "validate", "install", "update", "remove", "enable", "disable", "member_enable", "member_disable"},
+				"type": "string", "description": "Standard plugin package or host-state action.",
+				"enum": []string{"list", "inspect", "validate", "install", "update", "remove", "enable", "disable", "heavy_enable", "heavy_disable", "member_enable", "member_disable"},
 			},
 			"name":        stringProp("Installed plugin identifier for inspect, remove, switch, or member actions."),
-			"source":      stringProp("Local plugin directory or ZIP archive for validate, install, or update. It must contain .agentdock-plugin/plugin.json."),
+			"source":      stringProp("Local plugin directory or ZIP archive for validate, install, or update. It must contain root plugin.json using Agent Plugins 1.0.0."),
 			"member_type": map[string]any{"type": "string", "enum": []string{"skill", "mcp_server"}, "description": "Plugin member kind for member_enable/member_disable."},
 			"member":      stringProp("Plugin-owned Skill or MCP server name for member_enable/member_disable."),
 		}, "action"), true

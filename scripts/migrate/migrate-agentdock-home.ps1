@@ -11,6 +11,8 @@ param(
 
     [string] $PluginPlanPath = "",
 
+    [string] $AgentDockBinary = "",
+
     [switch] $Force
 )
 
@@ -177,6 +179,12 @@ if ([string]::Equals($source.TrimEnd('\'), $destination.TrimEnd('\'), [StringCom
 if ($destination.StartsWith($source.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw 'DestinationHome may not be inside SourceHome.'
 }
+if ($source.StartsWith($destination.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'DestinationHome may not contain SourceHome.'
+}
+if ([string]::IsNullOrWhiteSpace($AgentDockBinary)) { $AgentDockBinary = Join-Path $repository 'bin\agentdock.exe' }
+$AgentDockBinary = Resolve-FullPath $AgentDockBinary
+if (-not (Test-Path -LiteralPath $AgentDockBinary -PathType Leaf)) { throw 'Build this source tree and pass -AgentDockBinary with its executable path.' }
 if (Test-Path -LiteralPath $destination) {
     if (-not $Force) {
         throw "Destination already exists: $destination"
@@ -188,7 +196,7 @@ $sourceFingerprintBefore = Get-StableFingerprint $source
 
 # Copy user state first, but never copy the legacy Skill store, old logical
 # plugin registry, or volatile runtime temporary directory into the new home.
-$excludedTopLevel = @('skill-store', 'plugins', 'tmp')
+$excludedTopLevel = @('skill-store', 'tmp')
 foreach ($entry in Get-ChildItem -LiteralPath $source -Force) {
     if ($excludedTopLevel -contains $entry.Name) {
         continue
@@ -350,10 +358,11 @@ if ($null -ne $pluginPlan) {
 
     foreach ($plugin in @($pluginPlan.plugins)) {
         $pluginName = [string]$plugin.name
-        if ([string]::IsNullOrWhiteSpace($pluginName)) {
-            throw 'Plugin plan contains an empty name.'
+        if ($pluginName -cnotmatch '^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$' -or $pluginName.Contains('..') -or $pluginName.Contains('--')) {
+            throw 'Plugin plan contains an invalid Agent Plugins identifier.'
         }
         $installedPlugin = Join-Path $pluginRoot $pluginName
+        if (Test-Path -LiteralPath $installedPlugin) { throw "Plugin plan conflicts with a copied plugin: $pluginName" }
         New-Item -ItemType Directory -Path (Join-Path $installedPlugin '.agentdock-plugin') -Force | Out-Null
         New-Item -ItemType Directory -Path (Join-Path $installedPlugin 'skills') -Force | Out-Null
 
@@ -410,7 +419,9 @@ if ($null -ne $pluginPlan) {
                 if ([string]::IsNullOrWhiteSpace($implementationTarget)) {
                     throw "implementation_target is required for $pluginName/$serverName"
                 }
-                Copy-Tree (Resolve-FullPath $implementationSource) (Join-Path $installedPlugin $implementationTarget)
+                $implementationPath = Resolve-FullPath (Join-Path $installedPlugin $implementationTarget)
+                if (-not $implementationPath.StartsWith($installedPlugin.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Implementation target escapes the plugin package.' }
+                Copy-Tree (Resolve-FullPath $implementationSource) $implementationPath
             }
             $mcpMap[$serverName] = $config
             $mcpState[$serverName] = $memberEnabled
@@ -468,6 +479,13 @@ if ($null -ne $pluginPlan) {
     }
 }
 
+# Old plan descriptors are consumed only by the explicit migration boundary.
+# The delivered tree contains standard plugin.json/mcp.json and host-only state.
+$conversion = & $AgentDockBinary plugin migrate --home $destination
+if ($LASTEXITCODE -ne 0) { throw "Standard plugin migration failed with exit $LASTEXITCODE." }
+$conversionResult = $conversion | ConvertFrom-Json
+$migratedPlugins += @($conversionResult.migrated)
+
 $forbiddenCache = Join-Path (Join-Path $destination 'plugins') 'cache'
 $forbiddenRegistry = Join-Path (Join-Path $destination 'plugins') 'plugins.json'
 if (Test-Path -LiteralPath $forbiddenCache) {
@@ -502,7 +520,8 @@ $report = [ordered]@{
     source_fingerprint = $sourceFingerprintAfter
     created_at = [DateTime]::UtcNow.ToString('o')
     migrated_skills = @($migratedSkills | Sort-Object)
-    migrated_plugins = @($migratedPlugins | Sort-Object)
+    migrated_plugins = @($migratedPlugins | Sort-Object -Unique)
+    plugin_format = 'Agent Plugins 1.0.0'
     upgraded_core_skills = @($upgradedCoreSkills | Sort-Object)
     archived_mcp_servers = @($removedMcp.Keys | Sort-Object)
     archived_mcp_environment_files = @($archiveOnlyMcp.Keys | Where-Object {

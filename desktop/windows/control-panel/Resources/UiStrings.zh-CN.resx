@@ -696,37 +696,10 @@
     <value>功能与插件</value>
   </data>
   <data name="CapabilitiesDescription" xml:space="preserve">
-    <value>安装自包含的重插件目录或 ZIP 包。每个插件直接携带自己的 Skill、MCP 定义、实现文件和本地状态，不使用插件缓存中间层。</value>
-  </data>
-  <data name="AddPlugin" xml:space="preserve">
-    <value>安装插件包</value>
-  </data>
-  <data name="UpdatePlugin" xml:space="preserve">
-    <value>更新插件包</value>
+    <value>管理已安装的插件、Skill 和 MCP 服务。普通插件直接展示成员，Heavy 插件按需展开。开关与凭据保存在插件包之外。</value>
   </data>
   <data name="PluginPackageMetadata" xml:space="preserve">
     <value>版本 {0} · {1}</value>
-  </data>
-  <data name="ChoosePluginFolder" xml:space="preserve">
-    <value>选择插件目录</value>
-  </data>
-  <data name="ChoosePluginZip" xml:space="preserve">
-    <value>选择插件 ZIP</value>
-  </data>
-  <data name="PluginSourceHelp" xml:space="preserve">
-    <value>选择包含 .agentdock-plugin/plugin.json 的插件目录或 ZIP。AgentDock 会把完整插件直接复制到 ~/.agentdock/plugins/&lt;name&gt;，不会增加 cache 中间层。</value>
-  </data>
-  <data name="UpdatePluginSourceHelp" xml:space="preserve">
-    <value>请选择插件 {0} 的完整替换包。包内清单名称必须一致，已有的兼容启用/停用状态会保留。</value>
-  </data>
-  <data name="PluginSourceRequired" xml:space="preserve">
-    <value>请选择一个存在的插件目录或 ZIP 压缩包。</value>
-  </data>
-  <data name="InstallingPluginPackage" xml:space="preserve">
-    <value>正在安装插件包 {0}…</value>
-  </data>
-  <data name="UpdatingPluginPackage" xml:space="preserve">
-    <value>正在更新插件 {0}…</value>
   </data>
   <data name="RefreshCapabilities" xml:space="preserve">
     <value>刷新功能列表</value>
@@ -822,7 +795,7 @@
     <value>插件描述</value>
   </data>
   <data name="PluginNameInvalid" xml:space="preserve">
-    <value>标识符长度须为 1—64 个字符，可使用字母、数字、点、下划线、加号和连字符，首字符必须为字母或数字。</value>
+    <value>标识符使用 1—64 位小写字母、数字、点或连字符，首尾为字母或数字，不允许连续的点或连字符。</value>
   </data>
   <data name="PluginNameExists" xml:space="preserve">
     <value>该插件标识符已经存在。</value>
@@ -841,5 +814,77 @@
   </data>
   <data name="RuntimeApiRequestFailed" xml:space="preserve">
     <value>AgentDock Runtime API 请求失败，HTTP 状态码为 {0}。</value>
+  </data>
+  <data name="HeavyPluginHelp" xml:space="preserve">
+    <value>Heavy：先展示插件摘要，调用 plugin_load 后展开成员。关闭时直接展示已启用的 Skill/MCP。开关保存在宿主状态中，不改写插件包。</value>
+  </data>
+  <data name="PluginMemberSummary" xml:space="preserve">
+    <value>成员 · {0} 个 Skill · {1} 个 MCP 服务</value>
+  </data>
+  <data name="PluginDiagnosticCount" xml:space="preserve">
+    <value>有 {0} 项校验提示，展开可查看详情。</value>
+  </data>
+  <data name="RuntimeConfiguration" xml:space="preserve">
+    <value>运行配置</value>
+  </data>
+  <data name="RuntimeConfigurationHelp" xml:space="preserve">
+    <value>配置非敏感运行参数。保存前会校验，随后重启 Core；生效失败会恢复原设置。其他页面的设置及插件开关保持不变。</value>
+  </data>
+  <data name="WorkspaceAndInstructions" xml:space="preserve">
+    <value>工作区与规则</value>
+  </data>
+  <data name="DefaultGlobalWorkspace" xml:space="preserve">
+    <value>默认全局工作区（绝对路径）</value>
+  </data>
+  <data name="Browse" xml:space="preserve">
+    <value>浏览…</value>
+  </data>
+  <data name="AutoLoadAgentsRules" xml:space="preserve">
+    <value>自动加载全局与工作区的 AGENTS.md</value>
+  </data>
+  <data name="ExtraInstructionsFile" xml:space="preserve">
+    <value>额外指令文件（可留空）</value>
+  </data>
+  <data name="ExtraInstructionsHelp" xml:space="preserve">
+    <value>启用 AGENTS.md 自动加载时，通常保持此项为空。显式指定的文件必须存在，包含非空 UTF-8 文本，且不超过 64 KiB。</value>
+  </data>
+  <data name="ProcessAndNetwork" xml:space="preserve">
+    <value>进程与网络</value>
+  </data>
+  <data name="BrowserExecutable" xml:space="preserve">
+    <value>浏览器程序（留空自动查找）</value>
+  </data>
+  <data name="TrustedProxyNetworks" xml:space="preserve">
+    <value>可信代理 CIDR（每行一个，可留空）</value>
+  </data>
+  <data name="TrustedProxyNetworksHelp" xml:space="preserve">
+    <value>仅填写由你控制的反向代理网段。此项影响转发来源地址的识别，不会开放无认证访问。</value>
+  </data>
+  <data name="CommandEnvironmentReferences" xml:space="preserve">
+    <value>命令环境变量引用（JSON）</value>
+  </data>
+  <data name="CommandEnvironmentHelp" xml:space="preserve">
+    <value>填写子进程变量名与宿主变量名的映射，例如 {"API_TOKEN":"MY_API_TOKEN"}。只填写变量名称，不填写凭据值。无需额外映射时使用 {}。</value>
+  </data>
+  <data name="AcpConcurrency" xml:space="preserve">
+    <value>ACP 并发提示数（1—8）</value>
+  </data>
+  <data name="AcpInteractionTimeout" xml:space="preserve">
+    <value>ACP 交互超时（1000—3600000 毫秒）</value>
+  </data>
+  <data name="ConfigurationLocations" xml:space="preserve">
+    <value>配置位置（只读）</value>
+  </data>
+  <data name="AgentDockDataDirectory" xml:space="preserve">
+    <value>AgentDock 数据目录</value>
+  </data>
+  <data name="ConfigurationFiles" xml:space="preserve">
+    <value>设置文件与运行清单</value>
+  </data>
+  <data name="ReloadConfiguration" xml:space="preserve">
+    <value>重新读取已保存值</value>
+  </data>
+  <data name="RuntimeOptionsInvalid" xml:space="preserve">
+    <value>请填写绝对工作区路径、有效的 JSON 字符串映射，并确保 ACP 数值在标注范围内。</value>
   </data>
 </root>

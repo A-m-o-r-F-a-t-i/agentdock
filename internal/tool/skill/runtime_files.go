@@ -121,7 +121,7 @@ func (s *Service) runtimeSkillPackageDir(skill string) (string, string, error) {
 			return "", "", toolErrorCause("PLUGIN_STATE_INVALID", "resolve plugin Skill package", "runtime", map[string]any{"skill": skill}, err)
 		}
 		if found {
-			document, loadErr := skills.LoadSkillDocument(member.Path)
+			document, loadErr := skills.LoadPortableSkillDocument(member.Path)
 			if loadErr != nil {
 				return "", "", skillToolError(loadErr)
 			}

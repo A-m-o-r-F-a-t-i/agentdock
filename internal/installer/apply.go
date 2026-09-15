@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/envstore"
@@ -51,7 +52,9 @@ func rollbackInstall(ctx context.Context, request Request, staged stagedInstall)
 	if staged.Journal == nil {
 		return errors.New("rollback journal is missing")
 	}
-	return staged.Journal.Restore(ctx, request)
+	recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+	defer cancel()
+	return staged.Journal.Restore(recovery, request)
 }
 
 func switchLiveBinary(staged stagedInstall) error {

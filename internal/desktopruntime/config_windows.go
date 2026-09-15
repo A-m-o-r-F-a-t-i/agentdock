@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	agentconfig "github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
@@ -59,14 +60,22 @@ func restoreSnapshots(snapshots []fileSnapshot) error {
 }
 
 func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) error {
-	if request.BrowserEnabled && request.BrowserCDPURL == "" && !request.BrowserReuseExistingCDP {
-		if _, err := toolbrowser.FindExecutable("", toolbrowser.BrowserAuto); err != nil {
-			return fmt.Errorf("未检测到受支持的 Chrome、Chromium 或 Microsoft Edge，且未配置外部 CDP: %w", err)
-		}
-	}
 	runtime, err := loadTunnelRuntime(request.RuntimeRoot)
 	if err != nil {
 		return err
+	}
+	options := effectiveRuntimeOptions(runtime.manifest, runtime.settings)
+	if request.RuntimeOptions != nil {
+		options = *request.RuntimeOptions
+	}
+	options, err = normalizeRuntimeOptions(options)
+	if err != nil {
+		return err
+	}
+	if request.BrowserEnabled && request.BrowserCDPURL == "" && !request.BrowserReuseExistingCDP {
+		if _, err := toolbrowser.FindExecutable(options.BrowserExecutablePath, toolbrowser.BrowserAuto); err != nil {
+			return fmt.Errorf("未检测到受支持的 Chrome、Chromium 或 Microsoft Edge，且未配置外部 CDP: %w", err)
+		}
 	}
 	acpProfiles := append([]agentconfig.ACPProfile(nil), request.ACPProfiles...)
 	if request.ACPEnabled {
@@ -112,21 +121,21 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		return err
 	}
 	rollback := func(cause error) error {
+		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
+		defer cancel()
 		restoreErr := restoreSnapshots(snapshots)
 		oldRuntime, loadErr := loadTunnelRuntime(request.RuntimeRoot)
-		if loadErr == nil {
-			_ = platformServiceAction(ctx, oldRuntime.root, "restart")
+		if loadErr == nil && restoreErr == nil {
+			restoreErr = platformServiceAction(recovery, oldRuntime.root, "restart")
 			if oldRuntime.mode != "none" {
-				_ = startTunnel(ctx, oldRuntime)
+				restoreErr = errors.Join(restoreErr, startTunnel(recovery, oldRuntime))
 			}
 		}
-		if restoreErr != nil {
-			return fmt.Errorf("%w；同时恢复配置失败: %v", cause, restoreErr)
-		}
-		return cause
+		return errors.Join(cause, restoreErr, loadErr)
 	}
 
 	settings := controlPanelSettings{
+		RuntimeOptions:          &options,
 		Port:                    request.Port,
 		LogLevel:                request.LogLevel,
 		OAuthAccessTokenTTL:     request.OAuthAccessTokenTTL,
@@ -148,6 +157,7 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 	}
 
 	runtime.settings = settings
+	runtime.manifest.AgentDockDefaultDir = options.DefaultDir
 	publicURL := ""
 	manifestMode := runtime.mode
 	switch runtime.mode {

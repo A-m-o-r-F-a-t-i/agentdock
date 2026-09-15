@@ -1,7 +1,7 @@
 ---
 name: agentdock-user-guide
 description: 当用户询问 AgentDock 是什么、如何使用、配置在哪里、不同平台或安装方式怎样修改配置并生效、如何重启或验证配置、如何发现并配置 Codex/Claude/Grok 等 Coding Agent 的 ACP，以及常见运行问题时使用；覆盖 macOS Desktop、Windows Desktop、Linux 服务、Docker 和直接运行二进制，不用于源码开发与贡献流程。
-version: 1.4.1
+version: 1.5.0
 ---
 
 # AgentDock User Guide
@@ -55,54 +55,21 @@ AgentDock 主仓库的 `core-skills/` 只保留必须随 AgentDock 运行时一�
 
 官方仓库：<https://github.com/uvwt/agentdock-skills>
 
-### Skill 与重插件目录
+### Skill 与标准插件
 
-当前 AgentDock 使用接近 Codex 的 Skill 可见目录：
+独立 Skill 使用 `~/.agentdock/skills/<name>/`，内置 Skill 使用 `skills/.system/<name>/`。多版本与回滚数据继续由 `skill_package` 管理。
 
-```text
-~/.agentdock/skills/<skill-name>/
-~/.agentdock/skills/.system/<bundled-skill>/
-```
+插件采用 Agent Plugins 1.0.0，自包含目录直接安装在 `~/.agentdock/plugins/<name>/`。根目录 `plugin.json` 只保存标准元数据与命名空间扩展，`mcp.json` 保存标准 MCP 定义，Skill 位于 `skills/<name>/SKILL.md`。不创建第二层插件缓存，不把启停状态或凭据打进插件包。
 
-多版本、回滚与事务元数据保存在 `skills/.versions`、`.state`、`.locks`、`.cache` 和 `.tmp`。不要让用户手工操作这些隐藏目录；安装、激活、回滚和卸载应使用 `skill_package`。旧的 `~/.agentdock/skill-store` 不会在普通启动时被静默迁移。
+插件管理位于“功能与插件”页，每张卡片可展开或收起。普通插件的已启用 Skill/MCP 直接进入顶层索引。只有 Heavy 插件先显示摘要，命中后调用 `plugin_load` 展开成员。Heavy 开关与成员开关保存在宿主状态中，切换不改写原插件包。普通工具检索会搜索普通插件，Heavy 插件使用 `plugin_load` 返回的服务器名或完整工具名继续调用。
 
-重插件不是对现有 Skill/MCP 的逻辑分组，而是自包含安装单元：
+安装、更新、卸载使用 `plugin_manage`；插件内成员不能通过独立 Skill/MCP 接口重复安装或删除。更新保留总开关、Heavy 覆盖值和仍存在的成员开关。外部数据、凭据保留，卸载插件不会自动删除它们。
 
-```text
-~/.agentdock/plugins/<plugin-name>/
-├── .agentdock-plugin/plugin.json
-├── .agentdock-plugin/state.json
-├── skills/<skill-name>/
-├── bin/
-├── scripts/
-└── assets/
-```
+从 `.agentdock-plugin/plugin.json` 旧格式升级时，使用当前 Windows Setup。安装事务会停止旧实例、迁移清单及宿主状态、验证后启动新版，失败时按安装事务恢复。普通 Core 启动不进行隐式迁移。离线副本可以使用当前版本的 `agentdock plugin migrate --home <绝对数据目录>`；先停止写入该目录的进程，不在运行中的真实目录手工转换。
 
-插件可以直接携带一个或多个 Skill、MCP 定义以及实现文件。AgentDock 不创建 `plugins/cache`，也不维护中心 `plugins.json` 作为成员事实源。插件目录或 ZIP 中必须包含 `.agentdock-plugin/plugin.json`；安装后，完整包直接位于 `plugins/<name>`。
+需要从旧 `skill-store` 和逻辑分组迁移整个目录时，使用源码内 `scripts/migrate/migrate-agentdock-home.ps1`，显式提供不同的源/目标目录及当前 `-AgentDockBinary`，必要时提供仓库外的 `-PluginPlanPath`。源目录保持不变，结果报告保存在目标目录。
 
-管理规则：
-
-- 安装、更新、删除整个插件使用 `plugin_manage` 或 Windows 控制面板“功能与插件”页；
-- 插件更新必须使用同名完整替换包，并保留兼容的总开关与成员开关；
-- 插件内 Skill/MCP 的开关通过插件状态管理，不能再用独立 Skill/MCP 的安装、更新、删除接口修改；
-- 删除插件会删除插件自身目录及其中的 Skill、MCP 实现文件，但不会自动删除 `env/mcp` 中独立保存的凭据；
-- `agentdock_context` 只暴露插件第一层领域描述；命中该领域后先调用 `plugin_load`，再读取展开的 Skill 或 MCP 工具；
-- 无服务器限定的普通 `mcp_tool_search` 不搜索尚未展开的插件 MCP。
-
-从旧的逻辑分组格式迁移时，必须在停止 Core 后对副本执行显式迁移：把成员 Skill 复制进插件目录，把 MCP 定义写入插件清单，移除迁移副本里的重复独立注册，并保留成员开关。不要在运行中的真实 `~/.agentdock` 上静默改造。
-
-Windows 源码树提供离线迁移入口：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
-  .\scripts\migrate\migrate-agentdock-home.ps1 `
-  -SourceHome "$HOME\.agentdock" `
-  -DestinationHome "D:\AgentDock-Delivery\.agentdock" `
-  -RepositoryRoot "$PWD" `
-  -PluginPlanPath "$env:TEMP\agentdock-plugin-migration-plan.json"
-```
-
-迁移计划应放在仓库外，因为其中可能包含本机实现路径。脚本只读取源目录并写入独立目标，前后计算稳定指纹，替换为当前源码树携带的 Core Skill，生成 `migration-report.json`，并把目标 ACL 收紧到当前用户和 `SYSTEM`。源与目标相同、目标位于源目录内部、目标出现 `plugins/cache`/中央 `plugins.json` 或残留 `skill-store` 都会失败。
+Windows“运行配置”页可编辑默认全局工作区、AGENTS.md 自动加载、额外指令文件、浏览器程序、可信代理 CIDR、命令环境变量引用及 ACP 并发/超时。额外指令文件通常留空；明确配置的文件仍须存在、非空且符合 UTF-8/64 KiB 限制。保存会校验并重启，细节见 `references/windows.md`。
 
 ### ChatGPT 的工具 Schema 缓存
 

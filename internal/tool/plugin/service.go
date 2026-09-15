@@ -62,7 +62,7 @@ func (s *Service) CapabilityItems() ([]registry.Definition, error) {
 	}
 	items := make([]registry.Definition, 0, len(definitions))
 	for _, definition := range definitions {
-		if definition.Enabled {
+		if definition.Enabled && definition.Heavy {
 			items = append(items, definition)
 		}
 	}
@@ -133,6 +133,12 @@ func (s *Service) Manage(_ context.Context, request ManageRequest) (Result, erro
 			return nil, pluginToolError(err)
 		}
 		return Result{"action": action, "plugin": definition}, nil
+	case "heavy_enable", "heavy_disable":
+		definition, err := s.store.SetHeavy(request.Name, action == "heavy_enable")
+		if err != nil {
+			return nil, pluginToolError(err)
+		}
+		return Result{"action": action, "plugin": definition}, nil
 	case "member_enable", "member_disable":
 		definition, err := s.store.SetMemberEnabled(request.Name, request.MemberType, request.Member, action == "member_enable")
 		if err != nil {
@@ -142,7 +148,7 @@ func (s *Service) Manage(_ context.Context, request ManageRequest) (Result, erro
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported plugin_manage action", "validation", map[string]any{
 			"action":  action,
-			"allowed": []string{"list", "inspect", "validate", "install", "update", "remove", "enable", "disable", "member_enable", "member_disable"},
+			"allowed": []string{"list", "inspect", "validate", "install", "update", "remove", "enable", "disable", "heavy_enable", "heavy_disable", "member_enable", "member_disable"},
 		})
 	}
 }

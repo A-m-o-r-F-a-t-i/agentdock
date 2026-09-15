@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 	registry "github.com/uvwt/agentdock/internal/plugin"
 	toolcore "github.com/uvwt/agentdock/internal/tool/core"
 )
@@ -218,20 +217,19 @@ func writeToolPluginPackageVersion(t *testing.T, parent, name, version string, s
 			t.Fatal(err)
 		}
 	}
-	executable, err := os.Executable()
+	mcpServers := map[string]registry.MCPServer{}
+	for _, serverName := range serverNames {
+		mcpServers[serverName] = registry.MCPServer{Type: "stdio", Command: "test-server"}
+	}
+	mcpData, err := json.Marshal(registry.MCPConfig{Schema: registry.MCPSchema, MCPServers: mcpServers})
 	if err != nil {
 		t.Fatal(err)
 	}
-	mcpServers := map[string]mcpclient.ServerConfig{}
-	for _, serverName := range serverNames {
-		mcpServers[serverName] = mcpclient.ServerConfig{
-			Description: "Plugin MCP " + serverName + ".", Transport: mcpclient.TransportStdio,
-			Command: executable, Cwd: root, Enabled: true, TimeoutMS: 1000,
-		}
+	if err := os.WriteFile(filepath.Join(root, registry.MCPFilename), mcpData, 0600); err != nil {
+		t.Fatal(err)
 	}
-	manifest := registry.Manifest{
-		SchemaVersion: 1, Name: name, Description: "Plugin " + name + ".", Version: version, MCPServers: mcpServers,
-	}
+	manifest := registry.Manifest{Schema: registry.ManifestSchema, Name: name, Description: "Plugin " + name + ".", Version: version,
+		Extensions: map[string]any{registry.ExtensionNamespace: map[string]any{"heavy": true}}}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		t.Fatal(err)

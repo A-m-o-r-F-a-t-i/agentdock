@@ -554,7 +554,7 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 		"SetupLogging=yes",
 		"#include \"includes\\messages.iss\"",
 		"#include \"includes\\code.iss\"",
-		"DisableDirPage=yes",
+		"DisableDirPage=no",
 		"LanguageDetectionMethod=uilanguage",
 		"AgentDock active language: ",
 		"Name: \"chinesesimplified\"",
@@ -1050,6 +1050,39 @@ func TestWindowsSigningPinsConfiguredSelfSignedCertificate(t *testing.T) {
 	for _, forbidden := range []string{"StoreLocation]::CurrentUser", "TrustedPublisher", "TrustedPeople"} {
 		if strings.Contains(script, forbidden) {
 			t.Fatalf("sign-windows.ps1 must not modify Windows trust stores: %q", forbidden)
+		}
+	}
+}
+
+func TestWindowsSetupDirectorySelectionUsesAgentDockIdentity(t *testing.T) {
+	root := filepath.Join("..", "..", "packaging", "windows")
+	data, err := os.ReadFile(filepath.Join(root, "AgentDock.iss"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"AppName=AgentDock", "DefaultDirName={localappdata}\\AgentDock",
+		"DisableDirPage=no", "UsePreviousAppDir=yes", "AgentDockSetup-amd64", "AgentDockSetup-arm64",
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("Setup missing %q", want)
+		}
+	}
+	if strings.Contains(string(data), "AgentDock-heavy-plugin") {
+		t.Fatal("development worktree name must not become product identity")
+	}
+	data, err = os.ReadFile(filepath.Join(root, "includes", "code.iss"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"CreateInputOptionPage(\n    wpSelectDir,",
+		"ValidateSelectedInstallDirectory()", "CurPageID = wpSelectDir",
+		"ResolvedInstallRoot := RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue()));",
+		"' -InstallDir ' + QuoteArgument(ExpandConstant('{app}\\bin'))",
+	} {
+		if !strings.Contains(strings.ReplaceAll(string(data), "\r\n", "\n"), want) {
+			t.Errorf("Setup directory contract missing %q", want)
 		}
 	}
 }

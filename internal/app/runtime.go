@@ -175,6 +175,10 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		membership, owned, lookupErr := runtime.plugins.MCPMembership(name)
 		return membership.Plugin, membership.Enabled, owned, lookupErr
 	})
+	runtime.dynamicMCP.SetHeavyPluginLookup(func(name string) (bool, error) {
+		membership, owned, err := runtime.plugins.MCPMembership(name)
+		return owned && membership.Heavy, err
+	})
 	runtime.media = toolmedia.New(cfg, ws, runtime.command.InternalCommandEnv)
 	runtime.browser = toolbrowser.New(
 		toolbrowser.Config{AgentDockHome: cfg.AgentDockHome, ExecutablePath: cfg.BrowserExecutablePath, CDPURL: cfg.BrowserCDPURL, ReuseExistingCDP: cfg.BrowserReuseExistingCDP},

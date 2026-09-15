@@ -18,6 +18,13 @@ import (
 )
 
 var managedCoreEnvironment = []string{
+	"AGENTDOCK_STDIO",
+	"AGENTDOCK_DEFAULT_DIR",
+	"AGENTDOCK_AGENTS_AUTOLOAD",
+	"AGENTDOCK_INSTRUCTIONS_FILE",
+	"AGENTDOCK_BROWSER_EXECUTABLE_PATH",
+	"AGENTDOCK_TRUSTED_PROXY_CIDRS",
+	"AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON",
 	"AGENTDOCK_AUTH_TOKEN",
 	"AGENTDOCK_HOST",
 	"AGENTDOCK_PORT",
@@ -47,6 +54,7 @@ var managedCoreEnvironment = []string{
 }
 
 type controlPanelSettings struct {
+	RuntimeOptions          *RuntimeOptions          `json:"runtime_options,omitempty"`
 	Port                    int                      `json:"port"`
 	LogLevel                string                   `json:"log_level"`
 	OAuthAccessTokenTTL     string                   `json:"oauth_access_token_ttl,omitempty"`
@@ -69,6 +77,14 @@ func platformPrepareCoreEnvironment(runtimeRoot string) error {
 		return err
 	}
 	inheritedOAuthAccessTokenTTL := strings.TrimSpace(os.Getenv("AGENTDOCK_OAUTH_ACCESS_TOKEN_TTL"))
+	options, err := normalizeRuntimeOptions(effectiveRuntimeOptions(manifest, settings))
+	if err != nil {
+		return err
+	}
+	optionEnvironment, err := options.environment()
+	if err != nil {
+		return err
+	}
 
 	for _, name := range managedCoreEnvironment {
 		if err := os.Unsetenv(name); err != nil {
@@ -99,8 +115,8 @@ func platformPrepareCoreEnvironment(runtimeRoot string) error {
 	if path := strings.TrimSpace(manifest.AgentDockHome); path != "" {
 		managed["AGENTDOCK_HOME"] = filepath.Clean(path)
 	}
-	if path := strings.TrimSpace(manifest.AgentDockDefaultDir); path != "" {
-		managed["AGENTDOCK_DEFAULT_DIR"] = filepath.Clean(path)
+	for name, value := range optionEnvironment {
+		managed[name] = value
 	}
 	if settings.BrowserCDPURL != "" {
 		managed["AGENTDOCK_BROWSER_CDP_URL"] = settings.BrowserCDPURL
@@ -250,7 +266,11 @@ func effectiveOAuthAccessTokenTTL(configured, inherited string) string {
 	if configured = strings.TrimSpace(configured); configured != "" {
 		return configured
 	}
-	return strings.TrimSpace(inherited)
+	inherited = strings.TrimSpace(inherited)
+	if inherited != "" && agentconfig.ValidateOAuthAccessTokenTTL(inherited) == nil {
+		return inherited
+	}
+	return ""
 }
 
 func readProtectedText(path, entropy string) (string, error) {

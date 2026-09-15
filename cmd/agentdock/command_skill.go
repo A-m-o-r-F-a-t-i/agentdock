@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/uvwt/agentdock/internal/config"
@@ -28,11 +29,8 @@ func runSkillCommand(ctx context.Context, args []string, stdout, stderr io.Write
 		return errors.New("用法：agentdock skill bootstrap --bundle <目录>")
 	}
 
-	cfg, err := config.FromEnv()
+	cfg, err := config.StorageConfig(os.Getenv("AGENTDOCK_HOME"))
 	if err != nil {
-		return err
-	}
-	if err := cfg.Normalize(); err != nil {
 		return err
 	}
 	stateDir, err := config.SkillStateDir(cfg)

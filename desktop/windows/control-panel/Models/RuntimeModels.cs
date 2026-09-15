@@ -166,6 +166,12 @@ public sealed class CapabilityInventory
 
 public sealed class PluginCapabilityInfo
 {
+    [JsonPropertyName("heavy")]
+    public bool Heavy { get; set; }
+
+    [JsonPropertyName("diagnostics")]
+    public List<string> Diagnostics { get; set; } = [];
+
     [JsonPropertyName("name")]
     public string Name { get; set; } = "";
 

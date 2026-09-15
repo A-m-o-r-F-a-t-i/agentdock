@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
-
-	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 )
 
 func TestStoreTreatsMissingPluginDirectoryAsEmpty(t *testing.T) {
@@ -52,7 +50,7 @@ func TestStoreInstallsDirectPackageAndPersistsMemberState(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(wantRoot, ManifestDirectory, ManifestFilename)); err != nil {
 		t.Fatalf("installed manifest: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(wantRoot, ManifestDirectory, StateFilename)); err != nil {
+	if _, err := os.Stat(hostStatePath(wantRoot)); err != nil {
 		t.Fatalf("installed state: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(home, "plugins", "plugins.json")); !errors.Is(err, os.ErrNotExist) {
@@ -175,23 +173,22 @@ func TestStoreInstallsZipWithoutCacheLayer(t *testing.T) {
 	}
 }
 
-func TestStoreRejectsUnknownManifestFields(t *testing.T) {
+func TestStoreReportsUnknownManifestFields(t *testing.T) {
 	root := t.TempDir()
 	meta := filepath.Join(root, ManifestDirectory)
 	if err := os.MkdirAll(meta, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(meta, ManifestFilename), []byte(`{"schema_version":1,"name":"bad","description":"Bad.","version":"1.0.0","unknown":true}`), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(meta, ManifestFilename), []byte(`{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"bad","description":"Bad.","version":"1.0.0","unknown":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	store, err := New(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.Validate(root)
-	var pluginErr *Error
-	if !errors.As(err, &pluginErr) || pluginErr.Code != "PLUGIN_MANIFEST_INVALID" {
-		t.Fatalf("invalid manifest error = %#v", err)
+	definition, err := store.Validate(root)
+	if err != nil || len(definition.Diagnostics) != 1 {
+		t.Fatalf("expected reported unknown field, definition=%#v err=%v", definition, err)
 	}
 }
 
@@ -211,18 +208,18 @@ func writePluginPackage(t *testing.T, parent, name, version string, skillNames, 
 			t.Fatal(err)
 		}
 	}
-	executable, err := os.Executable()
+	servers := map[string]MCPServer{}
+	for _, serverName := range serverNames {
+		servers[serverName] = MCPServer{Type: "stdio", Command: "test-server"}
+	}
+	mcpData, err := json.Marshal(MCPConfig{Schema: MCPSchema, MCPServers: servers})
 	if err != nil {
 		t.Fatal(err)
 	}
-	servers := map[string]mcpclient.ServerConfig{}
-	for _, serverName := range serverNames {
-		servers[serverName] = mcpclient.ServerConfig{
-			Description: "Test MCP " + serverName + ".", Transport: mcpclient.TransportStdio,
-			Command: executable, Cwd: root, Enabled: true, TimeoutMS: 1000,
-		}
+	if err := os.WriteFile(filepath.Join(root, MCPFilename), mcpData, 0600); err != nil {
+		t.Fatal(err)
 	}
-	manifest := Manifest{SchemaVersion: 1, Name: name, Description: "Test plugin " + name + ".", Version: version, MCPServers: servers}
+	manifest := Manifest{Schema: ManifestSchema, Name: name, Description: "Test plugin " + name + ".", Version: version}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		t.Fatal(err)

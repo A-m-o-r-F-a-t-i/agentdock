@@ -13,7 +13,7 @@ using Microsoft.Win32;
 
 namespace AgentDock.ControlPanel;
 
-public sealed class RuntimeService : IDisposable
+public sealed partial class RuntimeService : IDisposable
 {
     private const string AuthEntropy = "agentdock.startup.v1";
     private const string OAuthPasswordEntropy = "agentdock.oauth.password.v1";
@@ -198,20 +198,6 @@ public sealed class RuntimeService : IDisposable
             HttpMethod.Post,
             "/internal/runtime/plugins",
             new { action = enabled ? "enable" : "disable", name },
-            cancellationToken);
-
-    public async Task InstallPluginAsync(string source, CancellationToken cancellationToken = default) =>
-        _ = await SendRuntimeApiAsync<JsonElement>(
-            HttpMethod.Post,
-            "/internal/runtime/plugins",
-            new { action = "install", source },
-            cancellationToken);
-
-    public async Task UpdatePluginAsync(string name, string source, CancellationToken cancellationToken = default) =>
-        _ = await SendRuntimeApiAsync<JsonElement>(
-            HttpMethod.Post,
-            "/internal/runtime/plugins",
-            new { action = "update", name, source },
             cancellationToken);
 
     public async Task SetPluginMemberEnabledAsync(

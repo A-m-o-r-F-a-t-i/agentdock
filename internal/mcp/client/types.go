@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 )
@@ -20,18 +21,23 @@ var (
 )
 
 type ServerConfig struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Transport   string            `json:"transport"`
-	URL         string            `json:"url,omitempty"`
-	Command     string            `json:"command,omitempty"`
-	Args        []string          `json:"args,omitempty"`
-	Cwd         string            `json:"cwd,omitempty"`
-	HeaderEnv   map[string]string `json:"header_env,omitempty"`
-	EnvFromEnv  map[string]string `json:"env_from_env,omitempty"`
-	RuntimeEnv  map[string]string `json:"-"`
-	Enabled     bool              `json:"enabled"`
-	TimeoutMS   int               `json:"timeout_ms,omitempty"`
+	// Package data are mapped by the plugin loader, never written to the native registry.
+	PluginRoot     string            `json:"-"`
+	PluginData     string            `json:"-"`
+	PackageEnv     map[string]string `json:"-"`
+	PackageHeaders map[string]string `json:"-"`
+	Name           string            `json:"name"`
+	Description    string            `json:"description"`
+	Transport      string            `json:"transport"`
+	URL            string            `json:"url,omitempty"`
+	Command        string            `json:"command,omitempty"`
+	Args           []string          `json:"args,omitempty"`
+	Cwd            string            `json:"cwd,omitempty"`
+	HeaderEnv      map[string]string `json:"header_env,omitempty"`
+	EnvFromEnv     map[string]string `json:"env_from_env,omitempty"`
+	RuntimeEnv     map[string]string `json:"-"`
+	Enabled        bool              `json:"enabled"`
+	TimeoutMS      int               `json:"timeout_ms,omitempty"`
 }
 
 type Tool struct {
@@ -97,6 +103,8 @@ func normalizeServerConfig(cfg ServerConfig) ServerConfig {
 	cfg.HeaderEnv = cloneStringMap(cfg.HeaderEnv)
 	cfg.EnvFromEnv = cloneStringMap(cfg.EnvFromEnv)
 	cfg.RuntimeEnv = cloneStringMap(cfg.RuntimeEnv)
+	cfg.PackageEnv = maps.Clone(cfg.PackageEnv)
+	cfg.PackageHeaders = maps.Clone(cfg.PackageHeaders)
 	return cfg
 }
 

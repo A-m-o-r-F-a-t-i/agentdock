@@ -53,3 +53,8 @@ func validEnvName(value string) bool {
 	}
 	return true
 }
+
+// ValidateEnvironmentMapping checks references, never secret values.
+func ValidateEnvironmentMapping(values map[string]string) error {
+	return validateEnvironmentMapping(values)
+}

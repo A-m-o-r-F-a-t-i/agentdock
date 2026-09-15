@@ -696,37 +696,10 @@ Update now?</value>
     <value>Capabilities</value>
   </data>
   <data name="CapabilitiesDescription" xml:space="preserve">
-    <value>Install self-contained heavy-plugin folders or ZIP packages. Each plugin directly carries its Skills, MCP definitions, implementation files, and local state; no plugin cache layer is used.</value>
-  </data>
-  <data name="AddPlugin" xml:space="preserve">
-    <value>Install plugin package</value>
-  </data>
-  <data name="UpdatePlugin" xml:space="preserve">
-    <value>Update package</value>
+    <value>Manage installed plugins, Skills, and MCP servers. Normal plugins expose members directly; Heavy plugins disclose them on demand. Switches and credentials stay outside packages.</value>
   </data>
   <data name="PluginPackageMetadata" xml:space="preserve">
     <value>Version {0} · {1}</value>
-  </data>
-  <data name="ChoosePluginFolder" xml:space="preserve">
-    <value>Choose plugin folder</value>
-  </data>
-  <data name="ChoosePluginZip" xml:space="preserve">
-    <value>Choose plugin ZIP</value>
-  </data>
-  <data name="PluginSourceHelp" xml:space="preserve">
-    <value>Select a plugin directory or ZIP containing .agentdock-plugin/plugin.json. AgentDock copies the complete package directly to ~/.agentdock/plugins/&lt;name&gt; without a cache layer.</value>
-  </data>
-  <data name="UpdatePluginSourceHelp" xml:space="preserve">
-    <value>Select a complete replacement package for plugin {0}. The package manifest name must match, and compatible enable/disable state is preserved.</value>
-  </data>
-  <data name="PluginSourceRequired" xml:space="preserve">
-    <value>Select an existing plugin directory or ZIP archive.</value>
-  </data>
-  <data name="InstallingPluginPackage" xml:space="preserve">
-    <value>Installing plugin package {0}…</value>
-  </data>
-  <data name="UpdatingPluginPackage" xml:space="preserve">
-    <value>Updating plugin {0}…</value>
   </data>
   <data name="RefreshCapabilities" xml:space="preserve">
     <value>Refresh capabilities</value>
@@ -822,7 +795,7 @@ Update now?</value>
     <value>Plugin description</value>
   </data>
   <data name="PluginNameInvalid" xml:space="preserve">
-    <value>Use 1–64 letters, numbers, dots, underscores, plus signs, or hyphens; the first character must be a letter or number.</value>
+    <value>Use 1–64 lowercase letters, digits, dots or hyphens; start and end with a letter or digit and avoid consecutive dots or hyphens.</value>
   </data>
   <data name="PluginNameExists" xml:space="preserve">
     <value>A plugin with this identifier already exists.</value>
@@ -841,5 +814,77 @@ Update now?</value>
   </data>
   <data name="RuntimeApiRequestFailed" xml:space="preserve">
     <value>The AgentDock Runtime API request failed with HTTP status {0}.</value>
+  </data>
+  <data name="HeavyPluginHelp" xml:space="preserve">
+    <value>Heavy: expose only the plugin summary until plugin_load. Off: expose enabled Skills and MCP servers directly. This switch is saved in host state, not in the package.</value>
+  </data>
+  <data name="PluginMemberSummary" xml:space="preserve">
+    <value>Members · {0} Skills · {1} MCP servers</value>
+  </data>
+  <data name="PluginDiagnosticCount" xml:space="preserve">
+    <value>{0} validation diagnostics; expand for details.</value>
+  </data>
+  <data name="RuntimeConfiguration" xml:space="preserve">
+    <value>Runtime configuration</value>
+  </data>
+  <data name="RuntimeConfigurationHelp" xml:space="preserve">
+    <value>Configure non-secret runtime options. Save validates the values and restarts Core; failed activation restores the previous settings. Other pages and plugin switches are preserved.</value>
+  </data>
+  <data name="WorkspaceAndInstructions" xml:space="preserve">
+    <value>Workspace and instructions</value>
+  </data>
+  <data name="DefaultGlobalWorkspace" xml:space="preserve">
+    <value>Default global workspace (absolute path)</value>
+  </data>
+  <data name="Browse" xml:space="preserve">
+    <value>Browse…</value>
+  </data>
+  <data name="AutoLoadAgentsRules" xml:space="preserve">
+    <value>Automatically load global and workspace AGENTS.md</value>
+  </data>
+  <data name="ExtraInstructionsFile" xml:space="preserve">
+    <value>Additional instructions file (optional)</value>
+  </data>
+  <data name="ExtraInstructionsHelp" xml:space="preserve">
+    <value>Normally leave this blank when AGENTS.md auto-loading is enabled. An explicit file must exist, contain non-empty UTF-8 text, and be at most 64 KiB.</value>
+  </data>
+  <data name="ProcessAndNetwork" xml:space="preserve">
+    <value>Processes and network</value>
+  </data>
+  <data name="BrowserExecutable" xml:space="preserve">
+    <value>Browser executable (blank for automatic discovery)</value>
+  </data>
+  <data name="TrustedProxyNetworks" xml:space="preserve">
+    <value>Trusted proxy CIDRs (one per line, optional)</value>
+  </data>
+  <data name="TrustedProxyNetworksHelp" xml:space="preserve">
+    <value>Trust only reverse proxies you control. CIDRs change how forwarded client addresses are interpreted; they do not enable unauthenticated access.</value>
+  </data>
+  <data name="CommandEnvironmentReferences" xml:space="preserve">
+    <value>Command environment references (JSON)</value>
+  </data>
+  <data name="CommandEnvironmentHelp" xml:space="preserve">
+    <value>Map child variable names to host variable names, for example {"API_TOKEN":"MY_API_TOKEN"}. Enter names only, never credential values. Use {} for no extra references.</value>
+  </data>
+  <data name="AcpConcurrency" xml:space="preserve">
+    <value>ACP concurrent prompts (1–8)</value>
+  </data>
+  <data name="AcpInteractionTimeout" xml:space="preserve">
+    <value>ACP interaction timeout (1000–3600000 ms)</value>
+  </data>
+  <data name="ConfigurationLocations" xml:space="preserve">
+    <value>Configuration locations (read-only)</value>
+  </data>
+  <data name="AgentDockDataDirectory" xml:space="preserve">
+    <value>AgentDock data directory</value>
+  </data>
+  <data name="ConfigurationFiles" xml:space="preserve">
+    <value>Settings file and runtime manifest</value>
+  </data>
+  <data name="ReloadConfiguration" xml:space="preserve">
+    <value>Reload saved values</value>
+  </data>
+  <data name="RuntimeOptionsInvalid" xml:space="preserve">
+    <value>Enter an absolute workspace path, valid JSON string-to-string references, and ACP values within the stated ranges.</value>
   </data>
 </root>

@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/uvwt/agentdock/internal/config"
-	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 	pluginregistry "github.com/uvwt/agentdock/internal/plugin"
 )
 
@@ -161,18 +160,17 @@ func writeAppPluginPackage(t *testing.T, parent, mcpURL string) string {
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(document), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manifest := pluginregistry.Manifest{
-		SchemaVersion: 1,
-		Name:          "pcb",
-		Description:   "PCB design capabilities.",
-		Version:       "1.0.0",
-		MCPServers: map[string]mcpclient.ServerConfig{
-			"easyeda-test": {
-				Description: "EasyEDA test tools.", Transport: mcpclient.TransportStreamableHTTP,
-				URL: mcpURL, Enabled: true, TimeoutMS: 2000,
-			},
-		},
+	mcpData, err := json.Marshal(pluginregistry.MCPConfig{Schema: pluginregistry.MCPSchema, MCPServers: map[string]pluginregistry.MCPServer{
+		"easyeda-test": {Type: "streamable-http", URL: mcpURL},
+	}})
+	if err != nil {
+		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, pluginregistry.MCPFilename), mcpData, 0600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := pluginregistry.Manifest{Schema: pluginregistry.ManifestSchema, Name: "pcb", Description: "PCB design capabilities.", Version: "1.0.0",
+		Extensions: map[string]any{pluginregistry.ExtensionNamespace: map[string]any{"heavy": true}}}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		t.Fatal(err)

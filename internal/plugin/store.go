@@ -18,17 +18,15 @@ import (
 
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
 	"github.com/uvwt/agentdock/internal/fs/filelock"
+	"github.com/uvwt/agentdock/internal/fs/securepath"
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
-	skills "github.com/uvwt/agentdock/internal/skill"
 )
 
 const (
-	manifestSchemaVersion = 1
-	maxManifestBytes      = 1 << 20
-	maxStateBytes         = 1 << 20
-	maxPluginFiles        = 20000
-	maxPluginBytes        = int64(512 << 20)
-	maxDescriptionBytes   = 4096
+	maxManifestBytes = 1 << 20
+	maxStateBytes    = 1 << 20
+	maxPluginFiles   = 20000
+	maxPluginBytes   = int64(512 << 20)
 )
 
 var identifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`)
@@ -71,9 +69,15 @@ func (s *Store) Root() string { return s.root }
 func (s *Store) Path() string { return s.root }
 
 func (s *Store) EnsureLayout() error {
-	for _, path := range []string{s.root, filepath.Dir(s.lockPath), s.tempRoot} {
+	for _, path := range []string{s.root, filepath.Dir(s.lockPath), s.tempRoot, filepath.Join(s.root, ".state"), filepath.Join(s.root, ".config"), filepath.Join(s.root, ".data")} {
+		if _, err := containedPath(s.root, path, true); err != nil {
+			return err
+		}
 		if err := os.MkdirAll(path, 0o700); err != nil {
 			return newError("PLUGIN_STORE_WRITE_FAILED", "create plugin store directory", map[string]any{"path": path}, err)
+		}
+		if err := securepath.EnsurePrivate(path); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -115,7 +119,7 @@ func (s *Store) Validate(source string) (Definition, error) {
 	return cloneDefinition(record.definition), nil
 }
 
-// Install copies one complete heavy-plugin package into plugins/<name>. The
+// Install copies one complete standard plugin package into plugins/<name>. The
 // destination directory is the runtime source of truth; no cache or central
 // member registry is created. replace=true updates an existing plugin while
 // preserving compatible enable/disable state.
@@ -155,7 +159,12 @@ func (s *Store) Install(source string, replace bool) (Definition, error) {
 	if err != nil {
 		return Definition{}, newError("PLUGIN_INSTALL_FAILED", "create plugin staging directory", nil, err)
 	}
-	defer os.RemoveAll(work)
+	keepBackup := false
+	defer func() {
+		if !keepBackup {
+			_ = os.RemoveAll(work)
+		}
+	}()
 	staged := filepath.Join(work, sourceRecord.manifest.Name)
 	if err := copyPackageTree(root, staged); err != nil {
 		return Definition{}, err
@@ -169,10 +178,7 @@ func (s *Store) Install(source string, replace bool) (Definition, error) {
 		oldRecord, hadOld = existing, true
 		state = mergeState(existing.state, sourceRecord)
 	}
-	if err := writeState(staged, state); err != nil {
-		return Definition{}, err
-	}
-	if _, err := readPackage(staged, true); err != nil {
+	if _, err := readPackage(staged, false); err != nil {
 		return Definition{}, err
 	}
 
@@ -185,17 +191,41 @@ func (s *Store) Install(source string, replace bool) (Definition, error) {
 	}
 	if err := os.Rename(staged, destination); err != nil {
 		if hadOld {
-			_ = os.Rename(backup, destination)
+			if restoreErr := os.Rename(backup, destination); restoreErr != nil {
+				keepBackup = true
+				return Definition{}, newError("PLUGIN_RECOVERY_REQUIRED", "restore previous plugin directory failed; backup retained", map[string]any{"backup": backup}, errors.Join(err, restoreErr))
+			}
 		}
 		return Definition{}, newError("PLUGIN_INSTALL_FAILED", "activate installed plugin directory", map[string]any{"name": sourceRecord.manifest.Name}, err)
 	}
-	if hadOld {
-		_ = os.RemoveAll(backup)
-		_ = oldRecord
+	rollback := func(cause error) (Definition, error) {
+		removeErr := os.RemoveAll(destination)
+		if hadOld {
+			renameErr := os.Rename(backup, destination)
+			stateErr := writeState(destination, oldRecord.state)
+			if renameErr != nil || stateErr != nil {
+				keepBackup = true
+				return Definition{}, newError("PLUGIN_RECOVERY_REQUIRED", "plugin update rollback failed; recovery files retained", map[string]any{"backup": backup}, errors.Join(cause, removeErr, renameErr, stateErr))
+			}
+			return Definition{}, errors.Join(cause, removeErr)
+		}
+		stateErr := os.Remove(hostStatePath(destination))
+		if errors.Is(stateErr, os.ErrNotExist) {
+			stateErr = nil
+		}
+		return Definition{}, errors.Join(cause, removeErr, stateErr)
+	}
+	if err := writeState(destination, state); err != nil {
+		return rollback(err)
 	}
 	installedRecord, err := readPackage(destination, true)
 	if err != nil {
-		return Definition{}, err
+		return rollback(err)
+	}
+	if hadOld {
+		if err := os.RemoveAll(backup); err != nil {
+			return Definition{}, err
+		}
 	}
 	return cloneDefinition(installedRecord.definition), nil
 }
@@ -219,12 +249,22 @@ func (s *Store) Remove(name string) error {
 	if err := os.RemoveAll(path); err != nil {
 		return newError("PLUGIN_STORE_WRITE_FAILED", "remove plugin directory", map[string]any{"name": name}, err)
 	}
+	if err := os.Remove(hostStatePath(path)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	return nil
 }
 
 func (s *Store) SetEnabled(name string, enabled bool) (Definition, error) {
 	return s.updateState(name, func(record packageRecord, state *State) error {
 		state.Enabled = enabled
+		return nil
+	})
+}
+
+func (s *Store) SetHeavy(name string, heavy bool) (Definition, error) {
+	return s.updateState(name, func(_ packageRecord, state *State) error {
+		state.Heavy = &heavy
 		return nil
 	})
 }
@@ -287,7 +327,7 @@ func (s *Store) SkillMembership(name string) (Membership, bool, error) {
 	name = strings.TrimSpace(name)
 	for _, record := range records {
 		if _, ok := record.skillPaths[name]; ok {
-			return Membership{Plugin: record.manifest.Name, Enabled: record.state.Enabled && memberEnabled(record.state.Skills, name)}, true, nil
+			return Membership{Plugin: record.manifest.Name, Heavy: record.definition.Heavy, Enabled: record.state.Enabled && memberEnabled(record.state.Skills, name)}, true, nil
 		}
 	}
 	return Membership{}, false, nil
@@ -302,7 +342,7 @@ func (s *Store) MCPMembership(name string) (Membership, bool, error) {
 	for _, record := range records {
 		if cfg, ok := record.mcpConfigs[name]; ok {
 			enabled := record.state.Enabled && memberEnabled(record.state.MCPServers, name) && cfg.Enabled
-			return Membership{Plugin: record.manifest.Name, Enabled: enabled}, true, nil
+			return Membership{Plugin: record.manifest.Name, Heavy: record.definition.Heavy, Enabled: enabled}, true, nil
 		}
 	}
 	return Membership{}, false, nil
@@ -353,6 +393,17 @@ func (s *Store) MCPServers() (map[string]MCPMember, error) {
 	for _, record := range records {
 		for name, config := range record.mcpConfigs {
 			config.Enabled = config.Enabled && record.state.Enabled && memberEnabled(record.state.MCPServers, name)
+			if config.Enabled && config.PluginData != "" {
+				if _, err := containedPath(s.root, config.PluginData, true); err != nil {
+					return nil, err
+				}
+				if err := os.MkdirAll(config.PluginData, 0o700); err != nil {
+					return nil, err
+				}
+				if err := securepath.EnsurePrivate(config.PluginData); err != nil {
+					return nil, err
+				}
+			}
 			items[name] = MCPMember{Plugin: record.manifest.Name, Config: config}
 		}
 	}
@@ -397,7 +448,9 @@ func (s *Store) scanUnlocked() (map[string]packageRecord, error) {
 		root := filepath.Join(s.root, entry.Name())
 		record, err := readPackage(root, true)
 		if err != nil {
-			return nil, err
+			records[entry.Name()] = packageRecord{root: root, manifest: Manifest{Name: entry.Name()},
+				definition: Definition{Name: entry.Name(), Path: root, Enabled: false, Diagnostics: []string{err.Error()}}}
+			continue
 		}
 		if record.manifest.Name != entry.Name() {
 			return nil, newError("PLUGIN_DIRECTORY_MISMATCH", "plugin directory name must equal manifest name", map[string]any{"directory": entry.Name(), "manifest_name": record.manifest.Name}, nil)
@@ -482,128 +535,9 @@ func locatePackageRoot(root string) (string, func(), error) {
 		}
 	}
 	if len(candidates) != 1 {
-		return "", nil, newError("PLUGIN_MANIFEST_NOT_FOUND", "plugin source must contain exactly one .agentdock-plugin/plugin.json", map[string]any{"source": root, "candidate_count": len(candidates)}, nil)
+		return "", nil, newError("PLUGIN_MANIFEST_NOT_FOUND", "plugin source must contain exactly one root plugin.json", map[string]any{"source": root, "candidate_count": len(candidates)}, nil)
 	}
 	return candidates[0], nil, nil
-}
-
-func readPackage(root string, installed bool) (packageRecord, error) {
-	manifestPath := filepath.Join(root, ManifestDirectory, ManifestFilename)
-	var manifest Manifest
-	if err := readStrictJSON(manifestPath, maxManifestBytes, &manifest); err != nil {
-		return packageRecord{}, newError("PLUGIN_MANIFEST_INVALID", "read plugin manifest", map[string]any{"path": manifestPath}, err)
-	}
-	manifest.Name = strings.TrimSpace(manifest.Name)
-	manifest.Description = strings.TrimSpace(manifest.Description)
-	manifest.Version = strings.TrimSpace(manifest.Version)
-	if manifest.SchemaVersion != manifestSchemaVersion {
-		return packageRecord{}, newError("PLUGIN_MANIFEST_VERSION_UNSUPPORTED", "unsupported plugin manifest schema version", map[string]any{"version": manifest.SchemaVersion}, nil)
-	}
-	if err := validateIdentifier("plugin", manifest.Name); err != nil {
-		return packageRecord{}, err
-	}
-	if err := validateIdentifier("version", manifest.Version); err != nil {
-		return packageRecord{}, err
-	}
-	if manifest.Description == "" {
-		return packageRecord{}, newError("PLUGIN_DESCRIPTION_REQUIRED", "plugin description is required", map[string]any{"name": manifest.Name}, nil)
-	}
-	if len([]byte(manifest.Description)) > maxDescriptionBytes {
-		return packageRecord{}, newError("PLUGIN_DESCRIPTION_TOO_LONG", "plugin description is too long", map[string]any{"name": manifest.Name, "maximum_bytes": maxDescriptionBytes}, nil)
-	}
-
-	skillPaths, err := discoverSkills(root)
-	if err != nil {
-		return packageRecord{}, err
-	}
-	configs := make(map[string]mcpclient.ServerConfig, len(manifest.MCPServers))
-	for rawName, rawConfig := range manifest.MCPServers {
-		name := strings.TrimSpace(rawName)
-		if err := validateIdentifier("MCP server", name); err != nil {
-			return packageRecord{}, err
-		}
-		config := rawConfig
-		if config.Name != "" && strings.TrimSpace(config.Name) != name {
-			return packageRecord{}, newError("PLUGIN_MCP_NAME_MISMATCH", "MCP map key and config name must match", map[string]any{"plugin": manifest.Name, "key": name, "name": config.Name}, nil)
-		}
-		config.Name = name
-		config = resolveMCPConfig(root, config)
-		config = mcpclient.NormalizeServerConfig(config)
-		if err := mcpclient.ValidateServerConfig(config); err != nil {
-			return packageRecord{}, newError("PLUGIN_MCP_INVALID", "validate plugin MCP server", map[string]any{"plugin": manifest.Name, "server": name}, err)
-		}
-		configs[name] = config
-	}
-	if len(skillPaths) == 0 && len(configs) == 0 {
-		return packageRecord{}, newError("PLUGIN_MEMBERS_REQUIRED", "plugin must contain at least one Skill or MCP server", map[string]any{"name": manifest.Name}, nil)
-	}
-
-	record := packageRecord{root: root, manifest: manifest, skillPaths: skillPaths, mcpConfigs: configs}
-	state := defaultState(record)
-	statePath := filepath.Join(root, ManifestDirectory, StateFilename)
-	if installed {
-		if _, err := os.Lstat(statePath); err == nil {
-			if err := readStrictJSON(statePath, maxStateBytes, &state); err != nil {
-				return packageRecord{}, newError("PLUGIN_STATE_INVALID", "read plugin state", map[string]any{"plugin": manifest.Name}, err)
-			}
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return packageRecord{}, newError("PLUGIN_STATE_INVALID", "inspect plugin state", map[string]any{"plugin": manifest.Name}, err)
-		}
-	}
-	state = normalizeState(state, record)
-	record.state = state
-	record.definition = Definition{
-		Name: manifest.Name, Description: manifest.Description, Version: manifest.Version,
-		Path: root, Enabled: state.Enabled, Skills: sortedKeys(skillPaths), MCPServers: sortedKeys(configs),
-	}
-	return record, nil
-}
-
-func discoverSkills(root string) (map[string]string, error) {
-	skillsRoot := filepath.Join(root, "skills")
-	entries, err := os.ReadDir(skillsRoot)
-	if errors.Is(err, os.ErrNotExist) {
-		return map[string]string{}, nil
-	}
-	if err != nil {
-		return nil, newError("PLUGIN_SKILLS_INVALID", "list plugin Skills", map[string]any{"path": skillsRoot}, err)
-	}
-	items := make(map[string]string)
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".") || !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			continue
-		}
-		name := entry.Name()
-		if err := validateIdentifier("Skill", name); err != nil {
-			return nil, err
-		}
-		path := filepath.Join(skillsRoot, name)
-		if err := skills.ValidatePackage(path); err != nil {
-			return nil, newError("PLUGIN_SKILL_INVALID", "validate plugin Skill package", map[string]any{"plugin_root": root, "skill": name}, err)
-		}
-		document, err := skills.LoadSkillDocument(path)
-		if err != nil {
-			return nil, newError("PLUGIN_SKILL_INVALID", "read plugin Skill document", map[string]any{"plugin_root": root, "skill": name}, err)
-		}
-		if strings.TrimSpace(document.Name) != name {
-			return nil, newError("PLUGIN_SKILL_NAME_MISMATCH", "Skill directory and document name must match", map[string]any{"directory": name, "document_name": document.Name}, nil)
-		}
-		items[name] = path
-	}
-	return items, nil
-}
-
-func resolveMCPConfig(root string, config mcpclient.ServerConfig) mcpclient.ServerConfig {
-	if strings.TrimSpace(config.Cwd) == "" && config.Transport == mcpclient.TransportStdio {
-		config.Cwd = root
-	} else if config.Cwd != "" && !filepath.IsAbs(config.Cwd) {
-		config.Cwd = filepath.Join(root, filepath.FromSlash(config.Cwd))
-	}
-	command := strings.TrimSpace(config.Command)
-	if command != "" && !filepath.IsAbs(command) && (strings.ContainsAny(command, `/\\`) || strings.HasPrefix(command, ".")) {
-		config.Command = filepath.Join(root, filepath.FromSlash(command))
-	}
-	return config
 }
 
 func defaultState(record packageRecord) State {
@@ -640,6 +574,7 @@ func normalizeState(state State, record packageRecord) State {
 func mergeState(previous State, next packageRecord) State {
 	state := defaultState(next)
 	state.Enabled = previous.Enabled
+	state.Heavy = previous.Heavy
 	for name := range state.Skills {
 		if enabled, ok := previous.Skills[name]; ok {
 			state.Skills[name] = enabled
@@ -667,7 +602,7 @@ func writeState(root string, state State) error {
 		return newError("PLUGIN_STATE_WRITE_FAILED", "encode plugin state", nil, err)
 	}
 	data = append(data, '\n')
-	path := filepath.Join(root, ManifestDirectory, StateFilename)
+	path := hostStatePath(root)
 	if err := atomicfile.Write(path, data, 0o600); err != nil {
 		return newError("PLUGIN_STATE_WRITE_FAILED", "write plugin state", map[string]any{"path": path}, err)
 	}
@@ -675,6 +610,13 @@ func writeState(root string, state State) error {
 }
 
 func readStrictJSON(path string, maximum int64, target any) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() > maximum {
+		return errors.New("expected a bounded regular state file")
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -743,9 +685,7 @@ func copyPackageTree(source, destination string) error {
 		if entry.Type()&os.ModeSymlink != 0 {
 			return newError("PLUGIN_SOURCE_INVALID", "symbolic links are not allowed in plugin packages", map[string]any{"path": relative}, nil)
 		}
-		if filepath.Clean(relative) == filepath.Join(ManifestDirectory, StateFilename) {
-			return nil
-		}
+
 		target := filepath.Join(destination, relative)
 		if entry.IsDir() {
 			return os.MkdirAll(target, 0o700)
@@ -830,7 +770,7 @@ func extractZip(path, destination string) error {
 
 func validateIdentifier(kind, value string) error {
 	value = strings.TrimSpace(value)
-	if !identifierPattern.MatchString(value) {
+	if (kind == "plugin" && !validPluginName(value)) || value == "." || value == ".." || !identifierPattern.MatchString(value) {
 		return newError("PLUGIN_IDENTIFIER_INVALID", fmt.Sprintf("invalid %s identifier", kind), map[string]any{"kind": kind, "value": value}, nil)
 	}
 	return nil
@@ -850,6 +790,7 @@ func sortedKeys[V any](values map[string]V) []string {
 }
 
 func cloneDefinition(value Definition) Definition {
+	value.Diagnostics = append([]string(nil), value.Diagnostics...)
 	value.Skills = append([]string(nil), value.Skills...)
 	value.MCPServers = append([]string(nil), value.MCPServers...)
 	return value

@@ -81,14 +81,20 @@ func TestAgentDockHomeMigrationUsesDirectPlugins(t *testing.T) {
 		"archive_mcp_servers": []string{"old-mcp"},
 	})
 
+	binary := filepath.Join(root, "agentdock.exe")
+	build := exec.Command(filepath.Join(runtime.GOROOT(), "bin", "go.exe"), "build", "-o", binary, "./cmd/agentdock")
+	build.Dir = repository
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build migration CLI: %v\n%s", err, output)
+	}
 	command := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script,
 		"-SourceHome", source, "-DestinationHome", destination, "-RepositoryRoot", repository,
-		"-PluginPlanPath", plan)
+		"-PluginPlanPath", plan, "-AgentDockBinary", binary)
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("migration failed: %v\n%s", err, output)
 	}
 	for _, path := range []string{
-		filepath.Join(destination, "plugins", "demo-plugin", ".agentdock-plugin", "plugin.json"),
+		filepath.Join(destination, "plugins", "demo-plugin", "plugin.json"),
 		filepath.Join(destination, "plugins", "demo-plugin", "skills", "demo", "SKILL.md"),
 		filepath.Join(destination, "skills", ".system", "agentdock-user-guide", "SKILL.md"),
 		filepath.Join(destination, "migration-archive", "mcp-env", "old-mcp.env"),
@@ -101,6 +107,7 @@ func TestAgentDockHomeMigrationUsesDirectPlugins(t *testing.T) {
 	for _, forbidden := range []string{
 		filepath.Join(destination, "plugins", "cache"),
 		filepath.Join(destination, "plugins", "plugins.json"),
+		filepath.Join(destination, "plugins", "demo-plugin", ".agentdock-plugin"),
 		filepath.Join(destination, "skill-store"),
 		filepath.Join(destination, "env", "mcp", "old-mcp.env"),
 	} {
@@ -109,18 +116,27 @@ func TestAgentDockHomeMigrationUsesDirectPlugins(t *testing.T) {
 		}
 	}
 	var manifest struct {
-		MCPServers map[string]struct {
-			Enabled bool `json:"enabled"`
-		} `json:"mcpServers"`
+		Schema string `json:"$schema"`
 	}
-	readJSONFile(t, filepath.Join(destination, "plugins", "demo-plugin", ".agentdock-plugin", "plugin.json"), &manifest)
-	if !manifest.MCPServers["demo-mcp"].Enabled {
-		t.Fatal("manifest MCP capability must remain intrinsically enabled")
+	readJSONFile(t, filepath.Join(destination, "plugins", "demo-plugin", "plugin.json"), &manifest)
+	if manifest.Schema != "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json" {
+		t.Fatal("missing standard schema")
+	}
+	var mcp struct {
+		MCPServers map[string]map[string]any `json:"mcpServers"`
+	}
+	readJSONFile(t, filepath.Join(destination, "plugins", "demo-plugin", "mcp.json"), &mcp)
+	server := mcp.MCPServers["demo-mcp"]
+	if server["type"] != "stdio" || server["cwd"] != "./mcp/demo-mcp" {
+		t.Fatalf("invalid portable MCP: %#v", server)
+	}
+	if _, ok := server["enabled"]; ok {
+		t.Fatal("host state leaked into mcp.json")
 	}
 	var state struct {
 		MCPServers map[string]bool `json:"mcpServers"`
 	}
-	readJSONFile(t, filepath.Join(destination, "plugins", "demo-plugin", ".agentdock-plugin", "state.json"), &state)
+	readJSONFile(t, filepath.Join(destination, "plugins", ".state", "demo-plugin.json"), &state)
 	if state.MCPServers["demo-mcp"] {
 		t.Fatal("migration did not preserve the disabled member state")
 	}

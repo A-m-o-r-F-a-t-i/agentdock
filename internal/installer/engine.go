@@ -293,6 +293,9 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 	result.ActiveVersion = activated.ActiveVersion
 	result.Warnings = append(result.Warnings, activated.Warnings...)
 	transaction.ActiveVersion = activated.ActiveVersion
+	if err := migrateInstalledPlugins(ctx, request, staged.Journal); err != nil {
+		return fail(PhaseActivate, err, staged)
+	}
 
 	if request.StartService {
 		transaction.Phase = PhaseStart
@@ -679,14 +682,8 @@ func bootstrapSkills(ctx context.Context, request Request, executable, bundleDir
 	if handled || err != nil {
 		return err
 	}
-	if err := os.Setenv("AGENTDOCK_HOME", home); err != nil {
-		return err
-	}
-	cfg, err := config.FromEnv()
+	cfg, err := config.StorageConfig(home)
 	if err != nil {
-		return err
-	}
-	if err := cfg.Normalize(); err != nil {
 		return err
 	}
 	stateDir, err := config.SkillStateDir(cfg)

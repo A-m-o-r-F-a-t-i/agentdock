@@ -76,6 +76,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if len(args) > 0 && args[0] == "skill" {
 		return runSkillCommand(ctx, args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "plugin" {
+		return runPluginCommand(ctx, args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "nexus" {
 		return runNexusCommand(ctx, args[1:], stdout, stderr)
 	}

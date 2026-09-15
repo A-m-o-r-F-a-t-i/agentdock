@@ -61,7 +61,7 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 	} else {
 		contextResult.InstructionFiles = &instructions
 		contextResult.Rules = append(contextResult.Rules,
-			"plugins 是领域重插件的第一层索引。任务命中插件 description 时，先调用 plugin_load(name) 展开其 Skill 与动态 MCP 描述；插件成员不会在顶层 skills 或 dynamic_mcp 重复出现。",
+			"plugins 仅列出 Heavy 插件摘要。命中后调用 plugin_load(name) 展开成员；普通插件的已启用 Skill/MCP 直接显示在顶层 skills/dynamic_mcp。",
 			"instruction_files.files 已自动载入规则正文；只应用 status=loaded 的条目，按全局、项目根目录、子目录顺序处理。项目规则不得削弱全局安全要求。操作其他工作区或规则文件已改变时，先调用 agentdock_context 并传入对应 workdir 刷新；该参数不会修改命令的默认工作目录。",
 		)
 	}
@@ -266,11 +266,11 @@ func (r *Runtime) dynamicMCPCapabilityIndex(includePluginMembers bool) ([]capabi
 	items := make([]capabilityDynamicMCPItem, 0, len(servers))
 	for _, server := range servers {
 		if !includePluginMembers {
-			_, owned, err := r.plugins.MCPMembership(server.Name)
+			membership, owned, err := r.plugins.MCPMembership(server.Name)
 			if err != nil {
 				return []capabilityDynamicMCPItem{}, err
 			}
-			if owned {
+			if owned && membership.Heavy {
 				continue
 			}
 		}
@@ -293,11 +293,11 @@ func (r *Runtime) skillCapabilityIndex(includePluginMembers bool) ([]capabilityS
 	items := make([]capabilitySkillItem, 0, len(skillItems))
 	for _, skill := range skillItems {
 		if !includePluginMembers {
-			_, owned, membershipErr := r.plugins.SkillMembership(skill.Name)
+			membership, owned, membershipErr := r.plugins.SkillMembership(skill.Name)
 			if membershipErr != nil {
 				return []capabilitySkillItem{}, membershipErr
 			}
-			if owned {
+			if owned && membership.Heavy {
 				continue
 			}
 		}

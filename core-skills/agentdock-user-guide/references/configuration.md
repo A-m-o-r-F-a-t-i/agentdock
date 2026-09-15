@@ -6,16 +6,18 @@
 
 | 配置键 | 作用 | 常见入口 |
 |---|---|---|
+| `AGENTDOCK_DEFAULT_DIR` | 默认全局工作区 | Windows“运行配置”页或启动环境 |
+| `AGENTDOCK_AGENTS_AUTOLOAD` | 自动读取全局与工作区 AGENTS.md，默认启用 | Windows“运行配置”页或启动环境 |
 | `AGENTDOCK_HOST` | Core 监听地址 | Linux env、Docker environment、直接启动 |
 | `AGENTDOCK_PORT` | MCP/HTTP 监听端口，默认 8765 | Desktop 设置、Linux env、Docker environment |
 | `AGENTDOCK_AUTH_TOKEN` | Bearer Token | 安装器、平台受保护凭据或容器 secret/env |
 | `AGENTDOCK_LOG_LEVEL` | `debug` / `info` / `warn` / `error` | Desktop 设置、Linux env、Docker environment |
 | `AGENTDOCK_MCP_APPS_ENABLED` | 是否启用 MCP Apps UI，默认启用 | Desktop 设置或启动环境 |
 | `AGENTDOCK_BROWSER_ENABLED` | 是否启用浏览器能力 | Desktop 设置或启动环境 |
-| `AGENTDOCK_BROWSER_EXECUTABLE_PATH` | 显式浏览器可执行文件 | Docker/服务器/高级运行环境 |
+| `AGENTDOCK_BROWSER_EXECUTABLE_PATH` | 显式浏览器可执行文件 | Windows“运行配置”页或高级运行环境 |
 | `AGENTDOCK_BROWSER_CDP_URL` | 复用已有 Chromium 的 CDP 地址 | Desktop 设置或启动环境 |
 | `AGENTDOCK_BROWSER_REUSE_EXISTING_CDP` | 自动复用唯一已发现 CDP | Desktop 设置或启动环境 |
-| `AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON` | 显式允许 `exec_command` 从 Core 宿主环境复制的变量映射 | Linux/Docker/直接启动的高级配置 |
+| `AGENTDOCK_COMMAND_ENV_FROM_ENV_JSON` | 显式允许 `exec_command` 从 Core 宿主环境复制的变量映射 | Windows“运行配置”页或高级启动配置 |
 | `AGENTDOCK_ACP_ENABLED` | 是否启用 ACP Client | Desktop 设置或启动环境 |
 | `AGENTDOCK_ACP_PROFILES_JSON` | 多 ACP Profile JSON 数组；每项包含 `id/kind/command/args/env_from_env/enabled` | Desktop 设置或高级启动环境 |
 | `AGENTDOCK_ACP_DEFAULT_PROFILE` | 未显式传 `profile_id` 时使用的默认 ACP Profile ID | Desktop 设置或高级启动环境 |
@@ -23,16 +25,16 @@
 | `AGENTDOCK_ACP_COMMAND` | 旧单 ACP Adapter 命令；仅用于升级读取兼容，新配置不再写入 | 旧版自定义/高级 ACP 配置 |
 | `AGENTDOCK_ACP_ARGS_JSON` | 旧单 ACP Adapter 参数；仅用于升级读取兼容，新配置不再写入 | 旧版自定义/高级 ACP 配置 |
 | `AGENTDOCK_ACP_ENV_FROM_ENV_JSON` | 旧单 ACP 环境映射；仅用于升级读取兼容，新配置不再写入 | 旧版高级 ACP 配置 |
-| `AGENTDOCK_ACP_MAX_CONCURRENT_PROMPTS` | ACP 并发 prompt 上限 | 高级 ACP 配置 |
-| `AGENTDOCK_ACP_INTERACTION_TIMEOUT_MS` | ACP 交互超时 | 高级 ACP 配置 |
+| `AGENTDOCK_ACP_MAX_CONCURRENT_PROMPTS` | ACP 并发 prompt 上限 | Windows“运行配置”页或高级 ACP 配置 |
+| `AGENTDOCK_ACP_INTERACTION_TIMEOUT_MS` | ACP 交互超时 | Windows“运行配置”页或高级 ACP 配置 |
 | `AGENTDOCK_SERVER_URL` | 对外服务 Origin | 公网/OAuth 安装流程 |
 | `AGENTDOCK_OAUTH_ENABLED` | 是否启用 OAuth | 安装器/公网访问配置 |
 | `AGENTDOCK_OAUTH_PASSWORD` | OAuth 登录密码 | 平台安全存储或受保护环境 |
 | `AGENTDOCK_OAUTH_TOKEN_SECRET` | OAuth Token 签名密钥 | 平台安全存储或受保护环境 |
 | `AGENTDOCK_OAUTH_ACCESS_TOKEN_TTL` | OAuth Access Token 有效期 | Desktop/高级启动配置 |
 | `AGENTDOCK_STDIO` | 是否启用 stdio 运行模式 | 直接启动/集成场景 |
-| `AGENTDOCK_TRUSTED_PROXY_CIDRS` | 受信任反向代理网段 | 服务器/反代场景 |
-| `AGENTDOCK_INSTRUCTIONS_FILE` | 额外 Instructions 文件 | 高级启动配置 |
+| `AGENTDOCK_TRUSTED_PROXY_CIDRS` | 受信任反向代理网段 | Windows“运行配置”页或服务器/反代配置 |
+| `AGENTDOCK_INSTRUCTIONS_FILE` | 额外 Instructions 文件 | Windows“运行配置”页或高级启动配置 |
 
 Coding Agent 的发现、Codex / Claude Adapter 安装、Grok stdio 模式、平台配置和验证流程见 `acp.md`。
 

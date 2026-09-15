@@ -16,6 +16,7 @@ import (
 
 // ConfigUpdateRequest 是桌面端保存日常运行设置时使用的结构化请求。
 type ConfigUpdateRequest struct {
+	RuntimeOptions          *RuntimeOptions
 	RuntimeRoot             string
 	Port                    int
 	LogLevel                string
@@ -34,6 +35,8 @@ func RunConfigCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		return configCommandUsageError()
 	}
 	switch args[0] {
+	case "runtime-get", "runtime-update":
+		return runRuntimeOptionsCommand(ctx, args, stdout, stderr)
 	case "update":
 		flags := flag.NewFlagSet("agentdock config update", flag.ContinueOnError)
 		flags.SetOutput(stderr)

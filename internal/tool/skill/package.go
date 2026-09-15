@@ -113,7 +113,7 @@ func (s *Service) list() (Result, error) {
 			return nil, skillToolError(listErr)
 		}
 		for _, member := range members {
-			document, loadErr := skills.LoadSkillDocument(member.Path)
+			document, loadErr := skills.LoadPortableSkillDocument(member.Path)
 			if loadErr != nil {
 				return nil, skillToolError(loadErr)
 			}
@@ -139,7 +139,7 @@ func (s *Service) inspect(request InspectRequest) (Result, error) {
 			return nil, skillToolError(lookupErr)
 		}
 		if found {
-			doc, loadErr := skills.LoadSkillDocument(member.Path)
+			doc, loadErr := skills.LoadPortableSkillDocument(member.Path)
 			if loadErr != nil {
 				return nil, skillToolError(loadErr)
 			}

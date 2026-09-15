@@ -13,6 +13,7 @@ type Service struct {
 	mcpClients       *mcpclient.Manager
 	envs             *envstore.Store
 	pluginMembership PluginMembershipLookup
+	pluginHeavy      func(string) (bool, error)
 }
 
 type PluginMembershipLookup func(string) (plugin string, enabled bool, owned bool, err error)
@@ -23,6 +24,10 @@ func New(manager *mcpclient.Manager, envs *envstore.Store) *Service {
 
 func (s *Service) SetPluginMembershipLookup(lookup PluginMembershipLookup) {
 	s.pluginMembership = lookup
+}
+
+func (s *Service) SetHeavyPluginLookup(lookup func(string) (bool, error)) {
+	s.pluginHeavy = lookup
 }
 
 type CapabilityItem struct {

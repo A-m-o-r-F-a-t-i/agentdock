@@ -1,7 +1,7 @@
 ---
 name: skill-authoring
 description: 创建、设计、修改、升级、重构和验证 AgentDock Skill 时使用；负责可移植核心、文档、引用、辅助脚本、测试、版本和本地安装验证。
-version: 1.3.0
+version: 1.4.0
 ---
 
 # Skill Authoring
@@ -109,7 +109,7 @@ skills/<skill-name>/
 
 不要为了形式创建空目录，也不要把普通集成重新放回 AgentDock 主仓库。
 
-需要把 Skill 随自包含重插件发布时，目标插件源码中的放置位置是：
+需要把 Skill 随 Agent Plugins 1.0.0 插件发布时，目标插件源码中的放置位置是：
 
 ```text
 <plugin-root>/skills/<skill-name>/
@@ -119,7 +119,7 @@ skills/<skill-name>/
 
 ### 4. 编写 Frontmatter
 
-当前 AgentDock 正式解析：
+AgentDock 独立安装及内置 Skill 仍使用以下带版本的宿主格式：
 
 ```yaml
 ---
@@ -136,6 +136,8 @@ version: 1.0.0
 - `version` 使用语义化版本；
 - Frontmatter 后必须有非空 Markdown 正文；
 - 不增加当前解析器未支持的环境变量或执行字段。
+
+标准插件内的 Skill 遵循 Agent Skills：只要求合法的 `name`、`description`，版本不是必填字段。需要记录版本时使用 `metadata.version` 字符串。支持 YAML 引号和多行说明，不把版本管理字段当作发现插件成员的条件。插件根 `plugin.json` 使用 Agent Plugins 1.0.0 的 `$schema`，成员位置固定，不重复声明 Skill 路径。
 
 ### 5. 编写可移植核心
 
@@ -302,7 +304,7 @@ exec_command
 - `skill_run`；
 - `skill_env_manage`；
 - `AGENTDOCK_OPERATION`；
-- `PLUGIN_*` 旧协议；
+- 旧式 `PLUGIN_*` 统一执行协议。Agent Plugins 1.0.0 为 stdio MCP 定义的 `PLUGIN_ROOT`、`PLUGIN_DATA` 和对应单次占位符展开属于标准机制，可以使用；
 - 旧式 `operation` 或 `entrypoint` 清单；
 - 统一 Skill 执行器或旧 Skill Runtime。
 

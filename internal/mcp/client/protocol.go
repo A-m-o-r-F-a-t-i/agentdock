@@ -80,7 +80,7 @@ func (c *sdkProtocolClient) transport() (mcpsdk.Transport, error) {
 		}
 		return &mcpsdk.StreamableClientTransport{
 			Endpoint:             c.cfg.URL,
-			HTTPClient:           &http.Client{Transport: headerRoundTripper{headers: headers}},
+			HTTPClient:           newOriginBoundHTTPClient(c.cfg.URL, headers),
 			MaxRetries:           -1,
 			DisableStandaloneSSE: true,
 		}, nil
@@ -278,11 +278,25 @@ func stdioEnvironment(cfg ServerConfig) ([]string, error) {
 	for key, value := range cfg.RuntimeEnv {
 		environment[key] = value
 	}
+	for key, value := range cfg.PackageEnv {
+		setProcessEnvironmentValue(environment, key, value)
+	}
+	if cfg.PluginRoot != "" {
+		setProcessEnvironmentValue(environment, "PLUGIN_ROOT", cfg.PluginRoot)
+		setProcessEnvironmentValue(environment, "PLUGIN_DATA", cfg.PluginData)
+	}
 	return envstore.Format(environment), nil
 }
 
 func resolveHTTPHeaders(cfg ServerConfig) (http.Header, error) {
 	headers := make(http.Header, len(cfg.HeaderEnv)+1)
+	for header, value := range cfg.PackageHeaders {
+		// Transport framing and negotiated session headers belong to the client.
+		if isReservedMCPHeader(header) || strings.EqualFold(header, "Last-Event-ID") {
+			continue
+		}
+		headers.Set(header, value)
+	}
 	headers.Set("User-Agent", config.ServerName+"/"+buildinfo.Version)
 	for header, envName := range cfg.HeaderEnv {
 		value, ok := cfg.RuntimeEnv[envName]
@@ -305,13 +319,19 @@ func resolveHTTPHeaders(cfg ServerConfig) (http.Header, error) {
 
 type headerRoundTripper struct {
 	headers http.Header
+	origin  string
 }
 
 func (t headerRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	if t.origin != "" && !sameHTTPOrigin(t.origin, request.URL.String()) {
+		return nil, errors.New("MCP request may not forward configured headers to another origin")
+	}
 	clone := request.Clone(request.Context())
 	clone.Header = request.Header.Clone()
 	for name, values := range t.headers {
-		clone.Header.Del(name)
+		if _, clientSet := clone.Header[http.CanonicalHeaderKey(name)]; clientSet {
+			continue
+		}
 		for _, value := range values {
 			clone.Header.Add(name, value)
 		}

@@ -98,7 +98,15 @@ func (s *Service) Search(ctx context.Context, request SearchRequest) (Result, er
 				if lookupErr != nil {
 					return nil, toolErrorCause("PLUGIN_STATE_INVALID", "read MCP plugin ownership", "runtime", map[string]any{"server": item.Name}, lookupErr)
 				}
-				pluginOwned[item.Name] = owned
+				hidden := owned
+				if owned && s.pluginHeavy != nil {
+					var err error
+					hidden, err = s.pluginHeavy(item.Name)
+					if err != nil {
+						return nil, err
+					}
+				}
+				pluginOwned[item.Name] = hidden
 			}
 		}
 		allow = func(name string) bool { return !pluginOwned[name] }

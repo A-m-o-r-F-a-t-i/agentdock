@@ -20,7 +20,7 @@
 
 Windows Desktop 的运行配置由多部分组成：
 
-- `control-panel-settings.json`：端口、日志、MCP Apps UI、浏览器、ACP 等普通设置；
+- `control-panel-settings.json`：端口、日志、MCP Apps UI、浏览器、ACP 以及 `runtime_options` 运行参数；
 - `runtime.json`：安装位置、Core、Tray、Tunnel 与启动方式等运行清单；
 - `auth-token.dpapi`、`oauth-password.dpapi`、`oauth-token-secret.dpapi`、`cloudflared-token.dpapi`：受当前 Windows 用户保护的秘密；
 - `server-url.txt`、Tunnel 状态文件等：公网/OAuth/Tunnel 运行状态。
@@ -58,3 +58,22 @@ agentdock service status --runtime-root "$env:LOCALAPPDATA\AgentDock"
 2. 当前端口的 `/healthz` 成功；
 3. 本次设置对应的功能真的变化；
 4. 如果配置更新返回回滚错误，检查当前文件和 Core 状态是否已恢复，不要继续覆盖 DPAPI 或 runtime 文件。
+
+## 运行配置页面
+
+“运行配置”页集中管理以下非敏感选项，数据目录、设置文件和运行清单位置只读展示：
+
+| 选项 | 规则 |
+| --- | --- |
+| 默认全局工作区 | 绝对目录路径；不能指向文件。保存后同步运行清单。 |
+| AGENTS.md 自动加载 | 默认开启；控制全局与工作区规则发现。 |
+| 额外指令文件 | 可留空。显式文件须存在、非空、UTF-8，大小不超过 64 KiB。 |
+| 浏览器程序 | 留空自动发现；显式路径须为现有普通文件。 |
+| 可信代理 | 每行一个 CIDR，只填写实际控制的反向代理网段。 |
+| 命令环境变量引用 | JSON 的键和值均为变量名；不能填写凭据值。 |
+| ACP 并发提示数 | 1—8。 |
+| ACP 交互超时 | 1000—3600000 毫秒。 |
+
+`config runtime-get --runtime-root <实际目录>` 返回已保存值和配置位置，Core 停止时也可使用。`config runtime-update --runtime-root <实际目录> --options-json <JSON>` 保存这些选项，并保留其他页面的设置。GUI 保存前校验，CLI 再执行同一组校验，失败不会先停止当前实例。
+
+安装或重新安装时，Skill 自举只校验存储目录，不读取浏览器、ACP、监听端口或额外指令文件等残余运行参数。Windows Desktop 启动时由明确的运行清单和设置重新生成受管环境；不把旧环境中的失效额外指令路径当作新安装的必需文件。已经显式保存在 `runtime_options` 中的文件路径仍会严格检查，失效后可通过本页清空或修正。

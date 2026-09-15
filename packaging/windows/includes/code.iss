@@ -60,17 +60,50 @@ begin
   Result := ResolvedInstallRoot;
 end;
 
+function ValidateSelectedInstallDirectory(): String;
+var
+  RegisteredRoot: String;
+  SelectedRoot: String;
+  UninstallKey: String;
+begin
+  Result := '';
+  UninstallKey := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#AppIdValue}_is1';
+  if not RegQueryStringValue(HKCU, UninstallKey, 'InstallLocation', RegisteredRoot) or
+    (Trim(RegisteredRoot) = '') then
+    RegisteredRoot := ExpandConstant('{localappdata}\AgentDock');
+  RegisteredRoot := RemoveBackslashUnlessRoot(ExpandFileName(Trim(RegisteredRoot)));
+  SelectedRoot := RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue()));
+  { One current-user installation owns the startup entries and listening port. }
+  if (CompareText(RegisteredRoot, SelectedRoot) <> 0) and
+    (FileExists(AddBackslash(RegisteredRoot) + 'runtime.json') or
+     FileExists(AddBackslash(RegisteredRoot) + 'bin\agentdock.exe')) then
+    Result := GetLocalizedMessage('InstallDirectoryInUse') + #13#10#13#10 + RegisteredRoot;
+end;
+
 function DetectExistingInstallation(): Boolean;
 var
   UninstallKey: String;
   BinaryPath: String;
   VersionValue: String;
+  InstallLocation: String;
 begin
   ExistingInstallVersion := '';
   ExistingInstallSource := '';
   UninstallKey := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{#AppIdValue}_is1';
 
-  if RegQueryStringValue(HKCU, UninstallKey, 'DisplayVersion', VersionValue) then
+  BinaryPath := AddBackslash(ExistingInstallRoot()) + 'bin\agentdock.exe';
+  if not FileExists(BinaryPath) and
+    not FileExists(AddBackslash(ExistingInstallRoot()) + 'runtime.json') and
+    not FileExists(AddBackslash(ExistingInstallRoot()) + 'start-agentdock.ps1') then
+  begin
+    Result := False;
+    Exit;
+  end;
+
+  if RegQueryStringValue(HKCU, UninstallKey, 'InstallLocation', InstallLocation) and
+    (CompareText(RemoveBackslashUnlessRoot(ExpandFileName(InstallLocation)),
+      RemoveBackslashUnlessRoot(ExpandFileName(ExistingInstallRoot()))) = 0) and
+    RegQueryStringValue(HKCU, UninstallKey, 'DisplayVersion', VersionValue) then
   begin
     ExistingInstallVersion := Trim(VersionValue);
     ExistingInstallSource := 'setup';
@@ -279,7 +312,7 @@ begin
   ExistingInstallDetected := DetectExistingInstallation();
 
   UpgradeModePage := CreateInputOptionPage(
-    wpWelcome,
+    wpSelectDir,
     GetLocalizedMessage('UpgradeModeCaption'),
     GetLocalizedMessage('UpgradeModeDescription'),
     GetLocalizedMessage('UpgradeModeSubCaption'),
@@ -410,6 +443,8 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   URL: String;
+  DirectoryError: String;
+  SelectedRoot: String;
 begin
   Result := True;
   if CurPageID = wpFinished then
@@ -424,6 +459,28 @@ begin
     else
       Log('AgentDock runtime activation was deferred; skipping Finish-page control panel launch.');
     Exit;
+  end;
+  if CurPageID = wpSelectDir then
+  begin
+    DirectoryError := ValidateSelectedInstallDirectory();
+    if DirectoryError <> '' then
+    begin
+      MsgBox(DirectoryError, mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+    SelectedRoot := RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue()));
+    if CompareText(SelectedRoot, ResolvedInstallRoot) <> 0 then
+    begin
+      ResolvedInstallRoot := RemoveBackslashUnlessRoot(ExpandFileName(WizardDirValue()));
+      ExistingInstallDetected := DetectExistingInstallation();
+      StartupPage.Values[0] := True;
+      StartupPage.Values[1] := False;
+      ConnectionPage.SelectedValueIndex := 0;
+      FixedTunnelPage.Values[0] := '';
+      FixedTunnelPage.Values[1] := '';
+      LoadExistingSettings();
+    end;
   end;
   if (CurPageID = StartupPage.ID) and StartupPage.Values[1] then
     StartupPage.Values[0] := True;
@@ -483,7 +540,9 @@ var
   ErrorStack: String;
   DeleteTokenFile: Boolean;
 begin
-  Result := '';
+  Result := ValidateSelectedInstallDirectory();
+  if Result <> '' then
+    Exit;
   InstallProgressPage.Show;
   try
     InstallProgressPage.SetText(GetLocalizedMessage('OfflineProgressPreparing'), '');

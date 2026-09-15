@@ -238,23 +238,22 @@ func TestWindowsControlPanelManagesHeavyPluginsWithoutDuplicateTopLevelRows(t *t
 	checks := map[string][]string{
 		"MainWindow.xaml": {
 			`Header="{local:Loc Capabilities}"`,
-			`Click="AddPluginButton_Click"`,
+			`Click="RefreshCapabilitiesButton_Click"`,
 			`x:Name="PluginListPanel"`,
 			`x:Name="StandaloneSkillListPanel"`,
 			`x:Name="StandaloneMcpListPanel"`,
 		},
 		"MainWindow.Capabilities.cs": {
 			`SetPluginEnabledAsync`,
-			`InstallPluginAsync`,
-			`UpdatePluginAsync`,
+			`SetPluginHeavyAsync`,
+			`RemovePluginAsync`,
+			`new Expander`,
+			`_expandedPlugins.Contains(plugin.Name)`,
 			`SetPluginMemberEnabledAsync`,
 			`SetSkillEnabledAsync`,
 			`SetMcpEnabledAsync`,
 			`string.IsNullOrWhiteSpace(skill.Plugin)`,
 			`string.IsNullOrWhiteSpace(server.Plugin)`,
-			`ShowPluginSourceDialog`,
-			`Forms.FolderBrowserDialog`,
-			`OpenFileDialog`,
 		},
 		filepath.Join("Services", "RuntimeService.cs"): {
 			`"/internal/runtime/plugins"`,
@@ -291,12 +290,48 @@ func TestWindowsControlPanelManagesHeavyPluginsWithoutDuplicateTopLevelRows(t *t
 		}
 		content := string(data)
 		for _, key := range []string{
-			"Capabilities", "CapabilitiesDescription", "AddPlugin", "UpdatePlugin",
-			"PluginSourceHelp", "UpdatePluginSourceHelp", "PluginPackageMetadata",
+			"Capabilities", "CapabilitiesDescription", "RefreshCapabilities",
+			"HeavyPluginHelp", "PluginMemberSummary", "PluginPackageMetadata",
 		} {
 			if !strings.Contains(content, `name="`+key+`"`) {
 				t.Fatalf("Windows heavy-plugin localization missing %q in %s", key, resourceFile)
 			}
+		}
+	}
+}
+
+func TestWindowsControlPanelRemovesPluginPackageActionsOnly(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "windows", "control-panel")
+	for _, relative := range []string{
+		"MainWindow.xaml", "MainWindow.Capabilities.cs",
+		filepath.Join("Services", "RuntimeService.cs"),
+		filepath.Join("Resources", "UiStrings.resx"),
+		filepath.Join("Resources", "UiStrings.zh-CN.resx"),
+	} {
+		data, err := os.ReadFile(filepath.Join(root, relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{
+			"AddPlugin", "UpdatePlugin", "InstallPluginAsync", "PluginUpdateButton_Click",
+			"ShowPluginSourceDialog", "ChoosePluginFolder", "ChoosePluginZip",
+			"PluginSourceHelp", "PluginSourceRequired", "InstallingPluginPackage", "UpdatingPluginPackage",
+		} {
+			if strings.Contains(string(data), forbidden) {
+				t.Errorf("removed plugin package UI action %q remains in %s", forbidden, relative)
+			}
+		}
+	}
+	for relative, want := range map[string]string{
+		"MainWindow.xaml": `Click="UpdateButton_Click"`,
+		filepath.Join("Services", "RuntimeService.cs"): "RunUpdateAsync",
+	} {
+		data, err := os.ReadFile(filepath.Join(root, relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), want) {
+			t.Errorf("Core update must remain in %s", relative)
 		}
 	}
 }

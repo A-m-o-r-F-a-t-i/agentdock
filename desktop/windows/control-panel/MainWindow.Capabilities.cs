@@ -1,17 +1,11 @@
-using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using Microsoft.Win32;
 using Button = System.Windows.Controls.Button;
 using CheckBox = System.Windows.Controls.CheckBox;
-using HorizontalAlignment = System.Windows.HorizontalAlignment;
 using MessageBox = System.Windows.MessageBox;
-using Orientation = System.Windows.Controls.Orientation;
-using TextBox = System.Windows.Controls.TextBox;
 using Brushes = System.Windows.Media.Brushes;
 using Color = System.Windows.Media.Color;
-using Forms = System.Windows.Forms;
 
 namespace AgentDock.ControlPanel;
 
@@ -20,6 +14,7 @@ public partial class MainWindow
     private readonly SemaphoreSlim _capabilityGate = new(1, 1);
     private CapabilityInventory _capabilityInventory = new();
     private bool _updatingCapabilities;
+    private readonly HashSet<string> _expandedPlugins = new(StringComparer.Ordinal);
 
     private async Task RefreshCapabilitiesAsync(bool coreAvailable = true, bool showErrors = true)
     {
@@ -164,14 +159,6 @@ public partial class MainWindow
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center
         };
-        var update = new Button
-        {
-            Content = UiText.Get("UpdatePlugin"),
-            Tag = plugin.Name,
-            MinWidth = 70,
-            Margin = new Thickness(8, 0, 0, 0)
-        };
-        update.Click += PluginUpdateButton_Click;
         var remove = new Button
         {
             Content = UiText.Get("Delete"),
@@ -191,12 +178,20 @@ public partial class MainWindow
         toggle.Checked += PluginToggle_Changed;
         toggle.Unchecked += PluginToggle_Changed;
 
+        var heavy = new CheckBox
+        {
+            Content = "Heavy", IsChecked = plugin.Heavy, Tag = plugin.Name,
+            ToolTip = UiText.Get("HeavyPluginHelp"),
+            VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 0)
+        };
+        heavy.Checked += PluginHeavy_Changed;
+        heavy.Unchecked += PluginHeavy_Changed;
+        Grid.SetColumn(heavy, 2);
+        header.Children.Add(heavy);
         Grid.SetColumn(title, 0);
-        Grid.SetColumn(update, 1);
-        Grid.SetColumn(remove, 2);
+        Grid.SetColumn(remove, 1);
         Grid.SetColumn(toggle, 3);
         header.Children.Add(title);
-        header.Children.Add(update);
         header.Children.Add(remove);
         header.Children.Add(toggle);
         content.Children.Add(header);
@@ -207,7 +202,16 @@ public partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 3)
         });
-        content.Children.Add(new TextBlock
+        var details = new StackPanel();
+        var expander = new Expander
+        {
+            Header = UiText.Format("PluginMemberSummary", plugin.Skills?.Count ?? 0, plugin.McpServers?.Count ?? 0),
+            Content = details, IsExpanded = _expandedPlugins.Contains(plugin.Name), Margin = new Thickness(0, 5, 0, 0)
+        };
+        expander.Expanded += (_, _) => _expandedPlugins.Add(plugin.Name);
+        expander.Collapsed += (_, _) => _expandedPlugins.Remove(plugin.Name);
+        content.Children.Add(expander);
+        details.Children.Add(new TextBlock
         {
             Text = UiText.Format("PluginPackageMetadata", plugin.Version, plugin.Path),
             Foreground = new SolidColorBrush(Color.FromRgb(102, 112, 133)),
@@ -223,23 +227,34 @@ public partial class MainWindow
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         if ((plugin.Skills?.Count ?? 0) > 0)
         {
-            content.Children.Add(BuildPluginSectionTitle(UiText.Get("PluginSkills")));
+            details.Children.Add(BuildPluginSectionTitle(UiText.Get("PluginSkills")));
             foreach (var name in (plugin.Skills ?? []).OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
             {
-                content.Children.Add(skillsByName.TryGetValue(name, out var skill)
+                details.Children.Add(skillsByName.TryGetValue(name, out var skill)
                     ? BuildSkillCapabilityRow(skill, nested: true, pluginName: plugin.Name)
                     : BuildUnavailableCapabilityRow("Skill", name));
             }
         }
         if ((plugin.McpServers?.Count ?? 0) > 0)
         {
-            content.Children.Add(BuildPluginSectionTitle(UiText.Get("PluginMcpServers")));
+            details.Children.Add(BuildPluginSectionTitle(UiText.Get("PluginMcpServers")));
             foreach (var name in (plugin.McpServers ?? []).OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
             {
-                content.Children.Add(mcpByName.TryGetValue(name, out var server)
+                details.Children.Add(mcpByName.TryGetValue(name, out var server)
                     ? BuildMcpCapabilityRow(server, nested: true, pluginName: plugin.Name)
                     : BuildUnavailableCapabilityRow("MCP", name));
             }
+        }
+
+        foreach (var diagnostic in plugin.Diagnostics ?? [])
+        {
+            details.Children.Add(new TextBlock { Text = diagnostic, TextWrapping = TextWrapping.Wrap,
+                Foreground = new SolidColorBrush(Color.FromRgb(180, 35, 24)), Margin = new Thickness(0, 5, 0, 0) });
+        }
+        if ((plugin.Diagnostics?.Count ?? 0) > 0)
+        {
+            content.Children.Add(new TextBlock { Text = UiText.Format("PluginDiagnosticCount", plugin.Diagnostics!.Count),
+                Foreground = new SolidColorBrush(Color.FromRgb(180, 35, 24)), TextWrapping = TextWrapping.Wrap });
         }
 
         return new Border
@@ -395,6 +410,13 @@ public partial class MainWindow
             () => _runtime.SetPluginEnabledAsync(name, enabled));
     }
 
+    private async void PluginHeavy_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_updatingCapabilities || sender is not CheckBox toggle || toggle.Tag is not string name) { return; }
+        await ExecuteCapabilityActionAsync(UiText.Format("SavingPlugin", name),
+            () => _runtime.SetPluginHeavyAsync(name, toggle.IsChecked == true));
+    }
+
     private async void CapabilityToggle_Changed(object sender, RoutedEventArgs e)
     {
         if (_updatingCapabilities || sender is not CheckBox toggle || toggle.Tag is not CapabilityToggleTarget target)
@@ -416,38 +438,6 @@ public partial class MainWindow
                     enabled));
     }
 
-    private async void AddPluginButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_updatingCapabilities)
-        {
-            return;
-        }
-        var source = ShowPluginSourceDialog(pluginName: null);
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return;
-        }
-        await ExecuteCapabilityActionAsync(
-            UiText.Format("InstallingPluginPackage", Path.GetFileName(source.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))),
-            () => _runtime.InstallPluginAsync(source));
-    }
-
-    private async void PluginUpdateButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_updatingCapabilities || sender is not Button button || button.Tag is not string name)
-        {
-            return;
-        }
-        var source = ShowPluginSourceDialog(name);
-        if (string.IsNullOrWhiteSpace(source))
-        {
-            return;
-        }
-        await ExecuteCapabilityActionAsync(
-            UiText.Format("UpdatingPluginPackage", name),
-            () => _runtime.UpdatePluginAsync(name, source));
-    }
-
     private async void PluginRemoveButton_Click(object sender, RoutedEventArgs e)
     {
         if (_updatingCapabilities || sender is not Button button || button.Tag is not string name)
@@ -467,127 +457,6 @@ public partial class MainWindow
         await ExecuteCapabilityActionAsync(
             UiText.Format("RemovingPlugin", name),
             () => _runtime.RemovePluginAsync(name));
-    }
-
-    private string? ShowPluginSourceDialog(string? pluginName)
-    {
-        var updating = !string.IsNullOrWhiteSpace(pluginName);
-        var dialog = new Window
-        {
-            Title = UiText.Get(updating ? "UpdatePlugin" : "AddPlugin"),
-            Owner = this,
-            Width = 680,
-            Height = 280,
-            MinWidth = 560,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            ResizeMode = ResizeMode.NoResize,
-            ShowInTaskbar = false
-        };
-        var pathInput = new TextBox
-        {
-            Margin = new Thickness(0, 6, 0, 10),
-            MinHeight = 30,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        var chooseFolder = new Button
-        {
-            Content = UiText.Get("ChoosePluginFolder"),
-            MinWidth = 120,
-            Height = 32
-        };
-        chooseFolder.Click += (_, _) =>
-        {
-            using var picker = new Forms.FolderBrowserDialog
-            {
-                Description = UiText.Get("ChoosePluginFolder"),
-                UseDescriptionForTitle = true,
-                ShowNewFolderButton = false
-            };
-            if (picker.ShowDialog() == Forms.DialogResult.OK)
-            {
-                pathInput.Text = picker.SelectedPath;
-            }
-        };
-        var chooseZip = new Button
-        {
-            Content = UiText.Get("ChoosePluginZip"),
-            MinWidth = 120,
-            Height = 32,
-            Margin = new Thickness(8, 0, 0, 0)
-        };
-        chooseZip.Click += (_, _) =>
-        {
-            var picker = new Microsoft.Win32.OpenFileDialog
-            {
-                Title = UiText.Get("ChoosePluginZip"),
-                Filter = "AgentDock plugin (*.zip)|*.zip|All files (*.*)|*.*",
-                CheckFileExists = true,
-                Multiselect = false
-            };
-            if (picker.ShowDialog(dialog) == true)
-            {
-                pathInput.Text = picker.FileName;
-            }
-        };
-
-        var accept = new Button
-        {
-            Content = UiText.Get(updating ? "UpdatePlugin" : "AddPlugin"),
-            IsDefault = true,
-            MinWidth = 96,
-            Height = 32,
-            Margin = new Thickness(8, 0, 0, 0)
-        };
-        var cancel = new Button
-        {
-            Content = UiText.Get("Cancel"),
-            IsCancel = true,
-            MinWidth = 88,
-            Height = 32,
-            Margin = new Thickness(8, 0, 0, 0)
-        };
-        accept.Click += (_, _) =>
-        {
-            var source = pathInput.Text.Trim();
-            if (source.Length == 0 || (!Directory.Exists(source) && !File.Exists(source)))
-            {
-                MessageBox.Show(dialog, UiText.Get("PluginSourceRequired"), "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
-                pathInput.Focus();
-                return;
-            }
-            dialog.DialogResult = true;
-        };
-
-        var sourceButtons = new StackPanel { Orientation = Orientation.Horizontal };
-        sourceButtons.Children.Add(chooseFolder);
-        sourceButtons.Children.Add(chooseZip);
-        var body = new StackPanel { Margin = new Thickness(18) };
-        body.Children.Add(new TextBlock
-        {
-            Text = updating
-                ? UiText.Format("UpdatePluginSourceHelp", pluginName!)
-                : UiText.Get("PluginSourceHelp"),
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = new SolidColorBrush(Color.FromRgb(102, 112, 133))
-        });
-        body.Children.Add(pathInput);
-        body.Children.Add(sourceButtons);
-
-        var rightButtons = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(18, 10, 18, 18)
-        };
-        rightButtons.Children.Add(accept);
-        rightButtons.Children.Add(cancel);
-        var layout = new DockPanel();
-        DockPanel.SetDock(rightButtons, Dock.Bottom);
-        layout.Children.Add(rightButtons);
-        layout.Children.Add(body);
-        dialog.Content = layout;
-        dialog.Loaded += (_, _) => pathInput.Focus();
-        return dialog.ShowDialog() == true ? pathInput.Text.Trim() : null;
     }
 
     private sealed record CapabilityToggleTarget(string Kind, string Name, string Plugin);
