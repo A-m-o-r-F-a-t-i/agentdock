@@ -63,15 +63,18 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Inventory does not depend on the slower service/Nexus status probe.
+        var capabilitiesTask = RefreshCapabilitiesAsync(showErrors: false);
         try
         {
             FooterStatusText.Text = UiText.Get("Refreshing");
-            var snapshot = await _runtime.GetSnapshotAsync(includeNexusConnection: true);
+            var snapshot = await Task.Run(() => _runtime.GetSnapshotAsync(includeNexusConnection: true));
             _snapshot = snapshot;
             _bearerToken = _runtime.ReadBearerToken();
             _oauthPassword = _runtime.ReadOAuthPassword();
             ApplySnapshot(snapshot);
-            await RefreshCapabilitiesAsync(snapshot.Healthy, showErrors: false);
+            await capabilitiesTask;
+            if (!snapshot.Healthy) await RefreshCapabilitiesAsync(false, showErrors: false);
             FooterStatusText.Text = UiText.Format("LastRefresh", snapshot.CheckedAt);
             await AutoTestPublicAsync(snapshot);
         }
@@ -84,6 +87,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            await capabilitiesTask;
             _refreshGate.Release();
         }
     }

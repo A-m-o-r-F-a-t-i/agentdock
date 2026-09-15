@@ -105,6 +105,17 @@ try {
     Copy-Item -LiteralPath $checksumPath -Destination (Join-Path $payloadRoot "$assetName.sha256") -Force
     # cloudflared is an independent compatibility payload. Keep its internal name architecture-neutral.
     Copy-Item -LiteralPath $cloudflaredPath -Destination (Join-Path $payloadRoot 'cloudflared.exe') -Force
+	# The outer Inno process must never spawn a console host, including probes
+	# before ZIP extraction. Reuse the verified GUI shim as its native executor.
+	$archive = [IO.Compression.ZipFile]::OpenRead($archivePath)
+	try {
+		$nativeEntry = $archive.GetEntry('agentdock-tray-shim.exe')
+		$nativeTarget = Join-Path $payloadRoot 'agentdock-setup-launcher.exe'
+		[IO.Compression.ZipFileExtensions]::ExtractToFile($nativeEntry, $nativeTarget, $true)
+		$image = [IO.File]::ReadAllBytes($nativeTarget)
+		$pe = [BitConverter]::ToInt32($image, 0x3c)
+		if ([BitConverter]::ToUInt16($image, $pe + 24 + 68) -ne 2) { throw 'Setup native launcher must use the Windows GUI subsystem.' }
+	} finally { $archive.Dispose() }
 
     $arguments = @(
         "/DAppVersion=$Version",

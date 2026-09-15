@@ -50,6 +50,7 @@ var runtimePluginManageActions = map[string]bool{
 	"validate": true, "install": true, "update": true,
 	"remove": true, "enable": true, "disable": true,
 	"member_enable": true, "member_disable": true,
+	"heavy_enable": true, "heavy_disable": true,
 }
 
 func decodeRuntimePluginRequest(body []byte) (map[string]any, error) {

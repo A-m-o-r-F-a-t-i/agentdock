@@ -255,9 +255,9 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	if rollbackRestore < 0 || abandonCall < 0 || abandonCall < rollbackRestore {
 		t.Fatal("install abandon must run after real file/registry rollback")
 	}
-	rollbackServiceStart := strings.LastIndex(script, "& $destinationBinary service start --runtime-root $runtimeDir")
-	rollbackHealthWait := strings.LastIndex(script, "Wait-AgentDockHealth -HealthPort $Port")
-	rollbackTunnelStart := strings.LastIndex(script, "& $destinationBinary tunnel start --runtime-root $runtimeDir")
+	rollbackServiceStart := strings.LastIndex(script, "& $sourceBinary service start --runtime-root $runtimeDir")
+	rollbackHealthWait := strings.LastIndex(script, "Wait-AgentDockHealth -HealthPort $rollbackHealthPort")
+	rollbackTunnelStart := strings.LastIndex(script, "& $sourceBinary tunnel start --runtime-root $runtimeDir")
 	if rollbackServiceStart < rollbackRestore || rollbackHealthWait < rollbackServiceStart || rollbackTunnelStart < rollbackHealthWait {
 		t.Fatal("Engine rollback must synchronously restore source Core health and Tunnel readiness after adapter state restoration")
 	}
@@ -330,12 +330,16 @@ func TestWindowsInstallerUsesNativeTaskStartBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	combined := string(installData) + "\n" + string(brokerData)
+	nativeData, err := os.ReadFile("../../internal/desktopruntime/setup_launcher_windows.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := string(installData) + "\n" + string(brokerData) + "\n" + string(nativeData)
 	for _, want := range []string{
-		"service task-start",
-		"--task-name",
-		"--expected-user-sid",
-		"-AgentDockBinary $destinationBinary",
+		"startInteractiveScheduledTaskNative(request.TaskName, sid)",
+		"request.OwnerSID = sid",
+		"agentdock-tray-shim.exe",
+		"--setup-launch",
 	} {
 		if !strings.Contains(combined, want) {
 			t.Fatalf("Windows native task bridge missing %q", want)
@@ -587,7 +591,7 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 		"SignedUninstaller=yes",
 		"PersistSetupLog",
 		"ExpandConstant('{log}')",
-		"{localappdata}\\AgentDock\\logs\\installer",
+		"AddBackslash(ExpandConstant('{app}')) + 'logs\\installer'",
 		"GetDateTimeString('yyyymmdd-hhnnss-zzz'",
 		"CopyFile(SourceLog, PersistentLog, True)",
 		"original log remains at: ",
@@ -759,7 +763,7 @@ func TestWindowsGeneratedCredentialRecoveryPreservesUnreadableCiphertext(t *test
 	}
 }
 
-func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
+func TestWindowsSetupUsesNativeNoConsoleLaunchBroker(t *testing.T) {
 	installData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "install.ps1"))
 	if err != nil {
 		t.Fatalf("read install.ps1: %v", err)
@@ -796,39 +800,44 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"New-ScheduledTaskAction",
-		"New-ScheduledTaskPrincipal",
-		"-LogonType Interactive",
-		"-RunLevel Limited",
-		"Register-ScheduledTask",
-		"& $AgentDockBinary service task-start",
-		"--task-name $taskName",
-		"--expected-user-sid $identity.User.Value",
-		"if ($WaitForExit) {",
-		"$process.WaitForExit()",
-		"RedirectStandardOutput = $true",
-		"RedirectStandardError = $true",
-		"Get-RuntimeFailureMessage",
-		"Task Scheduler result: $rawResult",
-		"Read-RuntimeDiagnosticTail",
-		"Remove-Item -LiteralPath $diagnosticRoot -Recurse -Force",
-		"$wrapperLines += 'exit 0'",
-		"Unregister-ScheduledTask",
-		"AGENTDOCK_HOME",
-		"AGENTDOCK_DEFAULT_DIR",
+		"agentdock-tray-shim.exe", "--setup-launch", "CreateNoWindow = $true",
+		"$process.WaitForExit()", "RedirectStandardOutput = $true", "RedirectStandardError = $true",
+		"ReadToEndAsync()", "Remove-Item -LiteralPath $requestRoot -Recurse -Force",
+		"AGENTDOCK_HOME", "AGENTDOCK_DEFAULT_DIR",
 	} {
 		if !strings.Contains(brokerScript, want) {
 			t.Fatalf("runtime launch broker missing %q", want)
 		}
 	}
-	if !strings.Contains(brokerScript, "finally {") || !strings.Contains(brokerScript, "Unregister-ScheduledTask") {
-		t.Fatal("runtime launch broker must remove its temporary task even when launch fails")
+	for _, forbidden := range []string{"New-ScheduledTaskAction", "Register-ScheduledTask", "EncodedCommand", "LastRunTime"} {
+		if strings.Contains(brokerScript, forbidden) {
+			t.Fatalf("PowerShell adapter must not reintroduce the interactive console task bridge: %s", forbidden)
+		}
+	}
+	nativeData, err := os.ReadFile("../../internal/desktopruntime/setup_launcher_windows.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	native := string(nativeData)
+	for _, want := range []string{
+		"windows.CREATE_NO_WINDOW", "startInteractiveScheduledTaskNative(request.TaskName, sid)",
+		"<LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel>",
+		"result.PID = command.Process.Pid", "result.TaskName != request.TaskName",
+		"deleteSetupTask(request.TaskName", "command.Process.Release()",
+	} {
+		if !strings.Contains(native, want) {
+			t.Fatalf("native runtime broker missing %q", want)
+		}
+	}
+	if !strings.Contains(brokerScript, "finally {") || !strings.Contains(native, "defer func() { _ = deleteSetupTask") {
+		t.Fatal("native runtime broker and script must clean temporary tasks and request files on failure")
 	}
 
 	for _, want := range []string{
 		"Source: \"..\\..\\scripts\\install\\launch-windows-process.ps1\"; Flags: dontcopy",
 		"ExtractTemporaryFile('launch-windows-process.ps1')",
-		"-AgentDockBinary ",
+		"Source: \"{#OfflinePayloadDir}\\agentdock-setup-launcher.exe\"; Flags: dontcopy",
+		"NativeSetupCommand(",
 		"function LaunchRuntimeProcess(",
 		"LaunchRuntimeProcess(ExpandConstant('{app}\\bin\\agentdock-tray.exe'), '')",
 	} {
@@ -841,7 +850,7 @@ func TestWindowsSetupLaunchesRuntimeOutsideRedirectionGuardTree(t *testing.T) {
 	}
 	legacyFinishLaunch := "if not Exec(\n      ExpandConstant('{app}\\bin\\agentdock-tray.exe')"
 	if strings.Contains(setupScript, legacyFinishLaunch) {
-		t.Fatal("Setup finish page must not launch the long-lived tray directly from the RedirectionGuard process tree")
+		t.Fatal("Setup finish page must launch its long-lived tray through the independent native user-session broker")
 	}
 }
 
@@ -869,6 +878,8 @@ func TestWindowsRuntimeDiagnosticsPassesNativeTaskLauncher(t *testing.T) {
 	for _, want := range []string{
 		"$runtimeTestAgentDockBinary = Join-Path $env:RUNNER_TEMP 'agentdock-runtime-launch-test.exe'",
 		"go build -trimpath -o $runtimeTestAgentDockBinary .\\cmd\\agentdock",
+		"$runtimeTestNativeLauncher = Join-Path $env:RUNNER_TEMP 'agentdock-tray-shim.exe'",
+		"go build -trimpath -ldflags '-s -w -H=windowsgui' -o $runtimeTestNativeLauncher .\\cmd\\agentdock-shim",
 		"-AgentDockBinary $runtimeTestAgentDockBinary",
 	} {
 		if !strings.Contains(workflow, want) {

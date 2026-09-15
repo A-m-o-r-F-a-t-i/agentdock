@@ -6,6 +6,8 @@ English | [简体中文](./README.zh-CN.md)
 
 # AgentDock MCP
 
+This fork's Windows release: **[AgentDock 1.0.1](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/tag/v1.0.1)** · [Fixes and verification scope](./docs/releases/v1.0.1.md). Version 1.0.0 is no longer recommended for Windows upgrades.
+
 **Give AI agents secure, controlled access to every machine you operate.**
 
 Open ChatGPT in your browser and manage multiple computers and servers from one conversation. Write code, change configuration, run commands, and deploy in the real environment where the work belongs—without consuming a dedicated Codex coding quota.

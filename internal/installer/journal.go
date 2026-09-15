@@ -148,6 +148,10 @@ func (journal *rollbackJournal) updateService(name string, mutate func(*journalS
 }
 
 func (journal *rollbackJournal) Restore(ctx context.Context, request Request) error {
+	return journal.restore(ctx, request, true)
+}
+
+func (journal *rollbackJournal) restore(ctx context.Context, request Request, resumeServices bool) error {
 	var failures []error
 	for i := len(journal.Services) - 1; i >= 0; i-- {
 		service := journal.Services[i]
@@ -184,6 +188,9 @@ func (journal *rollbackJournal) Restore(ctx context.Context, request Request) er
 	for _, service := range journal.Services {
 		// 安装前未启用的服务更需要走 restore：linuxAutostartRestore 会 disable/del，
 		// 才能撤回本次安装加上的 enable / rc-update add。
+		if !resumeServices {
+			break
+		}
 		if err := restoreJournalService(ctx, request, service); err != nil {
 			failures = append(failures, fmt.Errorf("restore runtime %s: %w", service.Name, err))
 		}

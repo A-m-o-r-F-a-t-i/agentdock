@@ -19,3 +19,5 @@ func processAlive(pid int) bool {
 func retryableLockCreationError(err error) bool {
 	return errors.Is(err, os.ErrExist)
 }
+
+func openLockOwner(path string) (*os.File, error) { return os.Open(path) }

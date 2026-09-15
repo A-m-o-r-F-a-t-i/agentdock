@@ -35,6 +35,18 @@ func Acquire(ctx context.Context, path string) (func(), error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("file lock path is required")
 	}
+	// In-process queuing prevents competing directory readers from keeping a
+	// Windows lock directory delete-pending while its owner tries to release it.
+	unlockLocal, err := acquireLocal(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	leased := false
+	defer func() {
+		if !leased {
+			unlockLocal()
+		}
+	}()
 	owner, err := newOwner()
 	if err != nil {
 		return nil, fmt.Errorf("create file lock owner: %w", err)
@@ -80,10 +92,12 @@ acquireLoop:
 				if ownerErr == nil {
 					stopHeartbeat := maintainHeartbeat(ownerPath)
 					var releaseOnce sync.Once
+					leased = true
 					return func() {
 						releaseOnce.Do(func() {
 							stopHeartbeat()
 							release(path, owner)
+							unlockLocal()
 						})
 					}, nil
 				}
@@ -193,7 +207,10 @@ func removeSafeStale(lockPath string, now time.Time) bool {
 	if err != nil {
 		return errors.Is(err, os.ErrNotExist)
 	}
-	if now.Sub(info.ModTime()) <= staleAfter {
+	// A terminated owner can never release its lock. Waiting staleAfter here
+	// made an installer-killed Core block both trial and rollback for ten minutes.
+	// Invalid, inaccessible and live owners remain protected by ownerPIDAlive.
+	if !info.Mode().IsRegular() {
 		return false
 	}
 	ownerPath := filepath.Join(lockPath, entries[0].Name())
@@ -207,12 +224,12 @@ func removeSafeStale(lockPath string, now time.Time) bool {
 }
 
 func ownerPIDAlive(ownerPath string) bool {
-	file, err := os.Open(ownerPath)
+	file, err := openLockOwner(ownerPath)
 	if err != nil {
 		return !errors.Is(err, os.ErrNotExist)
 	}
-	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, 65))
+	_ = file.Close()
 	if err != nil || len(data) > 64 {
 		return true
 	}

@@ -162,7 +162,11 @@ public sealed class CapabilityInventory
     public List<PluginCapabilityInfo> Plugins { get; set; } = [];
     public List<SkillCapabilityInfo> Skills { get; set; } = [];
     public List<McpCapabilityInfo> McpServers { get; set; } = [];
+    public Dictionary<string, string> Errors { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, long> TimingMilliseconds { get; set; } = new(StringComparer.Ordinal);
 }
+
+public sealed record CapabilityInventoryUpdate(string Section, CapabilityInventory Inventory, long ElapsedMilliseconds, string Error = "");
 
 public sealed class PluginCapabilityInfo
 {

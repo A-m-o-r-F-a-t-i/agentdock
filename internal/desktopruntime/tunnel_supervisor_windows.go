@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -157,6 +158,9 @@ func signalTunnelSupervisorStop(runtimeRoot string) error {
 }
 
 func waitTunnelSupervisorStopped(ctx context.Context, runtimeRoot string, timeout time.Duration) error {
+	// A Windows mutex belongs to an OS thread, including these probe acquisitions.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	name, err := windows.UTF16PtrFromString(tunnelSupervisorObjectName("mutex", runtimeRoot))
 	if err != nil {
 		return err
@@ -192,6 +196,8 @@ func waitTunnelSupervisorStopped(ctx context.Context, runtimeRoot string, timeou
 }
 
 func activeTunnelSupervisorPID(runtimeRoot, binaryPath string) (uint32, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	name, err := windows.UTF16PtrFromString(tunnelSupervisorObjectName("mutex", runtimeRoot))
 	if err != nil {
 		return 0, err

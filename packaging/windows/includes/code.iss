@@ -18,6 +18,8 @@ var
   InstallWarningCode: String;
   InstallWarningMessage: String;
 
+#include "native-launch.iss"
+
 function GetLocalizedMessage(Key: String): String;
 begin
   Result := CustomMessage(Key);
@@ -131,7 +133,7 @@ var
   ExitCode: Integer;
   SchTasksPath: String;
 begin
-  SchTasksPath := ExpandConstant('{sys}\schtasks.exe');
+  SchTasksPath := ExpandConstant('{win}\System32\schtasks.exe');
   if not FileExists(SchTasksPath) then
   begin
     Log('Windows schtasks.exe is unavailable; skipping legacy AgentDock task detection.');
@@ -140,12 +142,11 @@ begin
   end;
 
   Result :=
-    Exec(
+    NativeSetupCommand(
       SchTasksPath,
       '/Query /TN "\AgentDock"',
-      '',
-      SW_HIDE,
-      ewWaitUntilTerminated,
+      30,
+      True,
       ExitCode) and
     (ExitCode = 0);
   if Result then
@@ -187,12 +188,11 @@ begin
     '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ScriptPath + '"' +
     ' -Path "' + Path + '"' +
     ' -Entropy "' + Entropy + '"';
-  if not Exec(
-    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+  if not NativeSetupCommand(
+    NativePowerShellPath(),
     Parameters,
-    '',
-    SW_HIDE,
-    ewWaitUntilTerminated,
+    30,
+    True,
     ExitCode) then
   begin
     Log('AgentDock could not start the DPAPI credential probe.');
@@ -268,22 +268,12 @@ end;
 function LaunchRuntimeProcess(const Filename: String; const Arguments: String): Boolean;
 var
   ExitCode: Integer;
-  Parameters: String;
 begin
-  Parameters :=
-    '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ' +
-    QuoteArgument(ExpandConstant('{tmp}\launch-windows-process.ps1')) +
-    ' -FilePath ' + QuoteArgument(Filename) +
-    ' -AgentDockBinary ' + QuoteArgument(ExpandConstant('{app}\bin\agentdock.exe'));
-  if Arguments <> '' then
-    Parameters := Parameters + ' -Arguments ' + QuoteArgument(Arguments);
-
-  Result := Exec(
-    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    Parameters,
-    '',
-    SW_HIDE,
-    ewWaitUntilTerminated,
+  Result := NativeSetupCommand(
+    Filename,
+    Arguments,
+    60,
+    False,
     ExitCode);
   if Result and (ExitCode <> 0) then
   begin
@@ -465,7 +455,7 @@ begin
     DirectoryError := ValidateSelectedInstallDirectory();
     if DirectoryError <> '' then
     begin
-      MsgBox(DirectoryError, mbError, MB_OK);
+      SuppressibleMsgBox(DirectoryError, mbError, MB_OK, IDOK);
       Result := False;
       Exit;
     end;
@@ -491,7 +481,7 @@ begin
     URL := Trim(FixedTunnelPage.Values[0]);
     if (Pos('https://', Lowercase(URL)) <> 1) or (Pos('"', URL) > 0) then
     begin
-      MsgBox(GetLocalizedMessage('InvalidServerURL'), mbError, MB_OK);
+      SuppressibleMsgBox(GetLocalizedMessage('InvalidServerURL'), mbError, MB_OK, IDOK);
       Result := False;
       Exit;
     end;
@@ -508,7 +498,7 @@ begin
           Log('AgentDock silent Setup will report the missing or unreadable Tunnel Token through the installer result.');
           Exit;
         end;
-        MsgBox(GetLocalizedMessage('TokenRequired'), mbError, MB_OK);
+        SuppressibleMsgBox(GetLocalizedMessage('TokenRequired'), mbError, MB_OK, IDOK);
         Result := False;
         Exit;
       end;
@@ -553,7 +543,7 @@ begin
     ExtractTemporaryFile('agentdock_windows_{#PayloadArchitecture}.zip.sha256');
     ExtractTemporaryFile('cloudflared.exe');
 
-    PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+    PowerShellPath := NativePowerShellPath();
     InstallScriptPath := ExpandConstant('{tmp}\install.ps1');
     OfflineArchivePath := ExpandConstant('{tmp}\agentdock_windows_{#PayloadArchitecture}.zip');
     OfflineChecksumPath := ExpandConstant('{tmp}\agentdock_windows_{#PayloadArchitecture}.zip.sha256');
@@ -613,7 +603,7 @@ begin
 
     InstallProgressPage.SetText(GetLocalizedMessage('OfflineProgressApplying'), '');
     InstallProgressPage.SetProgress(3, 4);
-    if not Exec(PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ExitCode) then
+    if not NativeSetupCommand(PowerShellPath, Parameters, 1800, True, ExitCode) then
     begin
       Result := GetLocalizedMessage('InstallerStartFailed');
       Exit;
@@ -715,13 +705,12 @@ begin
   if not FileExists(ScriptPath) then
     RaiseException(GetLocalizedMessage('UninstallScriptMissing'));
 
-  PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
-  if not Exec(
+  PowerShellPath := NativePowerShellPath();
+  if not NativeSetupCommand(
     PowerShellPath,
     GetUninstallParameters(''),
-    '',
-    SW_HIDE,
-    ewWaitUntilTerminated,
+    600,
+    True,
     ExitCode
   ) then
     RaiseException(GetLocalizedMessage('UninstallScriptFailed') + ' start');
@@ -743,7 +732,7 @@ begin
   if (SourceLog = '') or (not FileExists(SourceLog)) then
     Exit;
 
-  LogDirectory := ExpandConstant('{localappdata}\AgentDock\logs\installer');
+  LogDirectory := AddBackslash(ExpandConstant('{app}')) + 'logs\installer';
   if not ForceDirectories(LogDirectory) then
   begin
     Log('AgentDock: could not create persistent installer log directory: ' + LogDirectory);

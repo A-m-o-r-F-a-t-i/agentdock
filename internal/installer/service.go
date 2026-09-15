@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -319,7 +318,7 @@ func snapshotWindowsRuntimeState(request Request, journal *rollbackJournal) erro
 }
 
 func probeWindowsComponentRunning(ctx context.Context, binary, component, runtimeRoot string) (bool, error) {
-	cmd := exec.CommandContext(ctx, binary, component, "status", "--runtime-root", runtimeRoot)
+	cmd := installerCommand(ctx, binary, component, "status", "--runtime-root", runtimeRoot)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("读取 Windows %s 安装前状态失败: %w: %s", component, err, strings.TrimSpace(string(out)))
@@ -493,7 +492,7 @@ func restoreJournalService(ctx context.Context, request Request, service journal
 }
 
 func runCmd(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := installerCommand(ctx, name, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
@@ -506,11 +505,11 @@ func runCmd(ctx context.Context, name string, args ...string) error {
 }
 
 func cmdOK(ctx context.Context, name string, args ...string) bool {
-	return exec.CommandContext(ctx, name, args...).Run() == nil
+	return installerCommand(ctx, name, args...).Run() == nil
 }
 
 func cmdOutput(ctx context.Context, name string, args ...string) []byte {
-	out, _ := exec.CommandContext(ctx, name, args...).Output()
+	out, _ := installerCommand(ctx, name, args...).Output()
 	return out
 }
 
@@ -641,7 +640,7 @@ func windowsNamedTunnelRunning(ctx context.Context, request Request) error {
 	if binary == "" {
 		return fmt.Errorf("Windows Named Tunnel 找不到 agentdock 二进制")
 	}
-	cmd := exec.CommandContext(ctx, binary, "tunnel", "status", "--runtime-root", request.RuntimeRoot)
+	cmd := installerCommand(ctx, binary, "tunnel", "status", "--runtime-root", request.RuntimeRoot)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("读取 Windows Named Tunnel 状态失败: %w: %s", err, strings.TrimSpace(string(out)))
@@ -766,7 +765,7 @@ func waitHealthyCurl(ctx context.Context, endpoint, version string, timeout time
 	var last error
 	want := strings.TrimPrefix(version, "v")
 	for time.Now().Before(deadline) {
-		cmd := exec.CommandContext(ctx, "curl", "-fsS", "--max-time", "2", endpoint)
+		cmd := installerCommand(ctx, "curl", "-fsS", "--max-time", "2", endpoint)
 		out, err := cmd.Output()
 		if err != nil {
 			last = err

@@ -15,12 +15,20 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/fs/processlock"
 	processctl "github.com/uvwt/agentdock/internal/process"
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "--setup-exec" {
+		code, err := desktopruntime.RunSetupExecutor(os.Args[2])
+		if err != nil {
+			_, _ = fmt.Fprintln(os.Stderr, err)
+		}
+		os.Exit(code)
+	}
 	if err := run(); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -28,6 +36,9 @@ func main() {
 }
 
 func run() error {
+	if len(os.Args) == 3 && (os.Args[1] == "--setup-launch" || os.Args[1] == "--setup-worker") {
+		return desktopruntime.RunSetupLauncher(os.Args[2], os.Args[1] == "--setup-worker")
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve AgentDock stable entry: %w", err)

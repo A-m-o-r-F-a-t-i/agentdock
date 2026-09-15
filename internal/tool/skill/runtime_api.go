@@ -2,6 +2,7 @@ package skill
 
 import (
 	"strings"
+	"time"
 
 	skills "github.com/uvwt/agentdock/internal/skill"
 )
@@ -94,10 +95,36 @@ func (s *Service) CapabilityItem(name string) (CapabilityItem, bool, error) {
 }
 
 func (s *Service) RuntimeSkills() (Result, error) {
-	result, err := s.list()
+	return s.runtimeSkillInventory(true)
+}
+
+// RuntimeSkillSummaries is the control panel's list-only path. File trees stay
+// behind the existing detail endpoint; the default API retains file_count.
+func (s *Service) RuntimeSkillSummaries() (Result, error) {
+	return s.runtimeSkillInventory(false)
+}
+
+func (s *Service) runtimeSkillInventory(includeFiles bool) (Result, error) {
+	started := time.Now()
+	var members []PluginSkill
+	if s.pluginSkills != nil {
+		var err error
+		members, err = s.pluginSkills()
+		if err != nil {
+			return nil, skillToolError(err)
+		}
+	}
+	memberByName := make(map[string]PluginSkill, len(members))
+	for _, member := range members {
+		memberByName[member.Name] = member
+	}
+	pluginScanFinished := time.Now()
+	result, err := s.listWithPluginMembers(members)
 	if err != nil {
 		return nil, err
 	}
+	listFinished := time.Now()
+	var documentTime, fileTime time.Duration
 	items, _ := result["skills"].([]map[string]any)
 	for _, item := range items {
 		skill, _ := item["skill"].(string)
@@ -107,16 +134,8 @@ func (s *Service) RuntimeSkills() (Result, error) {
 			continue
 		}
 		packageDir := ""
-		if s.pluginSkill != nil {
-			member, found, lookupErr := s.pluginSkill(skill)
-			if lookupErr != nil {
-				return nil, lookupErr
-			}
-			if found {
-				packageDir = member.Path
-				item["plugin"] = member.Plugin
-				item["enabled"] = member.Enabled
-			}
+		if member, found := memberByName[skill]; found {
+			packageDir = member.Path
 		}
 		if packageDir == "" {
 			var pathErr error
@@ -125,31 +144,36 @@ func (s *Service) RuntimeSkills() (Result, error) {
 				return nil, skillToolError(pathErr)
 			}
 		}
-		var document skills.SkillDocument
-		if _, owned := item["plugin"]; owned {
-			document, err = skills.LoadPortableSkillDocument(packageDir)
-		} else {
-			document, err = skills.LoadSkillDocument(packageDir)
-		}
-		if err != nil {
-			return nil, skillToolError(err)
-		}
-		files, err := collectRuntimeSkillFiles(packageDir)
-		if err != nil {
-			return nil, err
-		}
-		item["name"] = document.Name
-		item["description"] = document.Description
-		item["file_count"] = len(files)
-		if _, exists := item["plugin"]; !exists {
-			selection, selectionErr := s.state.Snapshot(skill)
-			if selectionErr != nil {
-				return nil, skillToolError(selectionErr)
+		// Plugin document metadata and enabled state are already in the list.
+		// Standalone selection is also taken from that same snapshot.
+		if !owned {
+			documentStarted := time.Now()
+			document, loadErr := skills.LoadSkillDocument(packageDir)
+			if loadErr != nil {
+				return nil, skillToolError(loadErr)
 			}
-			item["enabled"] = !selection.Disabled
+			item["name"] = document.Name
+			item["description"] = document.Description
+			documentTime += time.Since(documentStarted)
+		}
+		if includeFiles {
+			fileStarted := time.Now()
+			files, fileErr := collectRuntimeSkillFiles(packageDir)
+			if fileErr != nil {
+				return nil, fileErr
+			}
+			item["file_count"] = len(files)
+			fileTime += time.Since(fileStarted)
 		}
 	}
 	result["source"] = runtimeAPISource
+	result["summary"] = !includeFiles
+	result["timing_ms"] = map[string]int64{
+		"plugin_scan": pluginScanFinished.Sub(started).Milliseconds(),
+		"local_list":  listFinished.Sub(pluginScanFinished).Milliseconds(),
+		"documents":   documentTime.Milliseconds(), "files": fileTime.Milliseconds(),
+		"total": time.Since(started).Milliseconds(),
+	}
 	return result, nil
 }
 

@@ -28,6 +28,9 @@ func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 	if len(args) > 0 && args[0] == "commit" {
 		return runInstallCommit(ctx, args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "restore-files" {
+		return runInstallRestoreFiles(ctx, args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "prepare-windows-legacy" {
 		return runInstallPrepareWindowsLegacy(ctx, args[1:], stdout, stderr)
 	}
@@ -58,6 +61,7 @@ func runInstallCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 	flags.StringVar(&request.BinaryPath, "binary", "", "已就位的 agentdock 二进制")
 	flags.StringVar(&request.SkillBundle, "skill-bundle", "", "核心 Skill Bundle 目录")
 	flags.StringVar(&request.Version, "version", "", "目标版本")
+	flags.StringVar(&request.TransactionID, "transaction-id", "", "OS adapter 预分配的32位十六进制事务 ID")
 	flags.StringVar(&request.Channel, "channel", "official", "安装通道")
 	// host/port 默认必须是“未指定”，不能写成 127.0.0.1:8765。
 	// 否则 update/repair 省略这两个标志时会把用户已有监听地址覆盖掉。
@@ -231,6 +235,7 @@ func runInstallAbandon(ctx context.Context, args []string, stdout, stderr io.Wri
 	flags.SetOutput(stderr)
 	var request installer.Request
 	request.Action = installer.ActionAbandon
+	flags.BoolVar(&request.RequireHealth, "require-health", false, "确认原版本健康后才结束回滚")
 	flags.StringVar(&request.InstallRoot, "install-root", "", "安装根目录")
 	flags.StringVar(&request.RuntimeRoot, "runtime-root", "", "运行配置目录")
 	flags.StringVar(&request.TransactionID, "transaction-id", "", "要撤销的 install 事务 ID")
@@ -254,6 +259,8 @@ func runInstallCommit(ctx context.Context, args []string, stdout, stderr io.Writ
 	flags.SetOutput(stderr)
 	var request installer.Request
 	request.Action = installer.ActionCommit
+	flags.BoolVar(&request.RequireHealth, "require-health", false, "提交前确认目标版本健康")
+	flags.BoolVar(&request.KeepJournal, "keep-journal", false, "为外层安装激活阶段保留回滚文件")
 	flags.StringVar(&request.InstallRoot, "install-root", "", "安装根目录")
 	flags.StringVar(&request.RuntimeRoot, "runtime-root", "", "运行配置目录")
 	flags.StringVar(&request.TransactionID, "transaction-id", "", "要提交的 install 事务 ID")

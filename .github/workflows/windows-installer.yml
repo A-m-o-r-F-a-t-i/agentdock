@@ -105,6 +105,10 @@ jobs:
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
           go build -trimpath -o $runtimeTestAgentDockBinary .\cmd\agentdock
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime test Core build failed.' }
+          $runtimeTestNativeLauncher = Join-Path $env:RUNNER_TEMP 'agentdock-tray-shim.exe'
+          go build -trimpath -ldflags '-s -w -H=windowsgui' -o $runtimeTestNativeLauncher .\cmd\agentdock-shim
+          if ($LASTEXITCODE -ne 0) { throw 'Runtime test native GUI launcher build failed.' }
           & .\scripts\test\test-windows-runtime-launch-diagnostics.ps1 `
             -LauncherPath .\scripts\install\launch-windows-process.ps1 `
             -AgentDockBinary $runtimeTestAgentDockBinary

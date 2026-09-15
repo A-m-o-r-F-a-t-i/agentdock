@@ -27,6 +27,9 @@ const (
 	// rollback 自身失败则带 RollbackFailed 写 failed/external_rollback_failed，
 	// 这会阻断下一次自动 install；修复 OS adapter 状态后再 abandon 一次（不要带 --rollback-failed）才是恢复入口。
 	ActionAbandon Action = "abandon"
+	// ActionRestoreFiles restores Engine-owned files before the OS adapter
+	// restores registry/manifest state and verifies the previous runtime.
+	ActionRestoreFiles Action = "restore-files"
 )
 
 const (
@@ -133,6 +136,10 @@ type Request struct {
 	RollbackFailed bool
 	// TransactionID 绑定 commit/abandon 到明确的 install 事务，不能拿上一笔 result.json 冒充成功。
 	TransactionID string
+	// RequireHealth verifies the expected runtime before commit or abandon.
+	RequireHealth bool
+	// KeepJournal retains recovery data through fresh-install activation.
+	KeepJournal bool
 }
 
 type Result struct {
@@ -242,7 +249,7 @@ func normalizeRequest(request Request) (Request, error) {
 		request.Action = ActionInstall
 	}
 	switch request.Action {
-	case ActionInstall, ActionRepair, ActionUninstall, ActionAbandon, ActionCommit:
+	case ActionInstall, ActionRepair, ActionUninstall, ActionAbandon, ActionCommit, ActionRestoreFiles:
 	default:
 		return Request{}, fmt.Errorf("不支持的安装动作：%s", request.Action)
 	}
@@ -387,6 +394,13 @@ func newTransaction(request Request, platform, sourceVersion string) (Transactio
 	transactionID, err := newTransactionID()
 	if err != nil {
 		return Transaction{}, err
+	}
+	if supplied := strings.TrimSpace(request.TransactionID); supplied != "" {
+		decoded, decodeErr := hex.DecodeString(supplied)
+		if decodeErr != nil || len(decoded) != 16 || len(supplied) != 32 {
+			return Transaction{}, errors.New("install transaction-id must be 32 hexadecimal characters")
+		}
+		transactionID = strings.ToLower(supplied)
 	}
 	now := time.Now().UTC()
 	target := strings.TrimSpace(request.Version)

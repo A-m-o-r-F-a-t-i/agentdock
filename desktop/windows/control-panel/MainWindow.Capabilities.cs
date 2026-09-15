@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -15,6 +16,8 @@ public partial class MainWindow
     private CapabilityInventory _capabilityInventory = new();
     private bool _updatingCapabilities;
     private readonly HashSet<string> _expandedPlugins = new(StringComparer.Ordinal);
+    private int _capabilityLoadGeneration;
+    private bool _capabilityControlsEnabled = true;
 
     private async Task RefreshCapabilitiesAsync(bool coreAvailable = true, bool showErrors = true)
     {
@@ -26,8 +29,9 @@ public partial class MainWindow
         {
             if (!coreAvailable)
             {
-                _capabilityInventory = new CapabilityInventory();
+                // Retain the last displayed inventory for read-only inspection.
                 RenderCapabilityInventory();
+                SetCapabilityControlsEnabled(false);
                 CapabilityStatusText.Text = UiText.Get("CapabilitiesRequireRunningCore");
                 return;
             }
@@ -49,17 +53,61 @@ public partial class MainWindow
 
     private async Task LoadCapabilityInventoryCoreAsync()
     {
+        var generation = ++_capabilityLoadGeneration;
+        SetCapabilityControlsEnabled(false);
         CapabilityStatusText.Text = UiText.Get("LoadingCapabilities");
-        _capabilityInventory = await _runtime.GetCapabilityInventoryAsync();
-        _capabilityInventory.Plugins ??= [];
-        _capabilityInventory.Skills ??= [];
-        _capabilityInventory.McpServers ??= [];
+        var progress = new Progress<CapabilityInventoryUpdate>(update =>
+        {
+            if (generation != _capabilityLoadGeneration) return;
+            MergeCapabilitySection(update.Section, update.Inventory);
+            RenderCapabilityInventory();
+            CapabilityStatusText.Text = UiText.Get("LoadingCapabilities") + " " + CapabilityInventoryStatus();
+        });
+        try
+        {
+            var inventory = await _runtime.GetCapabilityInventoryAsync(progress);
+            ++_capabilityLoadGeneration; // Ignore queued notifications after this final snapshot.
+            foreach (var section in new[] { "plugins", "skills", "mcp" }) MergeCapabilitySection(section, inventory);
+            RenderCapabilityInventory();
+            CapabilityStatusText.Text = CapabilityInventoryStatus();
+        }
+        finally
+        {
+            if (generation == _capabilityLoadGeneration) ++_capabilityLoadGeneration;
+            SetCapabilityControlsEnabled(true);
+        }
+    }
+
+    private void MergeCapabilitySection(string section, CapabilityInventory inventory)
+    {
+        if (inventory.Errors.TryGetValue(section, out var error))
+        {
+            _capabilityInventory.Errors[section] = error;
+            return;
+        }
+        _capabilityInventory.Errors.Remove(section);
+        switch (section)
+        {
+            case "plugins": _capabilityInventory.Plugins = inventory.Plugins; break;
+            case "skills": _capabilityInventory.Skills = inventory.Skills; break;
+            case "mcp": _capabilityInventory.McpServers = inventory.McpServers; break;
+        }
+    }
+
+    private string CapabilityInventoryStatus()
+    {
+        var text = UiText.Format("CapabilitiesLoaded", _capabilityInventory.Plugins.Count,
+            _capabilityInventory.Skills.Count, _capabilityInventory.McpServers.Count);
+        if (_capabilityInventory.Errors.Count > 0)
+            text += " · " + string.Join(" | ", _capabilityInventory.Errors.Select(error => $"{error.Key}: {error.Value}"));
+        return text;
+    }
+
+    private void SetCapabilityControlsEnabled(bool enabled)
+    {
+        // Expanders and read-only metadata remain usable while status is pending.
+        _capabilityControlsEnabled = enabled;
         RenderCapabilityInventory();
-        CapabilityStatusText.Text = UiText.Format(
-            "CapabilitiesLoaded",
-            _capabilityInventory.Plugins.Count,
-            _capabilityInventory.Skills.Count,
-            _capabilityInventory.McpServers.Count);
     }
 
     private async Task ExecuteCapabilityActionAsync(string pendingText, Func<Task> action)
@@ -88,6 +136,7 @@ public partial class MainWindow
 
     private void RenderCapabilityInventory()
     {
+        var timer = Stopwatch.StartNew();
         var previous = _updatingCapabilities;
         _updatingCapabilities = true;
         try
@@ -140,6 +189,9 @@ public partial class MainWindow
         finally
         {
             _updatingCapabilities = previous;
+            // Render logging is sent to the worker; file I/O never blocks WPF.
+            var elapsed = timer.ElapsedMilliseconds;
+            _ = Task.Run(() => _runtime.RecordCapabilityRenderTime(elapsed));
         }
     }
 
@@ -171,6 +223,7 @@ public partial class MainWindow
         {
             Content = UiText.Get("Enabled"),
             IsChecked = plugin.Enabled,
+            IsEnabled = _capabilityControlsEnabled,
             Tag = plugin.Name,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(14, 0, 0, 0)
@@ -181,6 +234,7 @@ public partial class MainWindow
         var heavy = new CheckBox
         {
             Content = "Heavy", IsChecked = plugin.Heavy, Tag = plugin.Name,
+            IsEnabled = _capabilityControlsEnabled,
             ToolTip = UiText.Get("HeavyPluginHelp"),
             VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(14, 0, 0, 0)
         };
@@ -202,15 +256,46 @@ public partial class MainWindow
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 3)
         });
-        var details = new StackPanel();
         var expander = new Expander
         {
             Header = UiText.Format("PluginMemberSummary", plugin.Skills?.Count ?? 0, plugin.McpServers?.Count ?? 0),
-            Content = details, IsExpanded = _expandedPlugins.Contains(plugin.Name), Margin = new Thickness(0, 5, 0, 0)
+            IsExpanded = _expandedPlugins.Contains(plugin.Name), Margin = new Thickness(0, 5, 0, 0)
         };
-        expander.Expanded += (_, _) => _expandedPlugins.Add(plugin.Name);
+        expander.Expanded += (_, _) =>
+        {
+            _expandedPlugins.Add(plugin.Name);
+            if (expander.Content is null)
+            {
+                var previous = _updatingCapabilities;
+                _updatingCapabilities = true;
+                try { expander.Content = BuildPluginDetails(plugin); }
+                finally { _updatingCapabilities = previous; }
+            }
+        };
         expander.Collapsed += (_, _) => _expandedPlugins.Remove(plugin.Name);
+        if (expander.IsExpanded) expander.Content = BuildPluginDetails(plugin);
         content.Children.Add(expander);
+        if ((plugin.Diagnostics?.Count ?? 0) > 0)
+        {
+            content.Children.Add(new TextBlock { Text = UiText.Format("PluginDiagnosticCount", plugin.Diagnostics!.Count),
+                Foreground = new SolidColorBrush(Color.FromRgb(180, 35, 24)), TextWrapping = TextWrapping.Wrap });
+        }
+
+        return new Border
+        {
+            Child = content,
+            BorderBrush = new SolidColorBrush(Color.FromRgb(208, 213, 221)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(14),
+            Margin = new Thickness(0, 0, 0, 10),
+            Background = Brushes.White
+        };
+    }
+
+    private StackPanel BuildPluginDetails(PluginCapabilityInfo plugin)
+    {
+        var details = new StackPanel();
         details.Children.Add(new TextBlock
         {
             Text = UiText.Format("PluginPackageMetadata", plugin.Version, plugin.Path),
@@ -251,22 +336,7 @@ public partial class MainWindow
             details.Children.Add(new TextBlock { Text = diagnostic, TextWrapping = TextWrapping.Wrap,
                 Foreground = new SolidColorBrush(Color.FromRgb(180, 35, 24)), Margin = new Thickness(0, 5, 0, 0) });
         }
-        if ((plugin.Diagnostics?.Count ?? 0) > 0)
-        {
-            content.Children.Add(new TextBlock { Text = UiText.Format("PluginDiagnosticCount", plugin.Diagnostics!.Count),
-                Foreground = new SolidColorBrush(Color.FromRgb(180, 35, 24)), TextWrapping = TextWrapping.Wrap });
-        }
-
-        return new Border
-        {
-            Child = content,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(208, 213, 221)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(14),
-            Margin = new Thickness(0, 0, 0, 10),
-            Background = Brushes.White
-        };
+        return details;
     }
 
     private static TextBlock BuildPluginSectionTitle(string text) => new()
@@ -355,6 +425,7 @@ public partial class MainWindow
         var toggle = new CheckBox
         {
             IsChecked = enabled,
+            IsEnabled = _capabilityControlsEnabled,
             Tag = target,
             VerticalAlignment = VerticalAlignment.Center,
             ToolTip = enabled ? UiText.Get("DisableCapability") : UiText.Get("EnableCapability")

@@ -65,6 +65,12 @@ func Dispatch(ctx context.Context, runtime Runtime, request Request) (map[string
 		result, err := runtime.RuntimeSkillManage(ctx, args)
 		return map[string]any(result), err
 	case path == "/internal/runtime/skills":
+		if strings.EqualFold(request.queryValue("summary"), "true") {
+			if summaries, ok := runtime.(interface{ RuntimeSkillSummaries() (app.Result, error) }); ok {
+				result, err := summaries.RuntimeSkillSummaries()
+				return map[string]any(result), err
+			}
+		}
 		result, err := runtime.RuntimeSkills()
 		return map[string]any(result), err
 	case strings.HasPrefix(path, "/internal/runtime/skills/"):

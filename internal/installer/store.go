@@ -102,7 +102,11 @@ func (store *Store) ReadResult(transactionID string) (Result, error) {
 	if transactionErr == nil && transaction.TransactionID == transactionID && isTerminalInstallState(transaction.State) {
 		// terminal transaction 已经对外生效；projection 只能从它向前收敛，不能继续相信同事务的 trial 结果。
 		result := resultFromTransaction(transaction)
-		if persistedErr == nil && transaction.State == updateengine.StateCommitted && transaction.Action != ActionUninstall {
+		preserveRestored := transaction.State == updateengine.StateRolledBack &&
+			persisted.State == updateengine.StateRolledBack && persisted.Phase == PhaseRollback &&
+			persisted.ActiveVersion == transaction.ActiveVersion
+		if persistedErr == nil && transaction.Action != ActionUninstall &&
+			(transaction.State == updateengine.StateCommitted || preserveRestored) {
 			// commit 前的 trial 已完成健康检查，保留这些非状态机展示字段；rollback/failed 则故意清空，
 			// 防止失败 target 的 URL/健康状态重新泄漏到最终 projection。
 			result.LocalMCPURL = persisted.LocalMCPURL

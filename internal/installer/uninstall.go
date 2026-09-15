@@ -82,7 +82,7 @@ func uninstallDarwin(ctx context.Context, request Request) error {
 // launchctlJobLoaded 把“服务不存在”和权限/launchctl 故障分开。
 // 任意非零都当不存在会在 print 失败后删掉 plist，把还在跑的 LaunchAgent 变成假成功。
 func launchctlJobLoaded(ctx context.Context, spec string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "launchctl", "print", spec)
+	cmd := installerCommand(ctx, "launchctl", "print", spec)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return true, nil
@@ -253,7 +253,7 @@ func removeAllExisting(path string) error {
 }
 
 func runOptionalCmd(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := installerCommand(ctx, name, args...)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return nil

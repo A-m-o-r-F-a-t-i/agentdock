@@ -166,18 +166,8 @@ public sealed partial class RuntimeService : IDisposable
         IReadOnlyList<string>? configuredArguments = null) =>
         AcpAdapterResolver.Resolve(agent, RuntimeRoot, configuredCommand, configuredArguments);
 
-    public async Task<CapabilityInventory> GetCapabilityInventoryAsync(CancellationToken cancellationToken = default)
-    {
-        var plugins = await SendRuntimeApiAsync<RuntimePluginsResponse>(HttpMethod.Get, "/internal/runtime/plugins", null, cancellationToken);
-        var skills = await SendRuntimeApiAsync<RuntimeSkillsResponse>(HttpMethod.Get, "/internal/runtime/skills", null, cancellationToken);
-        var mcp = await SendRuntimeApiAsync<RuntimeMcpResponse>(HttpMethod.Get, "/internal/runtime/mcp", null, cancellationToken);
-        return new CapabilityInventory
-        {
-            Plugins = plugins.Plugins ?? [],
-            Skills = skills.Skills ?? [],
-            McpServers = mcp.Servers ?? []
-        };
-    }
+    public Task<CapabilityInventory> GetCapabilityInventoryAsync(CancellationToken cancellationToken = default) =>
+        GetCapabilityInventoryAsync(null, cancellationToken);
 
     public async Task SetSkillEnabledAsync(string skill, bool enabled, CancellationToken cancellationToken = default) =>
         _ = await SendRuntimeApiAsync<JsonElement>(
@@ -620,11 +610,13 @@ public sealed partial class RuntimeService : IDisposable
         HttpMethod method,
         string path,
         object? body,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? resolvedOrigin = null,
+        string? bearerToken = null)
     {
-        var origin = await ResolveLocalRuntimeOriginAsync(cancellationToken);
+        var origin = resolvedOrigin ?? await ResolveLocalRuntimeOriginAsync(cancellationToken);
         using var request = new HttpRequestMessage(method, origin + path);
-        var token = ReadBearerToken();
+        var token = bearerToken ?? ReadBearerToken();
         if (!string.IsNullOrWhiteSpace(token))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);

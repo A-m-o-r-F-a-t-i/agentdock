@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"syscall"
@@ -27,6 +28,7 @@ const (
 )
 
 func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
+	parentContext := ctx
 	// Win32 mutex 的 owner 是线程而不是进程。supervisor 持有 mutex 的整个生命周期固定在
 	// 同一个 OS thread，确保最终 ReleaseMutex 一定由 owner thread 执行。
 	goruntime.LockOSThread()
@@ -55,11 +57,15 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 		return err
 	}
 	defer logs.Close()
+	ctx, cancelOnStop := guard.stopContext(ctx)
+	defer cancelOnStop()
+	fmt.Fprintf(logs.stderr, "supervisor started pid=%d runtime=%s\n", os.Getpid(), runtime.root)
+	defer fmt.Fprintf(logs.stderr, "supervisor stopped pid=%d\n", os.Getpid())
 
 	var retryDelay time.Duration
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return parentContext.Err()
 		}
 		stopped, err := guard.stopRequested()
 		if err != nil {
@@ -81,7 +87,7 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 		startedAt := time.Now()
 		runErr := runCloudflaredOnce(ctx, runtime, logs)
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return parentContext.Err()
 		}
 		stopped, err = guard.stopRequested()
 		if err != nil {
@@ -133,6 +139,12 @@ func runCloudflaredOnce(ctx context.Context, runtime tunnelRuntime, logs *proces
 	if err := command.Start(); err != nil {
 		return err
 	}
+	startedAt := time.Now()
+	phase := "provision"
+	fmt.Fprintf(logs.stderr, "cloudflared started supervisor_pid=%d child_pid=%d phase=provision\n", os.Getpid(), command.Process.Pid)
+	defer func() {
+		fmt.Fprintf(logs.stderr, "cloudflared stopped child_pid=%d phase=%s elapsed_ms=%d\n", command.Process.Pid, phase, time.Since(startedAt).Milliseconds())
+	}()
 
 	if runtime.mode == "quick" {
 		publicURL, readyErr := waitQuickTunnelURL(ctx, runtime, logCursors, quickTunnelProvisionAttemptTimeout)
@@ -141,12 +153,16 @@ func runCloudflaredOnce(ctx context.Context, runtime tunnelRuntime, logs *proces
 			_ = command.Wait()
 			return readyErr
 		}
+		phase = "apply-url"
+		fmt.Fprintf(logs.stderr, "cloudflared phase=apply-url child_pid=%d\n", command.Process.Pid)
 		if err := applyQuickTunnelURL(ctx, runtime, publicURL); err != nil {
 			_ = command.Process.Kill()
 			_ = command.Wait()
 			return err
 		}
 	}
+	phase = "serving"
+	fmt.Fprintf(logs.stderr, "cloudflared phase=serving child_pid=%d\n", command.Process.Pid)
 	return command.Wait()
 }
 
@@ -184,6 +200,23 @@ func platformTunnelStatus(ctx context.Context, runtimeRoot string) (TunnelStatus
 }
 
 func platformTunnelAction(ctx context.Context, runtimeRoot, action string) error {
+	root, err := filepath.Abs(strings.TrimSpace(runtimeRoot))
+	if err != nil {
+		return err
+	}
+	runtimeRoot = root
+	goruntime.LockOSThread()
+	defer goruntime.UnlockOSThread()
+	ctx, finishAction, err := tunnelActionContext(ctx, runtimeRoot, action == "stop")
+	if err != nil {
+		return err
+	}
+	defer finishAction()
+	release, err := acquireTunnelOperation(ctx, runtimeRoot)
+	if err != nil {
+		return err
+	}
+	defer release()
 	runtime, err := loadTunnelRuntime(runtimeRoot)
 	if err != nil {
 		return err
@@ -240,7 +273,7 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 	if err != nil {
 		return err
 	}
-	supervisorPID, err := activeTunnelSupervisorPID(runtime.root, runtime.manifest.AgentDockBinary)
+	supervisorPID, err := activeTunnelSupervisorPID(runtime.root, ActiveCoreBinary(runtime.root, runtime.manifest))
 	if err != nil {
 		return err
 	}
@@ -320,7 +353,7 @@ func regenerateQuickTunnel(ctx context.Context, runtime tunnelRuntime) error {
 		return err
 	}
 	// 清掉旧公网地址后先重启核心，避免新地址准备期间继续使用失效的 OAuth Origin。
-	if err := platformServiceAction(ctx, runtime.root, "restart"); err != nil {
+	if err := restartTunnelCore(ctx, runtime.root); err != nil {
 		return err
 	}
 	return startTunnel(ctx, runtime)
@@ -369,7 +402,7 @@ func cloudflaredCommand(ctx context.Context, runtime tunnelRuntime) (*exec.Cmd, 
 	command := exec.CommandContext(ctx, runtime.manifest.CloudflaredBinary, arguments...)
 	command.Env = environment
 	command.Dir = runtime.root
-	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	command.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 	return command, nil
 }
 
@@ -377,7 +410,10 @@ func applyQuickTunnelURL(ctx context.Context, runtime tunnelRuntime, publicURL s
 	if err := writeRuntimeText(runtime.files.serverURL, publicURL); err != nil {
 		return err
 	}
-	if err := platformServiceAction(ctx, runtime.root, "restart"); err != nil {
+	if err := restartTunnelCore(ctx, runtime.root); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := runtime.updateManifest("quick", publicURL); err != nil {
@@ -402,7 +438,7 @@ func invalidateQuickTunnelAfterExit(ctx context.Context, runtime tunnelRuntime) 
 		return err
 	}
 	// 已对外发布过的 Quick URL 一旦失效，先让 Core 丢弃旧 OAuth Origin，再等待新 URL。
-	return platformServiceAction(ctx, runtime.root, "restart")
+	return restartTunnelCore(ctx, runtime.root)
 }
 
 const (

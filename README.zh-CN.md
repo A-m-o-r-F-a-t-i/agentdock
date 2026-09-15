@@ -6,6 +6,8 @@
 
 # AgentDock MCP
 
+本分支 Windows 发行版：**[AgentDock 1.0.1](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/tag/v1.0.1)** · [修复内容与验证范围](./docs/releases/v1.0.1.md)。1.0.0 已撤下推荐状态，请勿继续用于覆盖安装。
+
 **让 AI 的双手，真正触达你的每一台设备。**
 
 打开网页版 ChatGPT，即可管理多台电脑与服务器：在真实设备上写代码、改配置、跑命令与部署，执行发生在你的机器上，不消耗Codex额度。

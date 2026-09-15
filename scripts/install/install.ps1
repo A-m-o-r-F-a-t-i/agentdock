@@ -37,7 +37,7 @@ function Invoke-SetupRuntimeProcess {
         [string] $Arguments = '',
         [switch] $WaitForExit,
         [switch] $PassThruOutput,
-        [int] $TimeoutSeconds = 30
+        [int] $TimeoutSeconds = 180
     )
 
     if ($InstallChannel -ne 'setup') {
@@ -47,9 +47,9 @@ function Invoke-SetupRuntimeProcess {
         throw "Setup runtime launcher was not found: $setupRuntimeLauncherPath"
     }
 
-    # Inno Setup 6.7+ enables ProcessRedirectionTrustPolicy on its process tree.
-    # Task Scheduler creates the long-lived runtime from a clean user process context
-    # while Setup keeps RedirectionGuard enabled for install-time filesystem work.
+    # The native GUI broker starts long-lived runtime commands in the same
+    # signed-in user's session without creating a PowerShell console window.
+    # Inno's filesystem protections remain enabled throughout installation.
     # The validated payload core stays independent of trial/rollback pointers.
     # The stable shim rejects an uncommitted installer generation, and an old
     # generation may still contain the task-start bug being repaired.
@@ -74,6 +74,16 @@ function ConvertTo-NativeArguments {
             '"' + [regex]::Replace($escaped, '(\\+)$', '$1$1') + '"'
         }
     }) -join ' ')
+}
+
+function Test-OwnInstallerTransaction {
+    if (-not $engineInvoked -or [string]::IsNullOrWhiteSpace($engineTransactionId)) { return $false }
+    $path = Join-Path $runtimeDir 'install\transaction.json'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $false }
+    try {
+        $transaction = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+        return [string]::Equals([string]$transaction.transaction_id, $engineTransactionId, [StringComparison]::Ordinal)
+    } catch { return $false }
 }
 
 function Get-AgentDockArchitecture {
@@ -1203,6 +1213,8 @@ $rollbackStateCaptured = $false
 $engineCommitted = $false
 $enginePrepared = $false
 $engineTransactionId = ''
+$engineInvoked = $false
+$preserveRecoveryFiles = $false
 $stableFilesMayBeReplaced = $false
 $cloudflaredReplacementStarted = $false
 $startupRegistrationChanged = $false
@@ -1659,8 +1671,8 @@ try {
 
     Add-UserPath -Directory $InstallDir
 
-    $agentDockHome = Join-Path $userHome '.agentdock'
-    $workspace = Join-Path $userHome 'AgentDock'
+    $agentDockHome = $runtimeAgentDockHome
+    $workspace = $runtimeAgentDockDefaultDir
     foreach ($directory in @($agentDockHome, $workspace)) {
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
     }
@@ -1682,7 +1694,7 @@ try {
     $manifestPublicUrl = ''
     $engineCommitted = $false
     $enginePrepared = $false
-    $engineTransactionId = ''
+    $engineTransactionId = [Guid]::NewGuid().ToString('N')
     if ($RegisterStartup) {
         New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
 
@@ -1829,6 +1841,7 @@ exit `$LASTEXITCODE
             '--tray-startup-value-name', $trayRunValueName,
             '--cloudflared-startup-value-name', $cloudflaredRunValueName,
             '--channel', $InstallChannel,
+            '--transaction-id', $engineTransactionId,
             '--defer-commit'
         )
         if ($effectivePrivilegeMode -eq 'elevated') {
@@ -1848,10 +1861,11 @@ exit `$LASTEXITCODE
         }
         # Engine may replace stable shim/icon before returning an error; mark this before invocation so catch can restore them.
         $stableFilesMayBeReplaced = $true
+        $engineInvoked = $true
         if ($InstallChannel -eq 'setup' -and $existingInstallDetected -and $RegisterStartup) {
             # The upgrade Engine starts and verifies Core/Tunnel during its trial.
-            # Run that Engine outside Inno's inherited RedirectionGuard process tree,
-            # while retaining the same transactional Engine and the current user SID.
+            # Use the native GUI worker while retaining the Engine transaction
+            # identity and current user SID, with no interactive PowerShell task.
             $engineJson = (Invoke-SetupRuntimeProcess -FilePath $sourceBinary `
                 -Arguments (ConvertTo-NativeArguments -Values $engineArgs) `
                 -WaitForExit -PassThruOutput -TimeoutSeconds 300 | Out-String).Trim()
@@ -1870,9 +1884,8 @@ exit `$LASTEXITCODE
         } catch {
             throw "Installer Engine returned invalid JSON: $($_.Exception.Message)"
         }
-        $engineTransactionId = [string] $engineResult.transaction_id
-        if ([string]::IsNullOrWhiteSpace($engineTransactionId)) {
-            throw 'Installer Engine did not return a transaction id.'
+        if (-not [string]::Equals([string] $engineResult.transaction_id, $engineTransactionId, [StringComparison]::Ordinal)) {
+            throw 'Installer Engine did not acknowledge the requested transaction id.'
         }
 
     if (-not $RegisterStartup) {
@@ -1889,7 +1902,7 @@ exit `$LASTEXITCODE
     # the stable shim can be used for optional immediate activation; outer rollback can still abandon
     # this transaction because the committed pointer keeps the Installer transaction id.
     if ($enginePrepared -and -not $existingInstallDetected) {
-        & $sourceBinary install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId 1>$null
+        & $sourceBinary install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId --keep-journal 1>$null
         if ($LASTEXITCODE -ne 0) {
             throw 'Installer Engine failed to commit the fresh install transaction.'
         }
@@ -2004,8 +2017,10 @@ exit `$LASTEXITCODE
         Remove-Item -LiteralPath $legacyManagerPath -Force
     }
 
-    if ($enginePrepared -and -not $engineCommitted) {
-        & $sourceBinary install commit --install-root $runtimeDir --runtime-root $runtimeDir --transaction-id $engineTransactionId 1>$null
+    if ($enginePrepared) {
+        $commitArgs = @('install', 'commit', '--install-root', $runtimeDir, '--runtime-root', $runtimeDir, '--transaction-id', $engineTransactionId)
+        if ($healthStatus -eq 'healthy') { $commitArgs += '--require-health' }
+        & $sourceBinary @commitArgs 1>$null
         if ($LASTEXITCODE -ne 0) {
             throw 'Installer Engine failed to commit the install transaction.'
         }
@@ -2058,6 +2073,8 @@ exit `$LASTEXITCODE
     }
 } catch {
     $installError = $_
+    # The Engine may fail before its JSON handshake. Only rebind our own ID.
+    $enginePrepared = Test-OwnInstallerTransaction
     $taskRollbackError = $null
     $rollbackError = $null
     $taskRecoveryPath = ''
@@ -2083,6 +2100,14 @@ exit `$LASTEXITCODE
         if ($effectivePrivilegeMode -eq 'elevated') {
             Stop-ScheduledTask -TaskName 'AgentDock' -TaskPath '\' -ErrorAction SilentlyContinue
             Start-Sleep -Milliseconds 500
+        }
+
+        if ($enginePrepared) {
+            # Restore generation bytes before outer credentials/registry. This
+            # also restores same-version repair binaries from the journal.
+            & $sourceBinary install restore-files --install-root $runtimeDir --runtime-root $runtimeDir `
+                --transaction-id $engineTransactionId --payload-dir $extractDir 1>$null
+            if ($LASTEXITCODE -ne 0) { throw "Installer Engine could not restore generation files (exit $LASTEXITCODE)." }
         }
 
         if ($cloudflaredReplacementStarted) {
@@ -2179,6 +2204,11 @@ exit `$LASTEXITCODE
             }
         }
 
+        $rollbackHealthPort = $Port
+        if (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf) {
+            $restoredManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($restoredManifest.PSObject.Properties['port']) { $rollbackHealthPort = [int]$restoredManifest.port }
+        }
         $taskWillRestartAgentDock = $false
         if ($taskRestored -and $taskState.WasRunning) {
             Start-AgentDockTask -AgentDockBinary $sourceBinary -ExpectedUserSid $taskUser.Sid
@@ -2194,17 +2224,17 @@ exit `$LASTEXITCODE
                         -Arguments "service start --runtime-root `"$runtimeDir`"" `
                         -WaitForExit
                 } else {
-                    & $destinationBinary service start --runtime-root $runtimeDir
+                    & $sourceBinary service start --runtime-root $runtimeDir
                     if ($LASTEXITCODE -ne 0) {
                         throw "AgentDock rollback service start failed with exit code $LASTEXITCODE."
                     }
                 }
-                Wait-AgentDockHealth -HealthPort $Port
+                Wait-AgentDockHealth -HealthPort $rollbackHealthPort
             } elseif (Test-Path -LiteralPath $launcherPath -PathType Leaf) {
                 Start-AgentDockLauncher -LauncherPath $launcherPath
             }
         } elseif ($taskWillRestartAgentDock) {
-            Wait-AgentDockHealth -HealthPort $Port
+            Wait-AgentDockHealth -HealthPort $rollbackHealthPort
         }
         if ($cloudflaredProcessWasRunning) {
             if (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
@@ -2216,7 +2246,7 @@ exit `$LASTEXITCODE
                         -Arguments "tunnel start --runtime-root `"$runtimeDir`"" `
                         -WaitForExit
                 } else {
-                    & $destinationBinary tunnel start --runtime-root $runtimeDir
+                    & $sourceBinary tunnel start --runtime-root $runtimeDir
                     if ($LASTEXITCODE -ne 0) {
                         throw "AgentDock rollback Tunnel start failed with exit code $LASTEXITCODE."
                     }
@@ -2244,6 +2274,8 @@ exit `$LASTEXITCODE
         }
         if ($null -ne $rollbackError -or $null -ne $taskRollbackError) {
             $abandonArgs += '--rollback-failed'
+        } elseif ($processWasRunning -or $taskState.WasRunning) {
+            $abandonArgs += '--require-health'
         }
         & $sourceBinary @abandonArgs 1>$null
         if ($LASTEXITCODE -ne 0 -and $null -eq $rollbackError) {
@@ -2271,6 +2303,12 @@ exit `$LASTEXITCODE
         $resultErrorRecord = $rollbackError
     }
 
+    if ($null -ne $rollbackError -or $null -ne $taskRollbackError) {
+        $preserveRecoveryFiles = $true
+        Write-Warning "Recovery files retained after incomplete rollback: $tempRoot"
+        $resultMessage += " Recovery files: $tempRoot"
+    }
+
     Write-InstallResult `
         -Path $ResultFile `
         -Success $false `
@@ -2289,5 +2327,7 @@ exit `$LASTEXITCODE
     if ($DeleteTunnelTokenFile -and -not [string]::IsNullOrWhiteSpace($TunnelTokenFile)) {
         Remove-Item -LiteralPath $TunnelTokenFile -Force -ErrorAction SilentlyContinue
     }
-    Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    if (-not $preserveRecoveryFiles) {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }

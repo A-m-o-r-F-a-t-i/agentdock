@@ -73,6 +73,7 @@ func startCore(ctx context.Context, manifest Manifest, runtimeRoot string) error
 	if testHealth(ctx, manifest.HealthURL()) {
 		return nil
 	}
+	recoverAbandonedCoreLocks(manifest, runtimeRoot)
 	if manifest.UsesScheduledTask() {
 		if err := StartInteractiveScheduledTask(ctx, runtimeRoot, manifest.AgentDockTaskName); err != nil {
 			return err
@@ -127,7 +128,10 @@ func startDetachedCore(manifest Manifest, runtimeRoot string) error {
 	}
 	command := exec.Command(coreBinary, "service", "launch-core", "--runtime-root", runtimeRoot)
 	// launch-core 会自行把运行日志写入受限轮转文件；父进程不再持有同一路径的追加句柄。
-	command.Dir = defaultWindowsWorkDir()
+	command.Dir = manifest.AgentDockDefaultDir
+	if command.Dir == "" {
+		command.Dir = defaultWindowsWorkDir()
+	}
 	command.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,
 		CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS,

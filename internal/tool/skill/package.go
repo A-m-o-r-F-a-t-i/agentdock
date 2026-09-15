@@ -75,6 +75,20 @@ func (s *Service) Package(ctx context.Context, request PackageRequest) (Result, 
 }
 
 func (s *Service) list() (Result, error) {
+	var members []PluginSkill
+	if s.pluginSkills != nil {
+		var err error
+		members, err = s.pluginSkills()
+		if err != nil {
+			return nil, skillToolError(err)
+		}
+	}
+	return s.listWithPluginMembers(members)
+}
+
+// One inventory operation uses one coherent plugin membership snapshot. The
+// list and its metadata enrichment must not rescan every plugin for each row.
+func (s *Service) listWithPluginMembers(members []PluginSkill) (Result, error) {
 	names, err := s.state.ListSkills()
 	if err != nil {
 		return nil, skillToolError(err)
@@ -107,11 +121,7 @@ func (s *Service) list() (Result, error) {
 			"updated_at":     selection.UpdatedAt,
 		})
 	}
-	if s.pluginSkills != nil {
-		members, listErr := s.pluginSkills()
-		if listErr != nil {
-			return nil, skillToolError(listErr)
-		}
+	if len(members) > 0 {
 		for _, member := range members {
 			document, loadErr := skills.LoadPortableSkillDocument(member.Path)
 			if loadErr != nil {

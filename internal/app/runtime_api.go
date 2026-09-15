@@ -36,6 +36,10 @@ func (r *Runtime) RuntimeSkills() (Result, error) {
 	return r.skills.RuntimeSkills()
 }
 
+func (r *Runtime) RuntimeSkillSummaries() (Result, error) {
+	return r.skills.RuntimeSkillSummaries()
+}
+
 func (r *Runtime) RuntimeSkill(skill string) (Result, error) {
 	return r.skills.RuntimeSkill(skill)
 }

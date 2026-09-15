@@ -30,9 +30,8 @@ func TestWindowsUpgradeUsesValidatedPayloadAndLaunchReceipt(t *testing.T) {
 		t.Fatal("trial and rollback must not invoke the stable/old core as the task broker")
 	}
 	for _, required := range []string{
-		"[IO.File]::WriteAllText($startedPath, [string]$process.Id)",
-		"$hasRun = Test-Path -LiteralPath $startedPath -PathType Leaf",
-		"StandardOutputEncoding = [Text.Encoding]::UTF8", "Stop-ScheduledTask",
+		"agentdock-tray-shim.exe", "--setup-launch",
+		"StandardOutputEncoding = $utf8", "CreateNoWindow = $true",
 	} {
 		if !strings.Contains(broker, required) {
 			t.Fatalf("broker missing %q", required)
@@ -40,5 +39,18 @@ func TestWindowsUpgradeUsesValidatedPayloadAndLaunchReceipt(t *testing.T) {
 	}
 	if strings.Contains(broker, "$info.LastRunTime -ge") {
 		t.Fatal("launch acknowledgement must not depend on wall-clock equality")
+	}
+	nativeData, err := os.ReadFile(filepath.Join("..", "..", "internal", "desktopruntime", "setup_launcher_windows.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"result.PID = command.Process.Pid", "result.TaskName != request.TaskName",
+		"writeSetupJSON(filepath.Join(root, \"result.json\"), result)",
+		"deleteSetupTask(request.TaskName", "command.Wait()",
+	} {
+		if !strings.Contains(string(nativeData), required) {
+			t.Fatalf("native launch receipt missing %q", required)
+		}
 	}
 }
