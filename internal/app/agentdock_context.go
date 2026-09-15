@@ -28,12 +28,19 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 	if err != nil {
 		return nil, err
 	}
-	skills, skillErr := r.skillCapabilityIndex()
+	skills, skillErr := r.skillCapabilityIndex(nexusLocalOnly)
+	dynamicMCP, dynamicMCPErr := r.dynamicMCPCapabilityIndex(nexusLocalOnly)
+	plugins := []capabilityPluginItem{}
+	var pluginErr error
+	if !nexusLocalOnly {
+		plugins, pluginErr = r.pluginCapabilityIndex()
+	}
 	commonSkills, commonSkillErr := commonSkillCapabilityIndex()
 	contextResult := capabilityContext{
 		Skills:            skills,
 		CommonSkills:      commonSkills,
-		DynamicMCP:        r.dynamicMCPCapabilityIndex(),
+		Plugins:           plugins,
+		DynamicMCP:        dynamicMCP,
 		WorkflowTemplates: []capabilityTemplateItem{},
 		Rules: []string{
 			"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
@@ -53,7 +60,10 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 		}
 	} else {
 		contextResult.InstructionFiles = &instructions
-		contextResult.Rules = append(contextResult.Rules, "instruction_files.files 已自动载入规则正文；只应用 status=loaded 的条目，按全局、项目根目录、子目录顺序处理。项目规则不得削弱全局安全要求。操作其他工作区或规则文件已改变时，先调用 agentdock_context 并传入对应 workdir 刷新；该参数不会修改命令的默认工作目录。")
+		contextResult.Rules = append(contextResult.Rules,
+			"plugins 是领域重插件的第一层索引。任务命中插件 description 时，先调用 plugin_load(name) 展开其 Skill 与动态 MCP 描述；插件成员不会在顶层 skills 或 dynamic_mcp 重复出现。",
+			"instruction_files.files 已自动载入规则正文；只应用 status=loaded 的条目，按全局、项目根目录、子目录顺序处理。项目规则不得削弱全局安全要求。操作其他工作区或规则文件已改变时，先调用 agentdock_context 并传入对应 workdir 刷新；该参数不会修改命令的默认工作目录。",
+		)
 	}
 	if !nexusLocalOnly {
 		// runtime 只保留模型操作主机所需的稳定环境事实；Nexus Bridge 已通过 Hello 持有这些节点事实，
@@ -66,6 +76,12 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 	}
 	if skillErr != nil {
 		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "skills", Message: "Skill 索引暂不可用。"})
+	}
+	if dynamicMCPErr != nil {
+		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "dynamic_mcp", Message: "动态 MCP 索引暂不可用。"})
+	}
+	if pluginErr != nil {
+		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "plugins", Message: "插件索引暂不可用。"})
 	}
 	if commonSkillErr != nil {
 		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "common_skills", Message: "通用 Skill 索引暂不可用；需要时可直接检查 ~/.agents/skills。"})
@@ -130,6 +146,7 @@ type capabilityContext struct {
 	Runtime           *capabilityRuntimeContext   `json:"runtime,omitempty"`
 	Skills            []capabilitySkillItem       `json:"skills"`
 	CommonSkills      *capabilityCommonSkillIndex `json:"common_skills,omitempty"`
+	Plugins           []capabilityPluginItem      `json:"plugins,omitempty"`
 	DynamicMCP        []capabilityDynamicMCPItem  `json:"dynamic_mcp"`
 	ACP               *capabilityACPContext       `json:"acp,omitempty"`
 	WorkflowTemplates []capabilityTemplateItem    `json:"workflow_templates"`
@@ -174,6 +191,13 @@ type capabilityDynamicMCPItem struct {
 	Status        string `json:"status"`
 	ToolCount     int    `json:"tool_count"`
 	LastErrorCode string `json:"last_error_code,omitempty"`
+}
+
+type capabilityPluginItem struct {
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	SkillCount     int    `json:"skill_count"`
+	MCPServerCount int    `json:"mcp_server_count"`
 }
 
 type capabilityACPContext struct {
@@ -237,10 +261,19 @@ type capabilityRecallIndexItem struct {
 	CardType string   `json:"card_type"`
 }
 
-func (r *Runtime) dynamicMCPCapabilityIndex() []capabilityDynamicMCPItem {
+func (r *Runtime) dynamicMCPCapabilityIndex(includePluginMembers bool) ([]capabilityDynamicMCPItem, error) {
 	servers := r.dynamicMCP.CapabilityItems()
 	items := make([]capabilityDynamicMCPItem, 0, len(servers))
 	for _, server := range servers {
+		if !includePluginMembers {
+			_, owned, err := r.plugins.MCPMembership(server.Name)
+			if err != nil {
+				return []capabilityDynamicMCPItem{}, err
+			}
+			if owned {
+				continue
+			}
+		}
 		items = append(items, capabilityDynamicMCPItem{
 			Name:          server.Name,
 			Description:   truncateString(strings.TrimSpace(server.Description), 160),
@@ -249,21 +282,45 @@ func (r *Runtime) dynamicMCPCapabilityIndex() []capabilityDynamicMCPItem {
 			LastErrorCode: server.LastErrorCode,
 		})
 	}
-	return items
+	return items, nil
 }
 
-func (r *Runtime) skillCapabilityIndex() ([]capabilitySkillItem, error) {
+func (r *Runtime) skillCapabilityIndex(includePluginMembers bool) ([]capabilitySkillItem, error) {
 	skillItems, err := r.skills.CapabilityItems()
 	if err != nil {
 		return []capabilitySkillItem{}, err
 	}
 	items := make([]capabilitySkillItem, 0, len(skillItems))
 	for _, skill := range skillItems {
+		if !includePluginMembers {
+			_, owned, membershipErr := r.plugins.SkillMembership(skill.Name)
+			if membershipErr != nil {
+				return []capabilitySkillItem{}, membershipErr
+			}
+			if owned {
+				continue
+			}
+		}
 		items = append(items, capabilitySkillItem{
 			Name:        skill.Name,
 			Description: truncateString(strings.TrimSpace(skill.Description), 160),
 			File:        skill.File,
 			Bundled:     skill.Bundled,
+		})
+	}
+	return items, nil
+}
+
+func (r *Runtime) pluginCapabilityIndex() ([]capabilityPluginItem, error) {
+	definitions, err := r.plugins.CapabilityItems()
+	if err != nil {
+		return []capabilityPluginItem{}, err
+	}
+	items := make([]capabilityPluginItem, 0, len(definitions))
+	for _, definition := range definitions {
+		items = append(items, capabilityPluginItem{
+			Name: definition.Name, Description: truncateString(strings.TrimSpace(definition.Description), 240),
+			SkillCount: len(definition.Skills), MCPServerCount: len(definition.MCPServers),
 		})
 	}
 	return items, nil
