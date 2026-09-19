@@ -475,7 +475,7 @@ func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 		"Schedule.Service",
 		"TaskRunLevelHighest",
 		"TaskLogonInteractiveToken",
-		"service launch-core --runtime-root",
+		"--run-core-task --runtime-root",
 		"SetSecurityDescriptor",
 		"prepare-elevated",
 		"prepare-standard",
@@ -499,6 +499,7 @@ func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 	for _, forbidden := range []string{
 		"powershell.exe",
 		"File.Exists(request.LauncherPath)",
+		"service launch-core --runtime-root",
 	} {
 		if strings.Contains(source, forbidden) {
 			t.Fatalf("TaskAdminService.cs must not depend on %q", forbidden)
@@ -532,6 +533,7 @@ func TestWindowsElevatedCoreHostUsesKillOnCloseJob(t *testing.T) {
 		"job.Assign(process)",
 		"CreateNoWindow = true",
 		"WindowStyle = ProcessWindowStyle.Hidden",
+		"\"--launcher-path\", trayBinary",
 	} {
 		if !strings.Contains(runtimeSource, want) {
 			t.Fatalf("RuntimeService.cs missing elevated Core host behavior %q", want)

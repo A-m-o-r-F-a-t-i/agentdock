@@ -522,7 +522,7 @@ foreach ($required in @(
     'EnsureSameWindowsUser(request.UserSid)',
     'RegisterTaskDefinition(',
     'SetSecurityDescriptor(',
-    'service launch-core --runtime-root',
+    '--run-core-task --runtime-root',
     'prepare-elevated',
     'prepare-standard',
     'restore',
@@ -542,7 +542,7 @@ foreach ($required in @('--task-admin', 'TaskAdminService.Run(e.Args)', '--run-c
         throw "$appSourcePath is missing AgentDock background helper behavior: $required"
     }
 }
-foreach ($required in @('RunElevatedCoreTaskAsync', 'CreateNoWindow = true', 'WindowStyle = ProcessWindowStyle.Hidden', 'KillOnCloseJob.Create()', 'job.Assign(process)', 'service', 'launch-core')) {
+foreach ($required in @('RunElevatedCoreTaskAsync', 'CreateNoWindow = true', 'WindowStyle = ProcessWindowStyle.Hidden', 'KillOnCloseJob.Create()', 'job.Assign(process)', 'service', 'launch-core', '"--launcher-path", trayBinary')) {
     if (-not $runtimeSource.Contains($required)) {
         throw "$runtimeSourcePath is missing no-console elevated core behavior: $required"
     }
@@ -556,6 +556,9 @@ foreach ($forbidden in @('--installer-admin-action', '--script', 'powershell.exe
     if ($taskAdminSource.Contains($forbidden) -or $appSource.Contains($forbidden)) {
         throw "AgentDock elevated helper must not expose arbitrary PowerShell execution: $forbidden"
     }
+}
+if ($taskAdminSource.Contains('service launch-core --runtime-root')) {
+    throw 'AgentDock elevated task must not launch the console-subsystem Core shim directly.'
 }
 
 $setupCodePath = Join-Path $repoRoot 'packaging\windows\includes\code.iss'
