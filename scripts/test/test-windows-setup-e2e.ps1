@@ -102,25 +102,25 @@ function Assert-ElevatedAgentDockTask {
     $nativeActionMatch = @($task.Actions | Where-Object {
         $executeMatches = [string]::Equals(
             [IO.Path]::GetFullPath($_.Execute),
-            [IO.Path]::GetFullPath($binaryPath),
+            [IO.Path]::GetFullPath($trayPath),
             [StringComparison]::OrdinalIgnoreCase
         )
         $argumentsMatch = $_.Arguments -and
-            $_.Arguments.Contains('service launch-core') -and
+            $_.Arguments.Contains('--run-core-task') -and
             $_.Arguments.Contains('--runtime-root') -and
             $_.Arguments.Contains($InstallRoot)
         $executeMatches -and $argumentsMatch
     }).Count -eq 1
     if (-not $nativeActionMatch) {
         $actions = ($task.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join '; '
-        throw "AgentDock task does not launch the stable CUI service entry: $actions"
+        throw "AgentDock task does not launch the stable GUI host for the elevated Core: $actions"
     }
     if (@($task.Actions | Where-Object {
         $_.Execute.Contains('powershell.exe') -or
-        [string]::Equals($_.Execute, $trayPath, [StringComparison]::OrdinalIgnoreCase) -or
-        ($_.Arguments -and ($_.Arguments.Contains('--run-core-task') -or $_.Arguments.Contains('--start-core')))
+        [string]::Equals($_.Execute, $binaryPath, [StringComparison]::OrdinalIgnoreCase) -or
+        ($_.Arguments -and ($_.Arguments.Contains('service launch-core') -or $_.Arguments.Contains('--start-core')))
     }).Count -gt 0) {
-        throw 'AgentDock elevated task must use the stable CUI shim without PowerShell or the legacy tray host.'
+        throw 'AgentDock elevated task must use the stable GUI host instead of launching the console-subsystem Core shim directly.'
     }
 }
 
@@ -143,8 +143,9 @@ function Assert-CoreRunsWithoutConsole {
         throw "Elevated generation Core is not supervised by the stable CUI shim: $($parent.Name) $($parent.ExecutablePath)"
     }
 
+    $consoleOwnerIds = @($core.ProcessId, $parent.ProcessId)
     $consoleHosts = @(Get-CimInstance Win32_Process | Where-Object {
-        $_.Name -eq 'conhost.exe' -and $_.ParentProcessId -eq $core.ProcessId
+        $_.Name -eq 'conhost.exe' -and $consoleOwnerIds -contains $_.ParentProcessId
     })
     $visibleConsoleHosts = @($consoleHosts | Where-Object {
         try {
@@ -155,7 +156,7 @@ function Assert-CoreRunsWithoutConsole {
         }
     })
     if ($visibleConsoleHosts.Count -gt 0) {
-        throw "Elevated generation Core unexpectedly owns a visible console window: $($visibleConsoleHosts.ProcessId -join ', ')"
+        throw "Elevated Core chain unexpectedly owns a visible console window: $($visibleConsoleHosts.ProcessId -join ', ')"
     }
 }
 

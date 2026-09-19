@@ -856,11 +856,6 @@ public sealed partial class RuntimeService : IDisposable
         };
         if (action == "prepare-elevated")
         {
-            var stableCoreEntry = ResolveCoreBinaryPath(manifest);
-            if (!File.Exists(stableCoreEntry))
-            {
-                throw new FileNotFoundException(UiText.Format("ManagementBinaryMissing", stableCoreEntry), stableCoreEntry);
-            }
             using var identity = WindowsIdentity.GetCurrent();
             var userSid = identity.User?.Value;
             if (string.IsNullOrWhiteSpace(userSid) || string.IsNullOrWhiteSpace(identity.Name))
@@ -868,7 +863,7 @@ public sealed partial class RuntimeService : IDisposable
                 throw new InvalidOperationException(UiText.Get("CurrentWindowsIdentityUnavailable"));
             }
             arguments.AddRange([
-                "--launcher-path", stableCoreEntry,
+                "--launcher-path", trayBinary,
                 "--user-sid", userSid,
                 "--user-name", identity.Name
             ]);
