@@ -98,6 +98,13 @@ func launchctlJobLoaded(ctx context.Context, spec string) (bool, error) {
 }
 
 func uninstallWindows(ctx context.Context, request Request) error {
+	tailscaleHandled, warning, err := desktopruntime.CleanupTailscaleFunnel(ctx, request.RuntimeRoot)
+	if err != nil {
+		return fmt.Errorf("清理 AgentDock Funnel: %w", err)
+	}
+	if warning != "" {
+		fmt.Fprintln(os.Stderr, "Warning: "+warning)
+	}
 	taskName := windowsManagedTaskName(request)
 	var failures []error
 	if taskName != "" {
@@ -112,8 +119,10 @@ func uninstallWindows(ctx context.Context, request Request) error {
 		if err := runOptionalCmd(ctx, binary, "service", "stop", "--runtime-root", request.RuntimeRoot); err != nil {
 			failures = append(failures, fmt.Errorf("停止 Windows Core: %w", err))
 		}
-		if err := runOptionalCmd(ctx, binary, "tunnel", "stop", "--runtime-root", request.RuntimeRoot); err != nil {
-			failures = append(failures, fmt.Errorf("停止 Windows Tunnel: %w", err))
+		if !tailscaleHandled {
+			if err := runOptionalCmd(ctx, binary, "tunnel", "stop", "--runtime-root", request.RuntimeRoot); err != nil {
+				failures = append(failures, fmt.Errorf("停止 Windows Tunnel: %w", err))
+			}
 		}
 	}
 	return errors.Join(failures...)
@@ -193,7 +202,7 @@ func removeManagedUnits(request Request, manager string) error {
 }
 
 func purgeInstallConfig(request Request) error {
-	names := []string{"agentdock.env", "cloudflared.env", "desktop-runtime.json", "runtime.json", "active-version.json"}
+	names := []string{"agentdock.env", "cloudflared.env", "desktop-runtime.json", "runtime.json", "active-version.json", "tailscale-funnel-state.json"}
 	var failures []error
 	for _, name := range names {
 		if err := removeExisting(filepath.Join(request.RuntimeRoot, name)); err != nil {

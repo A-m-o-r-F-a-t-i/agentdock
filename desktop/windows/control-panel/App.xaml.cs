@@ -344,6 +344,17 @@ public partial class App : System.Windows.Application
         menu.Items.Add(new Forms.ToolStripSeparator());
 
         menu.Items.Add(CreateMenuItem(UiText.Get("OpenAgentDock"), (_, _) => ShowControlPanel()));
+        menu.Items.Add(CreateMenuItem(UiText.Get("CopyPublicMcp"),
+            (_, _) => { if (!string.IsNullOrWhiteSpace(snapshot?.PublicMcpUrl)) System.Windows.Clipboard.SetText(snapshot.PublicMcpUrl); },
+            !string.IsNullOrWhiteSpace(snapshot?.PublicMcpUrl)));
+        if (snapshot?.TunnelMode == "quick")
+        {
+            menu.Items.Add(CreateMenuItem(UiText.Get("RegenerateTemporaryAddress"), async (_, _) =>
+            {
+                try { await Runtime.RegenerateQuickTunnelAsync(); await RefreshTraySnapshotAsync(); }
+                catch (Exception ex) { _notifyIcon?.ShowBalloonTip(5000, "AgentDock", ex.Message, Forms.ToolTipIcon.Error); }
+            }));
+        }
         menu.Items.Add(new Forms.ToolStripSeparator());
 
         if (snapshot?.CoreRunning == true)

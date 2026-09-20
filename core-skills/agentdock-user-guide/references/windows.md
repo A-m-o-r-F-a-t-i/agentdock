@@ -24,6 +24,7 @@ Windows Desktop 的运行配置由多部分组成：
 - `runtime.json`：安装位置、Core、Tray、Tunnel 与启动方式等运行清单；
 - `auth-token.dpapi`、`oauth-password.dpapi`、`oauth-token-secret.dpapi`、`cloudflared-token.dpapi`：受当前 Windows 用户保护的秘密；
 - `server-url.txt`、Tunnel 状态文件等：公网/OAuth/Tunnel 运行状态。
+- `tailscale-funnel-state.json`：支持 Tailscale 的版本记录其自身映射所有权、启停与验证状态，不保存 Tailscale 账户密钥。
 
 Core 启动时会读取这些状态并生成实际进程环境。
 
@@ -34,6 +35,8 @@ Core 启动时会读取这些状态并生成实际进程环境。
 如果必须通过 CLI 修改控制面板覆盖的普通设置，应使用当前安装目录里的 `agentdock.exe config update --runtime-root <实际目录> ...`，不要手工拼写另一份 JSON 并假定所有字段都会被读取。
 
 ## 手工修改边界
+
+支持 Tailscale 的版本提供“仅本机、Cloudflare 临时地址、Cloudflare 固定域名、Tailscale Funnel”四项。Tailscale 的设备域名只读，Tunnel Token 输入区隐藏，切换前会提示当前入口中断。安装和修复保留已有 Funnel 及监听端口，端口变化通过控制面板完成。详细命令、映射冲突和升级边界见 [Tailscale](tailscale.md)。
 
 - 不要把 Bearer Token、OAuth 密码、OAuth 签名密钥或 Tunnel Token 写进 `control-panel-settings.json`。
 - 不要手工解密、复制或跨用户迁移 DPAPI 文件；它们绑定 Windows 用户保护上下文。

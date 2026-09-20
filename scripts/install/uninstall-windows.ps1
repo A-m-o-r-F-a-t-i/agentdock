@@ -264,6 +264,13 @@ if (Test-Path -LiteralPath $agentDockBinary -PathType Leaf) {
     }
 }
 # Stop the scheduled task before touching the elevated process. New installs
+# A Tailscale ownership record requires the native cleanup implemented by the
+# Installer Engine. Never remove it through the legacy file-only uninstall.
+if (-not $engineUninstallPrepared -and
+    (Test-Path -LiteralPath (Join-Path $runtimeDir 'tailscale-funnel-state.json') -PathType Leaf)) {
+    throw 'Native AgentDock Funnel cleanup is required before removing this installation. Repair the AgentDock installation first.'
+}
+# Stop the scheduled task before touching the elevated process. New installs
 # grant the desktop user task control; older administrator-owned tasks use a
 # one-time UAC fallback through the installed helper.
 if (-not [string]::IsNullOrWhiteSpace($managedTaskName)) {
@@ -308,6 +315,7 @@ foreach ($name in @(
     'cloudflared.err.log',
     'quick-tunnel-url.txt',
     'runtime.json',
+    'tailscale-funnel-state.json',
     'desktop-version.txt'
 )) {
     Remove-FileIfPresent -Path (Join-Path $runtimeDir $name)
@@ -351,4 +359,4 @@ if ($engineUninstallPrepared) {
     }
     Remove-Item -LiteralPath $engineCommitBinary -Force -ErrorAction SilentlyContinue
 }
-Write-Host 'AgentDock, its tray, and its managed Cloudflare Tunnel were uninstalled.'
+Write-Host 'AgentDock, its tray, and its managed public access were uninstalled. The Tailscale client and unrelated mappings were preserved.'

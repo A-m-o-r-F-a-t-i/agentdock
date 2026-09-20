@@ -120,6 +120,8 @@
                 <TextBlock Text="{local:Loc TemporaryAddressDescription}" Foreground="#667085" Margin="24,-8,0,14" TextWrapping="Wrap" />
                 <RadioButton x:Name="NamedModeRadio" GroupName="TunnelMode" Content="{local:Loc CustomDomain}" Tag="named" Margin="0,0,0,10" Checked="TunnelModeRadio_Checked" />
                 <TextBlock Text="{local:Loc CustomDomainDescription}" Foreground="#667085" Margin="24,-8,0,4" TextWrapping="Wrap" />
+                <RadioButton x:Name="TailscaleModeRadio" GroupName="TunnelMode" Content="Tailscale Funnel" Tag="funnel" Margin="0,12,0,10" Checked="TunnelModeRadio_Checked" />
+                <TextBlock Text="{local:Loc TailscaleDescription}" Foreground="#667085" Margin="24,-8,0,4" TextWrapping="Wrap" />
               </StackPanel>
             </GroupBox>
 
@@ -143,8 +145,45 @@
               </Grid>
             </GroupBox>
 
+            <GroupBox x:Name="TailscaleGroup" Header="Tailscale Funnel" Visibility="Collapsed">
+              <StackPanel>
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+                  <TextBlock Text="{local:Loc TailscaleClient}" Margin="0,5,0,8" />
+                  <TextBlock x:Name="TailscaleClientText" Grid.Column="1" Text="{local:Loc NotChecked}" TextWrapping="Wrap" Margin="0,5,0,8" />
+                  <TextBlock Text="{local:Loc Status}" Grid.Row="1" Margin="0,0,0,8" />
+                  <TextBlock x:Name="TailscaleConnectionText" Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" />
+                  <TextBlock Text="{local:Loc TailscaleDevice}" Grid.Row="2" Margin="0,0,0,8" />
+                  <TextBlock x:Name="TailscaleDeviceText" Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" />
+                  <TextBlock Text="{local:Loc TailscaleDomain}" Grid.Row="3" Margin="0,5,0,8" />
+                  <TextBox x:Name="TailscaleDomainTextBox" Grid.Row="3" Grid.Column="1" IsReadOnly="True" Margin="0,0,0,8" />
+                  <TextBlock Text="Funnel" Grid.Row="4" Margin="0,0,0,8" />
+                  <TextBlock x:Name="TailscaleFunnelText" Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" />
+                  <TextBlock Text="{local:Loc TailscaleKeyExpiry}" Grid.Row="5" Margin="0,0,0,8" />
+                  <TextBlock x:Name="TailscaleKeyExpiryText" Grid.Row="5" Grid.Column="1" Margin="0,0,0,8" />
+                  <TextBlock Text="{local:Loc TailscaleLocalTarget}" Grid.Row="6" Margin="0,0,0,8" />
+                  <TextBlock x:Name="TailscaleTargetText" Grid.Row="6" Grid.Column="1" Margin="0,0,0,8" />
+                  <TextBlock Text="{local:Loc PublicMCP}" Grid.Row="7" Margin="0,5,0,8" />
+                  <TextBox x:Name="TailscaleMcpTextBox" Grid.Row="7" Grid.Column="1" IsReadOnly="True" Margin="0,0,0,8" />
+                </Grid>
+                <TextBlock x:Name="TailscaleDiagnosticText" TextWrapping="Wrap" Margin="0,4,0,10" />
+                <WrapPanel>
+                  <Button x:Name="TailscaleDetectButton" Content="{local:Loc TailscaleDetect}" Click="TailscaleDetectButton_Click" />
+                  <Button x:Name="TailscaleEnableButton" Content="{local:Loc TailscaleEnable}" Click="TailscaleEnableButton_Click" />
+                  <Button x:Name="TailscaleStopButton" Content="{local:Loc TailscaleStop}" Click="TailscaleStopButton_Click" />
+                  <Button Content="{local:Loc Refresh}" Click="TailscaleDetectButton_Click" />
+                  <Button x:Name="TailscaleAuthorizeButton" Content="{local:Loc TailscaleAuthorize}" Click="TailscaleAuthorizeButton_Click" />
+                </WrapPanel>
+              </StackPanel>
+            </GroupBox>
+
             <StackPanel Orientation="Horizontal">
-              <Button Content="{local:Loc ApplyAccessMode}" Click="ApplyTunnelModeButton_Click" />
+              <Button x:Name="ApplyAccessButton" Content="{local:Loc ApplyAccessMode}" Click="ApplyTunnelModeButton_Click" />
               <Button x:Name="RegenerateQuickButton" Content="{local:Loc RegenerateTemporaryAddress}" Click="RegenerateQuickButton_Click" />
             </StackPanel>
             <TextBlock x:Name="TunnelActionStatusText" Foreground="#475467" TextWrapping="Wrap" Margin="0,6,0,0" />

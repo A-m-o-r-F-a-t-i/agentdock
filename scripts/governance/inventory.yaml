@@ -6,6 +6,20 @@
 review_threshold_lines: 300
 
 scripts:
+  - path: scripts/test/test-windows-tailscale-funnel-lifecycle.ps1
+    class: test
+    owner: installer
+    public_contract: false
+    deletable: false
+    notes: 使用独立运行目录、端口和 Fake Tailscale 验证安装修复、失败回滚及仅清理自身映射，不操作真实 tailscaled。
+
+  - path: packaging/windows/build-windows-release.ps1
+    class: packaging
+    owner: release
+    public_contract: false
+    deletable: false
+    notes: 仅构建 Windows x64/ARM64 载荷和离线安装包；WSL 辅助文件只随 Windows 载荷提供，发布操作由个人仓库工作流控制。
+
   - path: scripts/migrate/migrate-agentdock-home.ps1
     class: dev
     owner: skill-runtime

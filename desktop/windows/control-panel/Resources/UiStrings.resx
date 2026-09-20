@@ -97,13 +97,13 @@
     <value>Only allow this computer to access AgentDock. Cloudflare public access stays disabled; you can configure your own tunnel or reverse proxy.</value>
   </data>
   <data name="TemporaryAddress" xml:space="preserve">
-    <value>Temporary address</value>
+    <value>Cloudflare temporary address</value>
   </data>
   <data name="TemporaryAddressDescription" xml:space="preserve">
     <value>Automatically generate a temporary public address through Cloudflare without configuring a domain. Suitable for temporary access or testing; the address may change.</value>
   </data>
   <data name="CustomDomain" xml:space="preserve">
-    <value>Custom domain</value>
+    <value>Cloudflare custom domain</value>
   </data>
   <data name="CustomDomainDescription" xml:space="preserve">
     <value>Use your own HTTPS domain through Cloudflare Tunnel. Once configured, the public address remains stable.</value>
@@ -887,4 +887,20 @@ Update now?</value>
   <data name="RuntimeOptionsInvalid" xml:space="preserve">
     <value>Enter an absolute workspace path, valid JSON string-to-string references, and ACP values within the stated ranges.</value>
   </data>
+  <data name="TailscaleDescription" xml:space="preserve"><value>Use this device's .ts.net HTTPS address. Install and sign in to Tailscale first; no Tunnel Token is required. AgentDock manages only its own mapping and keeps Bearer/OAuth authentication.</value></data>
+  <data name="TailscaleClient" xml:space="preserve"><value>Client</value></data>
+  <data name="TailscaleDevice" xml:space="preserve"><value>Device</value></data>
+  <data name="TailscaleDomain" xml:space="preserve"><value>Device domain (read-only)</value></data>
+  <data name="TailscaleKeyExpiry" xml:space="preserve"><value>Device key expires</value></data>
+  <data name="TailscaleLocalTarget" xml:space="preserve"><value>Local target</value></data>
+  <data name="TailscaleDetect" xml:space="preserve"><value>Detect Tailscale</value></data>
+  <data name="TailscaleEnable" xml:space="preserve"><value>Enable Funnel</value></data>
+  <data name="TailscaleStop" xml:space="preserve"><value>Stop AgentDock Funnel</value></data>
+  <data name="TailscaleAuthorize" xml:space="preserve"><value>Open Tailscale authorization</value></data>
+  <data name="TailscaleNotInstalled" xml:space="preserve"><value>Tailscale was not detected</value></data>
+  <data name="TailscalePending" xml:space="preserve"><value>Mapping active; verification pending</value></data>
+  <data name="TailscaleNoKeyExpiry" xml:space="preserve"><value>No expiry date reported</value></data>
+  <data name="TailscaleOutputTooLarge" xml:space="preserve"><value>Tailscale status output exceeded the size limit.</value></data>
+  <data name="PublicAccessSwitchWarning" xml:space="preserve"><value>Switch from {0} to {1}? AgentDock will stop its current public entry and restart Core. Other Tailscale services and account settings are preserved. Existing public connections may be interrupted.</value></data>
+  <data name="CopyPublicMcp" xml:space="preserve"><value>Copy public MCP address</value></data>
 </root>

@@ -1231,6 +1231,8 @@ $generationLayoutDetected = $false
 $generationBootstrapDirectory = ''
 $legacyBootstrapPrepared = $false
 $legacyBootstrapVersion = ''
+$preserveTailscale = $false
+$preservedTailscaleOrigin = ''
 
 $managedRuntimeFiles = @(
     # Migration cleanup only: current payload no longer publishes or executes this compatibility script.
@@ -1247,6 +1249,7 @@ $managedRuntimeFiles = @(
     @{ Path = $tunnelModePath; Name = 'cloudflared-mode.txt' },
     @{ Path = $tunnelTokenPath; Name = 'cloudflared-token.dpapi' },
     @{ Path = $runtimeManifestPath; Name = 'runtime.json' },
+    @{ Path = (Join-Path $runtimeDir 'tailscale-funnel-state.json'); Name = 'tailscale-funnel-state.json' },
     @{ Path = $desktopVersionPath; Name = 'desktop-version.txt' },
     @{ Path = $quickTunnelUrlPath; Name = 'quick-tunnel-url.txt' },
     @{ Path = $activeVersionPath; Name = 'active-version.json' },
@@ -1290,11 +1293,34 @@ try {
         throw "Windows Task Scheduler is required to preserve administrator-enhanced AgentDock mode: $($taskState.SchedulerError)"
     }
 
-    $resolvedTunnelMode = Resolve-TunnelMode `
-        -RequestedMode $TunnelMode `
-        -ModePath $tunnelModePath `
-        -StartupRequested ([bool] $RegisterStartup) `
-        -PublicAccessRequested ([bool] $ConfigurePublicAccess)
+    # Setup never changes Tailscale account or routing state. Preserve its
+    # downgrade-safe legacy projection and configure mode/port in the panel.
+    if (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf) {
+        $accessManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $providerProperty = $accessManifest.PSObject.Properties['public_access_provider']
+        if ($null -ne $providerProperty -and [string]$providerProperty.Value -eq 'tailscale') {
+            if (@('auto', 'none') -notcontains $TunnelMode -or
+                -not [string]::IsNullOrWhiteSpace($ServerUrl) -or
+                -not [string]::IsNullOrWhiteSpace($TunnelToken) -or
+                -not [string]::IsNullOrWhiteSpace($TunnelTokenFile)) {
+                throw 'Tailscale Funnel is preserved during installation. Change public access in the control panel first.'
+            }
+            $preserveTailscale = $true
+            $preservedTailscaleOrigin = Normalize-ServerUrl -Value ([string]$accessManifest.public_access_url)
+            if (-not ([uri]$preservedTailscaleOrigin).Host.EndsWith('.ts.net')) { throw 'Invalid saved Tailscale device origin.' }
+            $Port = [int]$accessManifest.port
+            Write-Host 'Preserving Tailscale Funnel, its existing port, and its public origin.'
+        }
+    }
+    if ($preserveTailscale) {
+        $resolvedTunnelMode = 'none'
+    } else {
+        $resolvedTunnelMode = Resolve-TunnelMode `
+            -RequestedMode $TunnelMode `
+            -ModePath $tunnelModePath `
+            -StartupRequested ([bool] $RegisterStartup) `
+            -PublicAccessRequested ([bool] $ConfigurePublicAccess)
+    }
     if ($resolvedTunnelMode -ne 'none' -or (Test-Path -LiteralPath $tunnelModePath -PathType Leaf)) {
         $RegisterStartup = $true
     }
@@ -1767,7 +1793,7 @@ try {
             Write-TextFile -Path $serverUrlPath -Value $ServerUrl
             Write-TextFile -Path $tunnelModePath -Value $resolvedTunnelMode
         } else {
-            Write-TextFile -Path $serverUrlPath -Value ''
+            if (-not $preserveTailscale) { Write-TextFile -Path $serverUrlPath -Value '' }
             Write-TextFile -Path $tunnelModePath -Value 'none'
             Remove-Item -LiteralPath $quickTunnelUrlPath -Force -ErrorAction SilentlyContinue
         }
@@ -1787,6 +1813,7 @@ exit `$LASTEXITCODE
             $manifestPublicUrl = $ServerUrl
         }
         $publicUrl = $manifestPublicUrl
+        if ($preserveTailscale) { $publicUrl = $preservedTailscaleOrigin }
         if ($effectivePrivilegeMode -eq 'elevated') {
             Remove-ItemProperty -LiteralPath $runKey -Name $runValueName -ErrorAction SilentlyContinue
             Enable-AgentDockTask
@@ -1818,7 +1845,7 @@ exit `$LASTEXITCODE
             Remove-ItemProperty -LiteralPath $runKey -Name $cloudflaredRunValueName -ErrorAction SilentlyContinue
             $tunnelStartupRegistrationChanged = $true
             Write-TextFile -Path $tunnelModePath -Value 'none'
-            Write-TextFile -Path $serverUrlPath -Value ''
+            if (-not $preserveTailscale) { Write-TextFile -Path $serverUrlPath -Value '' }
             Remove-Item -LiteralPath $quickTunnelUrlPath -Force -ErrorAction SilentlyContinue
         }
     }
@@ -2028,6 +2055,7 @@ exit `$LASTEXITCODE
     }
 
     $taskTransactionCommitted = $taskTransactionStarted
+    if ($preserveTailscale) { $publicUrl = $preservedTailscaleOrigin }
     $publicMCPUrl = ''
     if (-not [string]::IsNullOrWhiteSpace($publicUrl)) {
         $publicMCPUrl = "$publicUrl/mcp"

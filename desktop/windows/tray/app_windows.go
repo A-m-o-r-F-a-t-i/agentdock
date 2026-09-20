@@ -405,7 +405,7 @@ func (app *trayApp) showMenu() {
 	appendMenu(menu, mfString|mfDisabled|mfGrayed, menuStatus, status)
 	appendMenu(menu, mfSeparator, 0, "")
 	appendMenu(menu, menuFlags(state.Manifest.LocalMCPURL != ""), menuCopyLocal, labels.CopyLocalMCP)
-	appendMenu(menu, menuFlags(state.Manifest.PublicURL != ""), menuCopyPublic, labels.CopyPublicMCP)
+	appendMenu(menu, menuFlags(state.Manifest.EffectivePublicAccess().URL != ""), menuCopyPublic, labels.CopyPublicMCP)
 	if state.Manifest.TunnelMode == "quick" {
 		appendMenu(
 			menu,
@@ -453,10 +453,11 @@ func (app *trayApp) handleMenu(command uint16) {
 		}
 		app.notify("AgentDock", labels.CopyLocalSucceeded, false)
 	case menuCopyPublic:
-		if state.Manifest.PublicURL == "" {
+		publicOrigin := state.Manifest.EffectivePublicAccess().URL
+		if publicOrigin == "" {
 			return
 		}
-		if err := setClipboardText(strings.TrimRight(state.Manifest.PublicURL, "/") + "/mcp"); err != nil {
+		if err := setClipboardText(strings.TrimRight(publicOrigin, "/") + "/mcp"); err != nil {
 			app.notify("AgentDock", fmt.Sprintf(labels.CopyPublicFailed, err), true)
 			return
 		}

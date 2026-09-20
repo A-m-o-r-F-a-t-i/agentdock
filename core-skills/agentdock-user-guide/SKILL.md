@@ -1,7 +1,7 @@
 ---
 name: agentdock-user-guide
 description: 当用户询问 AgentDock 是什么、如何使用、配置在哪里、不同平台或安装方式怎样修改配置并生效、如何重启或验证配置、如何发现并配置 Codex/Claude/Grok 等 Coding Agent 的 ACP，以及常见运行问题时使用；覆盖 macOS Desktop、Windows Desktop、Linux 服务、Docker 和直接运行二进制，不用于源码开发与贡献流程。
-version: 1.5.0
+version: 1.6.0
 ---
 
 # AgentDock User Guide
@@ -21,6 +21,10 @@ AgentDock 是面向 AI Agent 的独立工具运行层。它把文件、命令、
 如果当前 AgentDock 暴露 `agentdock_context`，把它作为识别版本、平台、运行目录、可用 Skill 与能力的首选入口；具体文件、进程、服务和容器状态仍应通过真实工具继续验证。
 
 ## AgentDock 生态项目
+
+### Windows Tailscale Funnel
+
+包含原生 Tailscale 支持的 Windows 版本可在“公网访问”页选择 Tailscale Funnel。先检测已安装并登录的官方客户端，设备域名由 CLI 自动读取，不要求 Tunnel Token，也不保存 Auth Key。配置会转发完整 AgentDock Origin，验证 OAuth 与认证接口后才提交就绪状态。遇到其他根映射、私有 Serve 路径或已变化的所有权时保留原配置，不执行全局 reset、down 或 logout。使用前读取 [Tailscale 配置与恢复](references/tailscale.md)，并以当前 Core 的 `tunnel status --provider tailscale` 能力为准。
 
 ### NexusDock
 

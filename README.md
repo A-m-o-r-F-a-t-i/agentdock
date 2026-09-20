@@ -6,7 +6,7 @@ English | [简体中文](./README.zh-CN.md)
 
 # AgentDock MCP
 
-This fork's Windows release: **[AgentDock 1.0.1](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/tag/v1.0.1)** · [Fixes and verification scope](./docs/releases/v1.0.1.md). Version 1.0.0 is no longer recommended for Windows upgrades.
+This fork's Windows release: **[AgentDock 1.1.0](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/tag/v1.1.0)** · [Release notes and verification scope](./docs/releases/v1.1.0.md) · [Tailscale Funnel configuration](./docs/tailscale-funnel.md). This fork publishes Windows packages only; upstream platform downloads remain separate.
 
 **Give AI agents secure, controlled access to every machine you operate.**
 
@@ -89,6 +89,7 @@ See [Install AgentDock](https://uvwt.github.io/agentdock-docs/docs/getting-start
 - **Local only:** the client and AgentDock run on the same computer.
 - **Temporary public address:** ChatGPT, a phone, or another remote device needs access and no domain is ready. The address may change after the Tunnel restarts.
 - **Fixed domain:** a stable address for long-term use. Requires a Cloudflare-managed domain and Tunnel Token.
+- **Tailscale Funnel (Windows Desktop):** use the signed-in device's `.ts.net` HTTPS origin without a Tunnel Token. AgentDock forwards its complete origin, retains Bearer/OAuth authentication, and only removes mappings it owns. See [configuration, conflicts and recovery](./docs/tailscale-funnel.md).
 
 After installation, get the MCP URL and Bearer Token or OAuth sign-in details from the control panel or terminal, then add them to the MCP, Tools, or Connectors settings in your client. Public access must keep authentication enabled. Do not include credentials in screenshots, issues, or public conversations.
 

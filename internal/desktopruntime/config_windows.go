@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
+	"strings"
 	"time"
 
 	agentconfig "github.com/uvwt/agentdock/internal/config"
@@ -60,6 +62,23 @@ func restoreSnapshots(snapshots []fileSnapshot) error {
 }
 
 func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) error {
+	root, err := filepath.Abs(strings.TrimSpace(request.RuntimeRoot))
+	if err != nil {
+		return err
+	}
+	request.RuntimeRoot = root
+	goruntime.LockOSThread()
+	defer goruntime.UnlockOSThread()
+	ctx, finishAction, err := tunnelActionContext(ctx, root, false)
+	if err != nil {
+		return err
+	}
+	defer finishAction()
+	release, err := acquireTunnelOperation(ctx, root)
+	if err != nil {
+		return err
+	}
+	defer release()
 	runtime, err := loadTunnelRuntime(request.RuntimeRoot)
 	if err != nil {
 		return err
@@ -102,11 +121,29 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		}
 	}
 	settingsPath := filepath.Join(runtime.root, "control-panel-settings.json")
+	tailscaleEnabled, tailscaleCoreRunning := true, true
+	if runtime.mode == "funnel" {
+		state, stateErr := loadTailscaleState(runtime.root)
+		if stateErr != nil {
+			return stateErr
+		}
+		if state == nil {
+			return tailscaleProblem("ownership_required", "缺少 Funnel 所有权记录，无法安全修改端口")
+		}
+		tailscaleEnabled = state.Enabled
+		status, statusErr := platformServiceStatus(ctx, runtime.root)
+		if statusErr != nil {
+			return statusErr
+		}
+		tailscaleCoreRunning = status.Running
+	}
 	snapshotPaths := []string{
 		settingsPath,
 		runtime.files.manifest,
 		runtime.files.serverURL,
 		runtime.files.quickURL,
+		runtime.files.mode,
+		filepath.Join(runtime.root, tailscaleStateFile),
 	}
 	snapshots := make([]fileSnapshot, 0, len(snapshotPaths))
 	for _, path := range snapshotPaths {
@@ -123,6 +160,9 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 	rollback := func(cause error) error {
 		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
 		defer cancel()
+		if runtime.mode == "funnel" {
+			return rollbackTailscaleConfigUpdate(recovery, request.RuntimeRoot, snapshots, tailscaleCoreRunning, cause)
+		}
 		restoreErr := restoreSnapshots(snapshots)
 		oldRuntime, loadErr := loadTunnelRuntime(request.RuntimeRoot)
 		if loadErr == nil && restoreErr == nil {
@@ -171,6 +211,8 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		if err != nil {
 			return rollback(err)
 		}
+	case "funnel":
+		publicURL = runtime.manifest.EffectivePublicAccess().URL
 	}
 	if err := runtime.updateManifest(manifestMode, publicURL); err != nil {
 		return rollback(err)
@@ -178,7 +220,19 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 	if err := platformServiceAction(ctx, runtime.root, "restart"); err != nil {
 		return rollback(err)
 	}
-	if runtime.mode != "none" {
+	if runtime.mode == "funnel" && !tailscaleEnabled {
+		state, stateErr := loadTailscaleState(runtime.root)
+		if stateErr != nil {
+			return rollback(stateErr)
+		}
+		if state == nil {
+			return rollback(tailscaleProblem("ownership_required", "Funnel 所有权记录在端口更新期间丢失"))
+		}
+		state.LocalOrigin, state.LegacyMCPProxy, state.VerifiedAt = runtime.localOrigin(), "", nil
+		if err := saveTailscaleState(runtime.root, state); err != nil {
+			return rollback(err)
+		}
+	} else if runtime.mode != "none" {
 		if err := startTunnel(ctx, runtime); err != nil {
 			return rollback(err)
 		}

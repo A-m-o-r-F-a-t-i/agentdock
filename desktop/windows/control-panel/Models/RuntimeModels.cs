@@ -43,6 +43,18 @@ public sealed class RuntimeManifest
     [JsonPropertyName("tunnel_mode")]
     public string TunnelMode { get; set; } = "none";
 
+    [JsonPropertyName("public_access_provider")]
+    public string PublicAccessProvider { get; set; } = "";
+
+    [JsonPropertyName("public_access_mode")]
+    public string PublicAccessMode { get; set; } = "";
+
+    [JsonPropertyName("public_access_url")]
+    public string PublicAccessUrl { get; set; } = "";
+
+    [JsonPropertyName("tailscale_binary")]
+    public string TailscaleBinary { get; set; } = "";
+
     [JsonPropertyName("cloudflared_binary")]
     public string CloudflaredBinary { get; set; } = "";
 
@@ -155,7 +167,8 @@ public sealed record RuntimeSnapshot(
     bool TunnelTokenStored,
     NexusDeviceStatus Nexus,
     bool NexusConnected,
-    DateTimeOffset CheckedAt);
+    DateTimeOffset CheckedAt,
+    NativeTunnelStatus? Tailscale = null);
 
 public sealed class CapabilityInventory
 {

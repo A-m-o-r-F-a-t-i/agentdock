@@ -299,6 +299,7 @@ func snapshotWindowsRuntimeState(request Request, journal *rollbackJournal) erro
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	manifest, _ := desktopruntime.Load(filepath.Join(request.RuntimeRoot, "runtime.json"))
 	for _, component := range []struct {
 		command string
 		name    string
@@ -306,6 +307,11 @@ func snapshotWindowsRuntimeState(request Request, journal *rollbackJournal) erro
 		{command: "service", name: "agentdock"},
 		{command: "tunnel", name: "agentdock-tunnel"},
 	} {
+		// Funnel belongs to the persistent Tailscale service. A Core upgrade
+		// neither stops it nor adopts it as an AgentDock child process.
+		if component.command == "tunnel" && manifest.EffectivePublicAccess().Provider == desktopruntime.PublicAccessProviderTailscale {
+			continue
+		}
 		running, err := probeWindowsComponentRunning(ctx, binary, component.command, request.RuntimeRoot)
 		if err != nil {
 			return err

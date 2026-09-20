@@ -74,9 +74,12 @@ func loadTunnelRuntime(runtimeRoot string) (tunnelRuntime, error) {
 		stdoutLog:      filepath.Join(root, "cloudflared.out.log"),
 		stderrLog:      filepath.Join(root, "cloudflared.err.log"),
 	}
-	mode, err := readTunnelMode(files.mode, manifest.TunnelMode)
-	if err != nil {
-		return tunnelRuntime{}, err
+	mode := "funnel"
+	if manifest.EffectivePublicAccess().Provider != PublicAccessProviderTailscale {
+		mode, err = readTunnelMode(files.mode, manifest.TunnelMode)
+		if err != nil {
+			return tunnelRuntime{}, err
+		}
 	}
 	return tunnelRuntime{manifest: manifest, root: root, settings: settings, files: files, mode: mode}, nil
 }
@@ -103,9 +106,19 @@ func (runtime tunnelRuntime) updateManifest(mode, publicURL string) error {
 	runtime.manifest.Host = "127.0.0.1"
 	runtime.manifest.Port = runtime.settings.Port
 	runtime.manifest.LocalMCPURL = "http://127.0.0.1:" + strconv.Itoa(runtime.settings.Port) + "/mcp"
-	runtime.manifest.TunnelMode = mode
-	runtime.manifest.PublicURL = strings.TrimSpace(publicURL)
+	switch mode {
+	case "funnel":
+		runtime.manifest.setPublicAccess(PublicAccessProviderTailscale, "funnel", strings.TrimSpace(publicURL))
+	case "quick", "named":
+		runtime.manifest.setPublicAccess(PublicAccessProviderCloudflare, mode, strings.TrimSpace(publicURL))
+	default:
+		runtime.manifest.setPublicAccess(PublicAccessProviderNone, "local", "")
+	}
 	return Save(runtime.files.manifest, runtime.manifest)
+}
+
+func (runtime tunnelRuntime) localOrigin() string {
+	return localTailscaleOrigin(runtime.settings.Port)
 }
 
 func writeRuntimeText(path, value string) error {

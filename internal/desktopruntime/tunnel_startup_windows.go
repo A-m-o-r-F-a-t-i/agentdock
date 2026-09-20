@@ -17,6 +17,9 @@ func platformSetTunnelAutostart(_ context.Context, runtimeRoot string, enabled b
 	if !enabled {
 		return removeRunValue(name)
 	}
+	if runtime.mode == "funnel" {
+		return errors.New("Tailscale Funnel 使用官方 Windows 服务和后台配置恢复，不创建 AgentDock Cloudflared 自启动项")
+	}
 	command, err := tunnelStartupCommand(runtime.manifest, runtime.root)
 	if err != nil {
 		return err
