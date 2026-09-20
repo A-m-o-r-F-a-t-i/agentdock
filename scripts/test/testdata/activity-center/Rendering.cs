@@ -103,20 +103,38 @@ internal static partial class Program
 
     private static void Capture(ActivityWindow window, string root, string name, double width, double height, double scale)
     {
-        window.Width = width; window.Height = height;
-        PumpUntil(() => Math.Abs(window.ActualWidth - width) < 2 && Math.Abs(window.ActualHeight - height) < 2, TimeSpan.FromSeconds(3));
-        window.UpdateLayout();
-        foreach (var controlName in new[] { "TaskList", "ThreadSelector", "TimelineList", "StopButton", "DiffButton", "ConnectionStatus" })
+        // Hosted desktops can clamp HWNDs to a small virtual screen. Detach the real
+        // content only for synchronous offscreen layout; keep its margins and bindings.
+        // The live-window checks still exercise subscriptions and the full lifetime.
+        var content = (FrameworkElement)window.Content;
+        var controls = new[] { "TaskList", "ThreadSelector", "TimelineList", "StopButton", "DiffButton", "ConnectionStatus" }
+            .ToDictionary(controlName => controlName, controlName => (FrameworkElement)window.FindName(controlName));
+        window.Content = null;
+        var surface = new Border { Background = window.Background, Child = content };
+        try
         {
-            var element = (FrameworkElement)window.FindName(controlName);
-            var bounds = element.TransformToAncestor(window).TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
-            Require(bounds.Width > 0 && bounds.Height > 0 && bounds.Left >= 0 && bounds.Top >= 0 && bounds.Right <= window.ActualWidth + 1 && bounds.Bottom <= window.ActualHeight + 1,
-                $"Control {controlName} is clipped at {width}x{height}: {bounds}.");
+            surface.Measure(new Size(width, height));
+            surface.Arrange(new Rect(0, 0, width, height));
+            surface.UpdateLayout();
+            Require(Math.Abs(surface.ActualWidth - width) < 2 && Math.Abs(surface.ActualHeight - height) < 2,
+                $"WPF surface did not adopt the requested size: {surface.ActualWidth}x{surface.ActualHeight}.");
+            foreach (var (controlName, element) in controls)
+            {
+                var bounds = element.TransformToAncestor(surface).TransformBounds(new Rect(0, 0, element.ActualWidth, element.ActualHeight));
+                Require(bounds.Width > 0 && bounds.Height > 0 && bounds.Left >= 0 && bounds.Top >= 0 && bounds.Right <= width + 1 && bounds.Bottom <= height + 1,
+                    $"Control {controlName} is clipped at {width}x{height}: {bounds}.");
+            }
+            var image = new RenderTargetBitmap((int)Math.Ceiling(width * scale), (int)Math.Ceiling(height * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+            image.Render(surface);
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
+            using var output = File.Create(Path.Combine(root, name)); encoder.Save(output);
         }
-        var image = new RenderTargetBitmap((int)Math.Ceiling(width * scale), (int)Math.Ceiling(height * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
-        image.Render(window);
-        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
-        using var output = File.Create(Path.Combine(root, name)); encoder.Save(output);
+        finally
+        {
+            surface.Child = null;
+            window.Content = content;
+            window.UpdateLayout();
+        }
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
