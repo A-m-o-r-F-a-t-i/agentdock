@@ -45,6 +45,9 @@ func (driver *WindowsDriver) PrepareTrial(ctx context.Context, transaction updat
 	if err := driver.verifyGeneration(transaction.TargetVersion, plan.TargetGeneration); err != nil {
 		return fmt.Errorf("target generation is not usable: %w", err)
 	}
+	if err := desktopruntime.CheckExecutionCompatibility(ctx, driver.root, driver.layout.GenerationCore(transaction.TargetVersion)); err != nil {
+		return err
+	}
 
 	// 所有停止动作都仍通过 source generation 执行。只有旧 Core/Tunnel/Tray
 	// 完整退出后才切 active pointer，避免同一端口被两个 generation 竞争。
@@ -140,6 +143,11 @@ func (driver *WindowsDriver) Rollback(ctx context.Context, transaction updateeng
 		UpdatedAt:       time.Now().UTC(),
 	}); err != nil {
 		return fmt.Errorf("restore source active pointer: %w", err)
+	}
+	// A trial can persist user policy. Restoring old executable bytes must not
+	// silently allow the old runtime to ignore it or restart its tunnel.
+	if err := desktopruntime.CheckExecutionCompatibility(ctx, driver.root, driver.layout.GenerationCore(transaction.SourceVersion)); err != nil {
+		return fmt.Errorf("source restored but execution remains stopped: %w", err)
 	}
 
 	if plan.CoreWasRunning {

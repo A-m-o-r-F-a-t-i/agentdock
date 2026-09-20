@@ -63,6 +63,11 @@ func applyWindowsGenerationUpdate(ctx context.Context, request applyRequest) (ap
 	if err != nil {
 		return applyResult{}, fmt.Errorf("读取 Windows runtime manifest 失败: %w", err)
 	}
+	// Reject an incompatible downgrade before stopping the current runtime or
+	// staging/deleting its generations. Saved policy intent remains unchanged.
+	if err := desktopruntime.CheckExecutionCompatibility(ctx, root, request.StagedPath); err != nil {
+		return applyResult{}, err
+	}
 
 	coreWasRunning, err := desktopruntime.BinaryProcessRunning(layout.GenerationCore(sourceVersion))
 	if err != nil {

@@ -209,9 +209,9 @@ try {
     $preservedData['skills\upgrade-fixture\SKILL.md'] = "---`nname: upgrade-fixture`ndescription: Isolated upgrade fixture.`nversion: 1.0.0`n---`n# Preserve this user Skill`n"
     $preservedData['plugins\upgrade-fixture\plugin.json'] = '{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"upgrade-fixture","version":"1.0.0","description":"Isolated user plugin fixture."}'
     $preservedData['mcp\upgrade-fixture.txt'] = 'User MCP companion state must survive install and uninstall.'
-    # A persisted 1.1.2 policy must survive failed trials and uninstall verbatim.
-    # This asserts data preservation only: 1.1.1 has no approval engine.
-    $preservedData['execution\permissions\policy.json'] = (@{
+    # Introduce 1.1.2 policy only after a successful upgrade. A prior untouched
+    # 1.1.1 installation does not yet own this policy contract.
+    $newPolicyFixture = (@{
         schema_version=1; revision=7; global_mode='rules'; scopes=@(); updated_at=$stamp
         rules=@(@{id='deny_fixture_delete';tool='file_edit';action='delete';effect='deny';reason='Preserve the user file-delete prohibition.'})
     } | ConvertTo-Json -Depth 8)
@@ -241,6 +241,11 @@ try {
     Assert-Preservation 'rolled_back' $oldVersion $hashes
     Invoke-Setup $setupPath 'inno-upgrade'
     Assert-Preservation 'committed' $ExpectedVersion $hashes
+    $policyName = 'execution\permissions\policy.json'
+    $preservedData[$policyName] = $newPolicyFixture
+    $policyPath = Join-Path $testHome $policyName
+    New-Item -ItemType Directory -Path (Split-Path $policyPath -Parent) -Force | Out-Null
+    [IO.File]::WriteAllText($policyPath, $newPolicyFixture, [Text.UTF8Encoding]::new($false))
     $generationHash = (Get-FileHash (Join-Path $runtimeRoot "versions\v$ExpectedVersion\agentdock-core.exe")).Hash
     Invoke-Setup $faultSetup 'inno-same-version-rollback' $true
     Assert-Preservation 'rolled_back' $ExpectedVersion $hashes

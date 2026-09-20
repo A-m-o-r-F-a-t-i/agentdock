@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/windows"
 
@@ -69,6 +71,13 @@ func run() error {
 	if info, err := os.Stat(target); err != nil || info.IsDir() {
 		return fmt.Errorf("AgentDock active generation is incomplete: %s", target)
 	}
+	if tray || !policyRecoveryCommand(os.Args[1:]) {
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+		defer cancel()
+		if err := desktopruntime.CheckExecutionCompatibility(ctx, root, layout.GenerationCore(active.ActiveVersion)); err != nil {
+			return err
+		}
+	}
 
 	command := exec.Command(target, os.Args[1:]...)
 	command.Dir = root
@@ -113,6 +122,31 @@ func run() error {
 		return fmt.Errorf("start AgentDock tray generation: %w", err)
 	}
 	return command.Process.Release()
+}
+
+// Only inspection and recovery commands may reach an old Core with policy
+// state. An old tray can auto-start Core and is checked independently.
+func policyRecoveryCommand(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+	switch args[0] {
+	case "version":
+		return len(args) == 1 || len(args) == 2 && args[1] == "--json"
+	case "uninstall":
+		return true
+	case "install":
+		if len(args) < 2 {
+			return false
+		}
+		switch args[1] {
+		case "inspect", "--engine-ready", "restore-files", "abandon", "detach-engine":
+			return true
+		}
+	case "service", "tunnel":
+		return len(args) >= 2 && (args[1] == "stop" || args[1] == "status")
+	}
+	return false
 }
 
 func coreLaunchRequiresParentLifetime(args []string) bool {

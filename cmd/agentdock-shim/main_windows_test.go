@@ -57,6 +57,19 @@ func TestCoreLaunchRequiresParentLifetimeOnlyForServiceHost(t *testing.T) {
 	}
 }
 
+func TestPolicyRecoveryNeverAllowsRuntimeStartup(t *testing.T) {
+	for _, args := range [][]string{nil, {"service", "start"}, {"service", "launch-core"}, {"tunnel", "launch"}, {"tunnel", "start"}, {"--background"}, {"version", "--json", "--start-core"}, {"-port", "8765"}} {
+		if policyRecoveryCommand(args) {
+			t.Fatalf("runtime launch bypasses policy compatibility: %q", args)
+		}
+	}
+	for _, args := range [][]string{{"version"}, {"version", "--json"}, {"service", "status"}, {"service", "stop"}, {"tunnel", "stop"}, {"install", "inspect"}, {"uninstall"}} {
+		if !policyRecoveryCommand(args) {
+			t.Fatalf("recovery entry blocked: %q", args)
+		}
+	}
+}
+
 func TestInstallerTrialRequiresLiveMatchingOwner(t *testing.T) {
 	root := t.TempDir()
 	directory := filepath.Join(root, "install")

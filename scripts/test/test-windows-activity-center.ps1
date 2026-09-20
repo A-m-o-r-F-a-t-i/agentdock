@@ -3,6 +3,7 @@
 param(
     [Parameter(Mandatory = $true)][string] $TestRoot,
     [string] $Dotnet = 'dotnet',
+    [ValidateSet('win-x64','win-arm64')][string] $RuntimeIdentifier = 'win-x64',
     [string] $BuildRoot = ''
 )
 Set-StrictMode -Version Latest
@@ -16,9 +17,9 @@ if ($build.StartsWith($repository + '\', [StringComparison]::OrdinalIgnoreCase))
     throw 'Keep activity build outputs outside the source worktree.'
 }
 $project = Join-Path $PSScriptRoot 'testdata\activity-center\ActivityCenterTests.csproj'
-& $Dotnet build $project -c Release "-p:BaseOutputPath=$build" -p:UseSharedCompilation=false --nologo
+& $Dotnet build $project -c Release "-p:RuntimeIdentifier=$RuntimeIdentifier" "-p:BaseOutputPath=$build" -p:UseSharedCompilation=false --nologo
 if ($LASTEXITCODE -ne 0) { throw 'Activity desktop regression build failed.' }
-$executable = Join-Path $build 'Release\net8.0-windows10.0.19041.0\win-x64\ActivityCenterTests.exe'
+$executable = Join-Path $build "Release\net8.0-windows10.0.19041.0\$RuntimeIdentifier\ActivityCenterTests.exe"
 if (-not (Test-Path -LiteralPath $executable)) { throw 'Activity regression executable was not produced.' }
 $start = [Diagnostics.ProcessStartInfo]::new()
 $start.FileName = $executable

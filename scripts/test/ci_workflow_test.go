@@ -98,10 +98,20 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 func TestWindowsReleaseKeepsBoundedCompleteValidation(t *testing.T) {
 	workflow := readWorkflow(t, "windows-release.yml")
 	for _, want := range []string{
-		"go test -p 2 ./... -count=1 -timeout=8m",
+		"go test -json -p 2 ./... -count=1 -timeout=8m",
+		"name: Backend full regression",
+		"name: Static analysis",
+		"name: Windows installer contracts",
+		"execution-go.jsonl",
+		"name: Execution policy compatibility with actual 1.1.1 Core",
+		"7505e8044c6daa78ed73c603a2dd9ff214883d82",
+		"test-windows-execution-compatibility.ps1",
+		"execution-compatibility/result.json",
 		"throw 'Go tests failed.'",
 		"go vet ./...",
-		"needs: windows",
+		"needs: [windows, windows-arm64]",
+		"runs-on: windows-11-vs2026-arm",
+		"-RuntimeIdentifier win-arm64",
 		"github.ref == 'refs/heads/main' && inputs.publish",
 	} {
 		if !strings.Contains(workflow, want) {

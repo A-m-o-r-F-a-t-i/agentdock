@@ -4,6 +4,8 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+
+	"github.com/uvwt/agentdock/internal/executioncompat"
 )
 
 const Version = "1.1.2"
@@ -14,20 +16,22 @@ var (
 )
 
 type Info struct {
-	Version   string `json:"version"`
-	Commit    string `json:"commit"`
-	BuildDate string `json:"build_date"`
-	GoVersion string `json:"go_version"`
-	Platform  string `json:"platform"`
+	ExecutionPolicyVersion int    `json:"execution_policy_version"`
+	Version                string `json:"version"`
+	Commit                 string `json:"commit"`
+	BuildDate              string `json:"build_date"`
+	GoVersion              string `json:"go_version"`
+	Platform               string `json:"platform"`
 }
 
 func Current() Info {
 	info := Info{
-		Version:   strings.TrimSpace(Version),
-		Commit:    strings.TrimSpace(Commit),
-		BuildDate: strings.TrimSpace(BuildDate),
-		GoVersion: runtime.Version(),
-		Platform:  runtime.GOOS + "/" + runtime.GOARCH,
+		ExecutionPolicyVersion: executioncompat.PolicyVersion,
+		Version:                strings.TrimSpace(Version),
+		Commit:                 strings.TrimSpace(Commit),
+		BuildDate:              strings.TrimSpace(BuildDate),
+		GoVersion:              runtime.Version(),
+		Platform:               runtime.GOOS + "/" + runtime.GOARCH,
 	}
 	build, ok := debug.ReadBuildInfo()
 	if ok {

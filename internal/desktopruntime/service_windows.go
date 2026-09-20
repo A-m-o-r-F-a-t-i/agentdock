@@ -70,6 +70,9 @@ func loadDesktopManifest(runtimeRoot string) (Manifest, string, error) {
 }
 
 func startCore(ctx context.Context, manifest Manifest, runtimeRoot string) error {
+	if err := CheckExecutionCompatibility(ctx, runtimeRoot, ActiveCoreBinary(runtimeRoot, manifest)); err != nil {
+		return err
+	}
 	if testHealth(ctx, manifest.HealthURL()) {
 		return nil
 	}

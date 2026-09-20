@@ -54,12 +54,21 @@ jobs:
           $version = (& go run ./tools/release version).Trim()
           go run ./tools/release verify-version "v$version"
           if ($LASTEXITCODE -ne 0) { throw 'Version validation failed.' }
+      - name: Backend full regression
+        run: |
+          $ErrorActionPreference = 'Stop'
           # Bound simultaneous process-heavy packages on hosted Windows runners.
           # Keep all test cases, assertions and individual operation deadlines.
-          go test -p 2 ./... -count=1 -timeout=8m
+          go test -json -p 2 ./... -count=1 -timeout=8m | Tee-Object (Join-Path $env:RUNNER_TEMP 'execution-go.jsonl')
           if ($LASTEXITCODE -ne 0) { throw 'Go tests failed.' }
+      - name: Static analysis
+        run: |
+          $ErrorActionPreference = 'Stop'
           go vet ./...
           if ($LASTEXITCODE -ne 0) { throw 'Go vet failed.' }
+      - name: Windows installer contracts
+        run: |
+          $ErrorActionPreference = 'Stop'
           & .\scripts\test\test-install-windows.ps1
       - name: Compile Windows x64 and ARM64 releases
         run: |
@@ -82,6 +91,25 @@ jobs:
           & .\scripts\test\test-windows-activity-runtime.ps1 `
             -CoreBinary .\dist\windows-release\payload-amd64\agentdock.exe `
             -TestRoot (Join-Path $env:RUNNER_TEMP 'activity-native')
+      - name: Execution policy compatibility with actual 1.1.1 Core
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $legacySource = Join-Path $env:RUNNER_TEMP 'execution-legacy-source'
+          $legacyPayload = Join-Path $env:RUNNER_TEMP 'execution-legacy-payload'
+          $sourceZip = Join-Path $env:RUNNER_TEMP 'execution-legacy-source.zip'
+          $archive = Join-Path $env:RUNNER_TEMP 'execution-legacy-core.zip'
+          git archive --format=zip --output=$sourceZip 7505e8044c6daa78ed73c603a2dd9ff214883d82
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the immutable 1.1.1 fixture source.' }
+          Expand-Archive $sourceZip $legacySource
+          New-Item -ItemType Directory -Path $legacyPayload | Out-Null
+          go -C $legacySource build -o (Join-Path $legacyPayload 'agentdock.exe') ./cmd/agentdock
+          if ($LASTEXITCODE -ne 0) { throw 'Legacy Core fixture build failed.' }
+          Compress-Archive (Join-Path $legacyPayload 'agentdock.exe') $archive
+          ((Get-FileHash $archive).Hash.ToLowerInvariant() + '  ' + [IO.Path]::GetFileName($archive)) | Set-Content ($archive + '.sha256') -Encoding ascii
+          & .\scripts\test\test-windows-execution-compatibility.ps1 `
+            -CoreBinary .\dist\windows-release\payload-amd64\agentdock.exe `
+            -ShimBinary .\dist\windows-release\payload-amd64\agentdock-shim.exe `
+            -LegacyArchive $archive -TestRoot (Join-Path $env:RUNNER_TEMP 'execution-compatibility')
       - name: Cloudflare Quick regression
         shell: powershell
         run: |
@@ -160,11 +188,60 @@ jobs:
             ${{ runner.temp }}/activity-ui/result.json
             ${{ runner.temp }}/activity-ui/render/*.png
             ${{ runner.temp }}/activity-native/result.json
+            ${{ runner.temp }}/execution-compatibility/result.json
+            ${{ runner.temp }}/execution-go.jsonl
+          if-no-files-found: ignore
+
+  windows-arm64:
+    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
+    name: Native Windows ARM64 verification
+    runs-on: windows-11-vs2026-arm
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CGO_ENABLED: '0'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          architecture: arm64
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify native ARM64 runtime and backend
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') { throw 'ARM64 OS required.' }
+          if ((go env GOARCH).Trim() -ne 'arm64') { throw 'Native ARM64 Go toolchain required.' }
+          go test -json -p 2 ./... -count=1 -timeout=8m | Tee-Object (Join-Path $env:RUNNER_TEMP 'arm64-go.jsonl')
+          if ($LASTEXITCODE -ne 0) { throw 'Native ARM64 Go tests failed.' }
+          go build -o (Join-Path $env:RUNNER_TEMP 'agentdock-arm64.exe') ./cmd/agentdock
+          if ($LASTEXITCODE -ne 0) { throw 'Native ARM64 Core build failed.' }
+          & .\scripts\test\test-windows-activity-runtime.ps1 -CoreBinary (Join-Path $env:RUNNER_TEMP 'agentdock-arm64.exe') -TestRoot (Join-Path $env:RUNNER_TEMP 'arm64-native')
+      - name: Verify native ARM64 WPF window
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\test\test-windows-activity-center.ps1 -RuntimeIdentifier win-arm64 -TestRoot (Join-Path $env:RUNNER_TEMP 'arm64-ui')
+      - name: Upload native ARM64 verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-verification
+          path: |
+            ${{ runner.temp }}/arm64-go.jsonl
+            ${{ runner.temp }}/arm64-native/result.json
+            ${{ runner.temp }}/arm64-ui/result.json
+            ${{ runner.temp }}/arm64-ui/execution-render/*.png
           if-no-files-found: ignore
 
   publish:
     name: Publish only this fork's Windows assets
-    needs: windows
+    needs: [windows, windows-arm64]
     if: github.repository == 'A-m-o-r-F-a-t-i/agentdock' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish
     runs-on: windows-latest
     timeout-minutes: 15
