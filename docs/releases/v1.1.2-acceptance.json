@@ -2,22 +2,34 @@
   "version": "1.1.2",
   "release_ready": false,
   "checks": {
-    "backend_full_regression": false,
-    "static_analysis": false,
-    "desktop_window_regression": false,
-    "large_scale_backend_and_desktop": false,
-    "windows_x64_candidate": false,
-    "windows_arm64_candidate": false,
-    "install_upgrade_and_repair": false,
+    "backend_full_regression": true,
+    "static_analysis": true,
+    "desktop_window_regression": true,
+    "large_scale_backend_and_desktop": true,
+    "windows_x64_candidate": true,
+    "windows_arm64_candidate": true,
+    "install_upgrade_and_repair": true,
     "rollback_preserves_data_and_permission_intent": false,
     "real_chatgpt_metadata": false,
     "real_chatgpt_reconnect": false,
-    "production_configuration_preserved": false
+    "production_configuration_preserved": true
   },
-  "evidence": {},
+  "evidence": {
+    "backend_full_regression": "c7b3613ed92f49fed71c02dfe84605c02c0da596; validation/final-source-checks.json, final-go.log (52 tested packages), final-race.json, final-native/result.json",
+    "static_analysis": "validation/final-source-checks.json and final-vet.log; gofmt, go vet, version and installer contracts passed",
+    "desktop_window_regression": "validation/final-wpf/result.json; actual WPF window, call cards, task milestones, selection, SSE and four rendering scales",
+    "large_scale_backend_and_desktop": "validation/final-scale.log and final-wpf/result.json; durable backend and paginated desktop fixture measured separately",
+    "windows_x64_candidate": "candidate-final/build-report.json source_dirty=false; validation/final-package-verification.json and final-native/result.json",
+    "windows_arm64_candidate": "candidate-final/build-report.json and validation/final-package-verification.json; compiled ARM64 payload and Setup, PE machine 0xaa64, no ARM64 hardware execution",
+    "install_upgrade_and_repair": "validation/final-inno/result.json and final-upgrade.json; exact c7b3613 AMD64 archive upgraded from 1.1.1, failed trials restored, same-version repair, uninstall, reinstall and stale-environment upgrade passed",
+    "production_configuration_preserved": "validation/final-inno/result.json production_state_unchanged=true; production generation pointer and startup identities unchanged; final-native/result.json production_touched=false"
+  },
   "limitations": [
-    "Current acceptance is in progress. SDK/HTTP fixtures do not establish that the actual ChatGPT webpage connector supplies metadata.",
+    "Evidence root: E:/PLAYGROUND/AGENTDOCK/artifacts/wsp_16dc767c7c591b7d. Verification date: 2026-09-20 UTC. Source commit: c7b3613ed92f49fed71c02dfe84605c02c0da596.",
+    "Real SDK/HTTP and native binary fixtures pass; they do not establish that the actual ChatGPT webpage connector supplies openai/session or preserves it across reconnection.",
     "AgentDock 1.1.1 does not implement 1.1.2 permissions. Preserving policy bytes alone is not an accepted remote-execution rollback.",
+    "ARM64 packages are cross-compiled and checksum/PE verified. Native ARM64 installation and UI execution remain unverified.",
+    "The WPF scale test uses a paginated HTTP fixture; it does not measure an end-to-end first screen backed by the large durable journal.",
     "Candidate compilation or unsigned packaging does not authorize publication."
   ]
 }
