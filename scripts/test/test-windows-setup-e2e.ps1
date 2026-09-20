@@ -124,18 +124,34 @@ function Assert-ElevatedAgentDockTask {
     }
 }
 
+function Test-CoreReadOnlyProbe {
+    param([string] $CommandLine)
+
+    # The stable shim forwards both the daemon and tray read-only probes to the
+    # same generation executable. Do not count version/status probes as daemons.
+    # Unknown or unavailable command lines remain candidates and must not vanish.
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) { return $false }
+    return $CommandLine -match '(?i)^\s*(?:"[^"]+"|\S+)\s+(?:"?version"?(?:\s+"?--json"?)?\s*$|"?service"?\s+"?status"?(?:\s|$))'
+}
+
 function Assert-CoreRunsWithoutConsole {
     $generation = Get-ActiveGenerationPaths
     $normalizedBinary = [IO.Path]::GetFullPath($generation.Core)
     $coreProcesses = @(Get-CimInstance Win32_Process | Where-Object {
         -not [string]::IsNullOrWhiteSpace($_.ExecutablePath) -and
-        [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), $normalizedBinary, [StringComparison]::OrdinalIgnoreCase)
+        [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), $normalizedBinary, [StringComparison]::OrdinalIgnoreCase) -and
+        -not (Test-CoreReadOnlyProbe -CommandLine $_.CommandLine)
     })
     if ($coreProcesses.Count -ne 1) {
-        throw "Expected one active generation Core process, got $($coreProcesses.Count): $normalizedBinary"
+        $diagnostic = $coreProcesses | Select-Object ProcessId, ParentProcessId, ExecutablePath, CommandLine | ConvertTo-Json -Compress
+        throw "Expected one active generation Core service, got $($coreProcesses.Count): $normalizedBinary; processes=$diagnostic"
     }
 
     $core = $coreProcesses[0]
+    $listenerOwners = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction Stop | Select-Object -ExpandProperty OwningProcess -Unique)
+    if ($listenerOwners.Count -ne 1 -or $listenerOwners[0] -ne $core.ProcessId) {
+        throw "The expected generation Core does not own the runtime listener: core=$($core.ProcessId); owners=$($listenerOwners -join ', ')"
+    }
     $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($core.ParentProcessId)" -ErrorAction Stop
     if ($parent.Name -ne 'agentdock.exe' -or
         [string]::IsNullOrWhiteSpace($parent.ExecutablePath) -or
@@ -177,7 +193,8 @@ function Assert-TaskStopKillsCore {
     do {
         $remainingCore = @(Get-CimInstance Win32_Process | Where-Object {
             -not [string]::IsNullOrWhiteSpace($_.ExecutablePath) -and
-            [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), [IO.Path]::GetFullPath($generation.Core), [StringComparison]::OrdinalIgnoreCase)
+            [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), [IO.Path]::GetFullPath($generation.Core), [StringComparison]::OrdinalIgnoreCase) -and
+            -not (Test-CoreReadOnlyProbe -CommandLine $_.CommandLine)
         })
         if ($remainingCore.Count -eq 0) {
             break
@@ -225,7 +242,8 @@ function Assert-ElevatedCoreLifecycle {
     do {
         $remainingCore = @(Get-CimInstance Win32_Process | Where-Object {
             -not [string]::IsNullOrWhiteSpace($_.ExecutablePath) -and
-            [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), [IO.Path]::GetFullPath($generation.Core), [StringComparison]::OrdinalIgnoreCase)
+            [string]::Equals([IO.Path]::GetFullPath($_.ExecutablePath), [IO.Path]::GetFullPath($generation.Core), [StringComparison]::OrdinalIgnoreCase) -and
+            -not (Test-CoreReadOnlyProbe -CommandLine $_.CommandLine)
         })
         if ($remainingCore.Count -eq 0) {
             break
