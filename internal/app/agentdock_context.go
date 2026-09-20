@@ -12,6 +12,7 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/taskstate"
 	tooltask "github.com/uvwt/agentdock/internal/tool/task"
+	"github.com/uvwt/agentdock/internal/workspace"
 )
 
 func (r *Runtime) AgentDockContext(ctx context.Context) (Result, error) {
@@ -78,10 +79,25 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 		index, indexErr := r.taskTools.ContextIndex(indexCtx)
 		cancel()
 		contextResult.Tasks = &index
+		selectedWorkspace, workspaceErr := r.workspaceRegistry.Select(ctx, "", "")
+		if strings.TrimSpace(workdir) != "" {
+			resolved, resolveErr := r.ws.ResolveExisting(workdir)
+			if resolveErr != nil {
+				workspaceErr = resolveErr
+			} else {
+				selectedWorkspace, workspaceErr = r.workspaceRegistry.EnsureRoot(ctx, resolved.Abs)
+			}
+		}
+		if workspaceErr == nil {
+			contextResult.Workspace = &selectedWorkspace
+		} else {
+			contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "workspace", Message: "工作区注册信息暂不可用。写入前调用 workspace_manage 明确选择项目，不能回退到未知当前目录。"})
+		}
 		if indexErr != nil {
 			contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "tasks", Message: "任务索引暂不可用；现有能力仍可使用，请检查任务存储。"})
 		}
 		contextResult.Rules = append(contextResult.Rules, "恢复任务时优先复用 tasks 索引中的 task_id 和 active_thread；明确项目时匹配工作区。执行工具绑定 task_id/thread_id/step_id，运行中的命令继续观察原 session_id。多候选无法区分时只返回候选摘要，不创建重复任务。")
+		contextResult.Rules = append(contextResult.Rules, "新任务传入本次 workspace.workspace_id；恢复任务优先使用其线程工作区。源码用 source，交付物用 artifact，临时文件用 scratch，缓存用 cache。工作区外单次目标须显式传 target_kind=external 与 external_path。注册或修订项目使用 workspace_manage；工作区路由不构成命令沙箱。")
 	}
 	if skillErr != nil {
 		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "skills", Message: "Skill 索引暂不可用。"})
@@ -151,6 +167,7 @@ func (r *Runtime) agentDockContextTool(ctx context.Context, args map[string]any)
 }
 
 type capabilityContext struct {
+	Workspace         *workspace.Record           `json:"workspace,omitempty"`
 	Tasks             *taskstate.TaskIndex        `json:"tasks,omitempty"`
 	InstructionFiles  *agentinstructions.Snapshot `json:"instruction_files,omitempty"`
 	Runtime           *capabilityRuntimeContext   `json:"runtime,omitempty"`

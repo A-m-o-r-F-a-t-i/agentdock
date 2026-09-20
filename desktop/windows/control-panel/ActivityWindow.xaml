@@ -1,0 +1,135 @@
+<Window x:Class="AgentDock.ControlPanel.ActivityWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:AgentDock.ControlPanel"
+        Title="{local:ActivityLoc Title}" Width="1180" Height="800" MinWidth="840" MinHeight="560"
+        Background="{StaticResource SurfaceBrush}" WindowStartupLocation="CenterScreen"
+        UseLayoutRounding="True" SnapsToDevicePixels="True" Loaded="Window_Loaded" Closed="Window_Closed">
+  <Window.Resources>
+    <BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
+    <Style x:Key="ReadOnlyActivityText" TargetType="TextBox">
+      <Setter Property="IsReadOnly" Value="True" />
+      <Setter Property="IsReadOnlyCaretVisible" Value="True" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="VerticalContentAlignment" Value="Top" />
+    </Style>
+  </Window.Resources>
+  <Grid Margin="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <StackPanel Margin="0,0,0,12">
+      <TextBlock Text="{local:ActivityLoc Open}" FontSize="21" FontWeight="SemiBold" />
+      <TextBlock Text="{local:ActivityLoc Facts}" TextWrapping="Wrap" Foreground="#556170" Margin="0,5,0,0" />
+    </StackPanel>
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="270" MinWidth="210" />
+        <ColumnDefinition Width="7" />
+        <ColumnDefinition Width="*" MinWidth="490" />
+      </Grid.ColumnDefinitions>
+      <Border Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top">
+            <TextBox x:Name="TaskSearch" ToolTip="{local:ActivityLoc Search}" TextChanged="TaskSearch_TextChanged" Margin="0,0,0,8" />
+            <ComboBox x:Name="StateFilter" SelectionChanged="StateFilter_SelectionChanged" Margin="0,0,0,8" Padding="5" DisplayMemberPath="Label" />
+            <WrapPanel>
+              <Button Content="{local:ActivityLoc Refresh}" Click="Refresh_Click" />
+              <CheckBox x:Name="ShowArchived" Content="{local:ActivityLoc Archived}" VerticalAlignment="Center" Margin="0,0,0,8" Checked="ArchiveFilter_Changed" Unchecked="ArchiveFilter_Changed" />
+            </WrapPanel>
+            <TextBlock x:Name="TaskCountNotice" TextWrapping="Wrap" Foreground="#7A5100" FontSize="11" Margin="0,0,0,6" />
+          </StackPanel>
+          <ListBox x:Name="TaskList" BorderThickness="0" SelectionChanged="TaskList_SelectionChanged"
+                   ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+            <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="Padding" Value="7,9" /></Style></ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <StackPanel>
+                  <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                  <TextBlock Text="{Binding Detail}" Foreground="#556170" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+      </Border>
+      <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" Background="Transparent" />
+      <Grid Grid.Column="2" Margin="9,0,0,0">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <StackPanel>
+          <TextBlock x:Name="TaskTitle" Text="{local:ActivityLoc NoTask}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+          <DockPanel Margin="0,8,0,0">
+            <Menu DockPanel.Dock="Right" Background="Transparent" VerticalAlignment="Center">
+              <MenuItem x:Name="TaskActionsMenu" Header="{local:ActivityLoc TaskActions}">
+                <MenuItem Header="{local:ActivityLoc CancelTask}" Tag="cancel" Click="Control_Click" />
+                <MenuItem Header="{local:ActivityLoc Archive}" Tag="archive" Click="Control_Click" />
+                <MenuItem Header="{local:ActivityLoc Unarchive}" Tag="unarchive" Click="Control_Click" />
+                <Separator />
+                <MenuItem Header="{local:ActivityLoc Cleanup}" Tag="cleanup" Click="Control_Click" />
+              </MenuItem>
+              <MenuItem x:Name="ThreadActionsMenu" Header="{local:ActivityLoc ThreadActions}">
+                <MenuItem Header="{local:ActivityLoc SetActive}" Tag="thread_switch" Click="Control_Click" />
+                <MenuItem Header="{local:ActivityLoc Create}" Tag="thread_create" Click="Control_Click" />
+                <MenuItem Header="{local:ActivityLoc Fork}" Tag="thread_fork" Click="Control_Click" />
+                <Separator />
+                <MenuItem Header="{local:ActivityLoc Block}" Tag="thread_block" Click="Control_Click" />
+                <MenuItem Header="{local:ActivityLoc Resume}" Tag="thread_resume" Click="Control_Click" />
+                <MenuItem Header="{local:ActivityLoc Close}" Tag="thread_close" Click="Control_Click" />
+              </MenuItem>
+            </Menu>
+            <TextBlock Text="{local:ActivityLoc Thread}" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <ComboBox x:Name="ThreadSelector" DisplayMemberPath="Display" MinWidth="130" MaxWidth="340" HorizontalAlignment="Left" Padding="5" SelectionChanged="ThreadSelector_SelectionChanged" />
+          </DockPanel>
+          <TextBox x:Name="ThreadInfo" Style="{StaticResource ReadOnlyActivityText}" MaxHeight="115" VerticalScrollBarVisibility="Auto" Margin="0,8,0,5" />
+          <Expander Header="{local:ActivityLoc Details}" Margin="0,0,0,9">
+            <TextBox x:Name="AcceptanceInfo" Style="{StaticResource ReadOnlyActivityText}" MaxHeight="180" VerticalScrollBarVisibility="Auto" Margin="0,6,0,0" />
+          </Expander>
+          <TextBlock x:Name="JournalWarning" TextWrapping="Wrap" Foreground="#885600" Margin="0,0,0,6" />
+        </StackPanel>
+        <Grid Grid.Row="1">
+          <ListBox x:Name="TimelineList" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                   ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                   SelectionChanged="TimelineList_SelectionChanged">
+            <ListBox.ItemContainerStyle>
+              <Style TargetType="ListBoxItem"><Setter Property="HorizontalContentAlignment" Value="Stretch" /><Setter Property="Padding" Value="0" /><Setter Property="Margin" Value="0,0,0,2" /></Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Border BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="12,10">
+                  <StackPanel>
+                    <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding Metadata}" Foreground="#556170" TextWrapping="Wrap" FontSize="11" Margin="0,4,0,7" />
+                    <TextBox Text="{Binding Details, Mode=OneWay}" Style="{StaticResource ReadOnlyActivityText}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" MaxHeight="150" VerticalScrollBarVisibility="Auto" />
+                    <Expander Header="{Binding OutputLabel}" IsExpanded="{Binding IsExpanded, Mode=TwoWay}" Visibility="{Binding HasOutput, Converter={StaticResource VisibleWhenTrue}}" Margin="0,8,0,0">
+                      <TextBox Text="{Binding Output, Mode=OneWay}" Style="{StaticResource ReadOnlyActivityText}" FontFamily="Consolas, Microsoft YaHei UI" FontSize="12" MaxHeight="240" VerticalScrollBarVisibility="Auto" Margin="0,7,0,0" />
+                    </Expander>
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock x:Name="EmptyTimeline" Text="{local:ActivityLoc NoEvents}" IsHitTestVisible="False" Foreground="#657080" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" Margin="18" />
+        </Grid>
+        <WrapPanel Grid.Row="2" Margin="0,10,0,0">
+          <Button x:Name="StopButton" Content="{local:ActivityLoc Stop}" Click="Stop_Click" IsEnabled="False" />
+          <Button x:Name="CopyButton" Content="{local:ActivityLoc Copy}" Click="Copy_Click" IsEnabled="False" />
+          <Button x:Name="DirectoryButton" Content="{local:ActivityLoc Directory}" Click="Directory_Click" IsEnabled="False" />
+          <Button x:Name="FileButton" Content="{local:ActivityLoc File}" Click="File_Click" IsEnabled="False" />
+          <Button x:Name="DiffButton" Content="{local:ActivityLoc Diff}" Click="Diff_Click" IsEnabled="False" />
+          <CheckBox x:Name="FollowLatest" Content="{local:ActivityLoc Follow}" IsChecked="True" VerticalAlignment="Center" Margin="0,0,0,8" />
+        </WrapPanel>
+      </Grid>
+    </Grid>
+    <TextBlock x:Name="ConnectionStatus" Grid.Row="2" Text="{local:ActivityLoc Loading}" TextWrapping="Wrap" Foreground="#556170" FontSize="12" Margin="0,8,0,0" MaxHeight="60" />
+  </Grid>
+</Window>

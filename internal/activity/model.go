@@ -42,10 +42,11 @@ func (b Binding) Validate() error {
 }
 
 type Event struct {
-	SchemaVersion int       `json:"schema_version"`
-	Seq           uint64    `json:"seq"`
-	EventID       string    `json:"event_id"`
-	CreatedAt     time.Time `json:"created_at"`
+	ChangeStatsKnown bool      `json:"change_stats_known,omitempty"`
+	SchemaVersion    int       `json:"schema_version"`
+	Seq              uint64    `json:"seq"`
+	EventID          string    `json:"event_id"`
+	CreatedAt        time.Time `json:"created_at"`
 	Binding
 	Kind            string `json:"kind"`
 	Status          string `json:"status,omitempty"`

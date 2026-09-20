@@ -43,6 +43,7 @@ func InputSchema(name string) (map[string]any, bool) {
 		required = []string{"name"}
 	case ToolCall:
 		props["name"] = stringProp("Qualified dynamic MCP tool name in <server>:<tool> form.")
+		toolcontract.ActivityProperties(props)
 		// arguments 的结构由上游 MCP tool schema 决定，是这里唯一需要保持开放的动态叶节点。
 		props["arguments"] = map[string]any{"type": "object", "description": "Arguments matching the schema returned by mcp_tool_inspect.", "additionalProperties": true}
 		required = []string{"name", "arguments"}

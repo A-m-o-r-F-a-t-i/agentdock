@@ -17,6 +17,7 @@ import (
 	toolrecall "github.com/uvwt/agentdock/internal/tool/recall"
 	toolskill "github.com/uvwt/agentdock/internal/tool/skill"
 	tooltask "github.com/uvwt/agentdock/internal/tool/task"
+	toolworkspace "github.com/uvwt/agentdock/internal/tool/workspace"
 )
 
 func TestAllToolDefinitionsHaveStrictCompilableInputContracts(t *testing.T) {
@@ -78,6 +79,7 @@ func TestTypedToolRequestFieldsMatchPublishedSchemas(t *testing.T) {
 		{name: toolcommand.ToolSessionObserve, request: toolcommand.SessionObserveRequest{}, exact: true},
 		{name: toolcommand.ToolSessionAct, request: toolcommand.SessionActRequest{}, exact: true},
 		{name: tooltask.ToolTaskManage, request: tooltask.ManageRequest{}, exact: true},
+		{name: toolworkspace.ToolManage, request: toolworkspace.Request{}, exact: true},
 		{name: "workflow_template_manage", request: tooltask.WorkflowRequest{}},
 		{name: evolution.ToolName, request: evolution.Request{}},
 		{name: toolacp.ToolSession, request: toolacp.SessionRequest{}, exact: true},

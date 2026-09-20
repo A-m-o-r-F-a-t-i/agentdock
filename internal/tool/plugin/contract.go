@@ -11,7 +11,7 @@ func InputSchema(name string) (map[string]any, bool) {
 	stringProp := toolcontract.String
 	switch name {
 	case ToolManage:
-		return toolcontract.InputObject(map[string]any{
+		props := map[string]any{
 			"action": map[string]any{
 				"type": "string", "description": "Standard plugin package or host-state action.",
 				"enum": []string{"list", "inspect", "validate", "install", "update", "remove", "enable", "disable", "heavy_enable", "heavy_disable", "member_enable", "member_disable"},
@@ -20,7 +20,9 @@ func InputSchema(name string) (map[string]any, bool) {
 			"source":      stringProp("Local plugin directory or ZIP archive for validate, install, or update. It must contain root plugin.json using Agent Plugins 1.0.0."),
 			"member_type": map[string]any{"type": "string", "enum": []string{"skill", "mcp_server"}, "description": "Plugin member kind for member_enable/member_disable."},
 			"member":      stringProp("Plugin-owned Skill or MCP server name for member_enable/member_disable."),
-		}, "action"), true
+		}
+		toolcontract.ActivityProperties(props)
+		return toolcontract.InputObject(props, "action"), true
 	case ToolLoad:
 		return toolcontract.InputObject(map[string]any{
 			"name": stringProp("Enabled plugin name from agentdock_context."),

@@ -29,34 +29,37 @@ import (
 	toolrecall "github.com/uvwt/agentdock/internal/tool/recall"
 	toolskill "github.com/uvwt/agentdock/internal/tool/skill"
 	tooltask "github.com/uvwt/agentdock/internal/tool/task"
+	toolworkspace "github.com/uvwt/agentdock/internal/tool/workspace"
 	"github.com/uvwt/agentdock/internal/workspace"
 )
 
 type Result = toolcore.Result
 
 type Runtime struct {
-	activity       *activity.Store
-	cfg            config.Config
-	toolNames      []string
-	toolValidators map[string]*toolcontract.InputValidator
-	ws             *workspace.Workspace
-	skills         *toolskill.Service
-	command        *toolcommand.Service
-	files          *toolfile.Service
-	dynamicMCP     *toolmcp.Service
-	plugins        *toolplugin.Service
-	media          *toolmedia.Service
-	browser        *toolbrowser.Service
-	recall         *toolrecall.Service
-	evolution      *evolution.Service
-	taskTools      *tooltask.Service
-	acp            *toolacp.Service
-	lifecycleMu    sync.RWMutex
-	commandCtx     context.Context
-	commandCancel  context.CancelFunc
-	closing        bool
-	closeOnce      sync.Once
-	closeErr       error
+	workspaceRegistry *workspace.Registry
+	workspaceTools    *toolworkspace.Service
+	activity          *activity.Store
+	cfg               config.Config
+	toolNames         []string
+	toolValidators    map[string]*toolcontract.InputValidator
+	ws                *workspace.Workspace
+	skills            *toolskill.Service
+	command           *toolcommand.Service
+	files             *toolfile.Service
+	dynamicMCP        *toolmcp.Service
+	plugins           *toolplugin.Service
+	media             *toolmedia.Service
+	browser           *toolbrowser.Service
+	recall            *toolrecall.Service
+	evolution         *evolution.Service
+	taskTools         *tooltask.Service
+	acp               *toolacp.Service
+	lifecycleMu       sync.RWMutex
+	commandCtx        context.Context
+	commandCancel     context.CancelFunc
+	closing           bool
+	closeOnce         sync.Once
+	closeErr          error
 }
 
 func NewRuntime(cfg config.Config) (*Runtime, error) {
@@ -65,6 +68,10 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("initialize tool contracts: %w", err)
 	}
 	ws, err := workspace.New(cfg.AgentDockDefaultDir)
+	if err != nil {
+		return nil, err
+	}
+	workspaceRegistry, err := workspace.NewRegistry(cfg.AgentDockHome, ws.Root())
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +117,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	}
 	commandCtx, commandCancel := context.WithCancel(context.Background())
 	runtime := &Runtime{
+		workspaceRegistry: workspaceRegistry, workspaceTools: toolworkspace.New(workspaceRegistry),
 		cfg: cfg, ws: ws, skills: skills, activity: activityStore,
 		toolNames: toolNames, toolValidators: toolValidators,
 		commandCtx: commandCtx, commandCancel: commandCancel,
@@ -321,7 +329,7 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 	if !ok || spec.Handler == nil {
 		return nil, toolErrorDetails("UNKNOWN_TOOL", "tool has no handler", "validation", map[string]any{"tool": name})
 	}
-	return spec.Handler(ctx, r, args)
+	return r.callObserved(ctx, spec, args)
 }
 
 func (r *Runtime) validateToolArguments(name string, args map[string]any) error {

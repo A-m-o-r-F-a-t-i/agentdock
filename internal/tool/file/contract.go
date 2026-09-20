@@ -66,6 +66,8 @@ func InputSchema(name string) (map[string]any, bool) {
 		required = []string{"query"}
 	case ToolFileEdit:
 		props["action"] = map[string]any{"type": "string", "description": "File edit action.", "enum": []string{"replace", "patch", "add", "delete", "move"}}
+		toolcontract.ActivityProperties(props)
+		toolcontract.TargetProperties(props)
 		props["path"] = stringProp(PathDescription("Host path for replace, add, delete, or move. Relative paths resolve from ~/AgentDock."))
 		AddRuntimeProperties(props)
 		props["old"] = stringProp("Exact UTF-8 text to replace.")

@@ -18,6 +18,7 @@ func InputSchema(name string) (map[string]any, bool) {
 	switch name {
 	case ToolExecCommand:
 		toolcontract.ActivityProperties(props)
+		toolcontract.TargetProperties(props)
 		props["cmd"] = stringProp("Command to run.")
 		props["workdir"] = stringProp(WorkdirDescription())
 		AddRuntimeProperties(props)

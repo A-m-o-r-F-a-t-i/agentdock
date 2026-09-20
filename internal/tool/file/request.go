@@ -1,5 +1,7 @@
 package file
 
+import "github.com/uvwt/agentdock/internal/activity"
+
 // RuntimeOptions 描述文件工具的实际文件系统运行环境。非 Windows 主机只接受零值。
 type RuntimeOptions struct {
 	Runtime         string `json:"runtime,omitempty"`
@@ -47,6 +49,9 @@ type SearchRequest struct {
 // EditRequest 统一承载 file_edit 五种 action 的输入，避免为每个 action 再制造一层类型。
 // action 对字段组合的业务约束仍由文件服务在对应主流程中校验。
 type EditRequest struct {
+	activity.Binding
+	TargetKind   string `json:"target_kind,omitempty"`
+	ExternalPath string `json:"external_path,omitempty"`
 	RuntimeOptions
 	Action          string `json:"action"`
 	Path            string `json:"path,omitempty"`

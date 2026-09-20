@@ -74,6 +74,8 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        if (TryStartActivityWindow(e.Args)) return;
+
         _singleInstanceMutex = new Mutex(true, MutexName, out var createdNew);
         _ownsSingleInstanceMutex = createdNew;
         if (!createdNew)
@@ -219,6 +221,7 @@ public partial class App : System.Windows.Application
             ControlPanelWindow = replacement;
             MainWindow = replacement;
             previousWindow.CloseForReplacement();
+            ReloadActivityWindowLanguage();
 
             if (_trayMenu is not null && !_trayMenu.Visible)
             {
@@ -344,6 +347,7 @@ public partial class App : System.Windows.Application
         menu.Items.Add(new Forms.ToolStripSeparator());
 
         menu.Items.Add(CreateMenuItem(UiText.Get("OpenAgentDock"), (_, _) => ShowControlPanel()));
+        menu.Items.Add(CreateMenuItem(ActivityText.Get("Open"), (_, _) => ShowActivityCenter()));
         menu.Items.Add(new Forms.ToolStripSeparator());
 
         if (snapshot?.CoreRunning == true)

@@ -1,6 +1,9 @@
 package plugin
 
+import "github.com/uvwt/agentdock/internal/activity"
+
 type ManageRequest struct {
+	activity.Binding
 	Action     string `json:"action"`
 	Name       string `json:"name,omitempty"`
 	Source     string `json:"source,omitempty"`

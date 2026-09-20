@@ -38,6 +38,7 @@ func contextToolContract(name string, cfg config.Config) (ToolContract, bool) {
 	output["instruction_files"] = instructionFilesSchema()
 	output["plugins"] = pluginIndexSchema()
 	output["tasks"] = taskIndexSchema()
+	output["workspace"] = map[string]any{"type": "object", "additionalProperties": true, "required": []string{"workspace_id", "root", "runtime", "rules_revision"}}
 	contract.OutputSchema["properties"] = output
 	return contract, true
 }

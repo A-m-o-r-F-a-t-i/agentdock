@@ -88,6 +88,11 @@ func TestInstructionBootstrapAndLiveContextThroughMCP(t *testing.T) {
 			t.Cleanup(func() { _ = rt.Close() })
 			session := connectInstructionClient(t, NewServer(rt, cfg))
 			initial := session.InitializeResult().Instructions
+			for _, invariant := range []string{"task_id/thread_id", "workspace_id", "session_id", "command_ok", "agentdock_guidance"} {
+				if !strings.Contains(initial, invariant) {
+					t.Fatalf("startup guidance missing %s", invariant)
+				}
+			}
 			for _, marker := range []string{"global-before-marker", "workspace-before-marker"} {
 				if strings.Count(initial, marker) != 1 {
 					t.Fatalf("initial instructions missing/repeated %q: %s", marker, initial)

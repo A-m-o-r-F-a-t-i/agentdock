@@ -76,6 +76,7 @@ func InputSchema(name string) (map[string]any, bool) {
 	default:
 		return nil, false
 	}
+	toolcontract.ActivityProperties(props)
 	return toolcontract.InputObject(props, required...), true
 }
 

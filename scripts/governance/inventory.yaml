@@ -6,6 +6,20 @@
 review_threshold_lines: 300
 
 scripts:
+  - path: scripts/test/test-windows-activity-center.ps1
+    class: test
+    owner: desktop
+    public_contract: false
+    deletable: false
+    notes: 隔离构建及运行活动中心 HTTP/SSE/虚拟化/中英文缩放回归，不启动生产托盘。
+
+  - path: scripts/test/test-windows-activity-runtime.ps1
+    class: test
+    owner: runtime
+    public_contract: false
+    deletable: false
+    notes: 在独立端口、工作区和用户数据目录运行真实 Core，验证任务、线程、SSE、脱敏及重启恢复。
+
   - path: scripts/migrate/migrate-agentdock-home.ps1
     class: dev
     owner: skill-runtime

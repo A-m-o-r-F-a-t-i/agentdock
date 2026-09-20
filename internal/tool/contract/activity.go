@@ -12,3 +12,8 @@ func ActivityProperties(properties map[string]any) {
 	}
 	properties["activity_label"] = map[string]any{"type": "string", "description": "Short display label; it never replaces the actual command or execution status.", "maxLength": 512}
 }
+
+func TargetProperties(properties map[string]any) {
+	properties["target_kind"] = map[string]any{"type": "string", "enum": []string{"source", "artifact", "scratch", "cache", "external"}, "description": "Semantic target under the selected workspace. artifact and scratch require task_id; external requires an explicit one-call external_path."}
+	properties["external_path"] = String("Explicit absolute external target for this call only. It does not change the workspace or any default path.")
+}
