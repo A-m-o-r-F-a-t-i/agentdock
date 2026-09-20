@@ -38,7 +38,9 @@ jobs:
           fi
 
       - name: Test
-        run: go test ./... -count=1 -timeout=3m
+        # Windows packages spawn Node, PowerShell and desktop fixtures; avoid
+        # starving their bounded handshakes with repository-wide process fan-out.
+        run: go test -p 2 ./... -count=1 -timeout=3m
 
       - name: Check Windows test tree cleanliness
         if: runner.os == 'Windows'

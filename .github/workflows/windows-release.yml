@@ -53,7 +53,9 @@ jobs:
           if ($unformatted.Count) { throw "Unformatted Go: $($unformatted -join ', ')" }
           go run ./tools/release verify-version v1.1.0
           if ($LASTEXITCODE -ne 0) { throw 'Version validation failed.' }
-          go test ./... -count=1 -timeout=8m
+          # Bound simultaneous process-heavy packages on hosted Windows runners.
+          # Keep all test cases, assertions and individual operation deadlines.
+          go test -p 2 ./... -count=1 -timeout=8m
           if ($LASTEXITCODE -ne 0) { throw 'Go tests failed.' }
           go vet ./...
           if ($LASTEXITCODE -ne 0) { throw 'Go vet failed.' }

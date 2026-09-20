@@ -50,7 +50,7 @@ func TestCIWorkflowUsesFreshBoundedGoTests(t *testing.T) {
 	workflow := readWorkflow(t, "ci.yml")
 	for _, want := range []string{
 		"timeout-minutes: 20",
-		"go test ./... -count=1 -timeout=3m",
+		"go test -p 2 ./... -count=1 -timeout=3m",
 		"name: ACP prompt and steering race regression",
 		"-count=20",
 		"-timeout=90s",
@@ -92,5 +92,20 @@ func TestWindowsInstallerWorkflowHasAlwaysPresentPullRequestGate(t *testing.T) {
 	}
 	if strings.Contains(workflow, "raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/scripts/install/install.ps1") {
 		t.Fatal("routine Windows installer validation must use the checked-out installer instead of refetching it over the network")
+	}
+}
+
+func TestWindowsReleaseKeepsBoundedCompleteValidation(t *testing.T) {
+	workflow := readWorkflow(t, "windows-release.yml")
+	for _, want := range []string{
+		"go test -p 2 ./... -count=1 -timeout=8m",
+		"throw 'Go tests failed.'",
+		"go vet ./...",
+		"needs: windows",
+		"github.ref == 'refs/heads/main' && inputs.publish",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Windows release must retain complete bounded validation: missing %q", want)
+		}
 	}
 }
