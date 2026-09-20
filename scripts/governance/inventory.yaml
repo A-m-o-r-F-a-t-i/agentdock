@@ -6,6 +6,13 @@
 review_threshold_lines: 300
 
 scripts:
+  - path: scripts/test/test-windows-execution-compatibility.ps1
+    class: test
+    owner: runtime
+    public_contract: false
+    deletable: false
+    notes: 使用独立目录、端口和真实 1.1.1 Core 验证保存权限后的旧核心启动拦截、新核心恢复及策略、任务和项目文件保留。
+
   - path: scripts/test/test-windows-activity-center.ps1
     class: test
     owner: desktop

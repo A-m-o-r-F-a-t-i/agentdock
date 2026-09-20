@@ -5,12 +5,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-func TestScriptGovernanceInventoryCoversTrackedScripts(t *testing.T) {
+func TestScriptGovernanceInventoryCoversWorkspaceScripts(t *testing.T) {
 	root := filepath.Join("..", "..")
 	inventoryPath := filepath.Join(root, "scripts", "governance", "inventory.yaml")
 	inventory, err := parseGovernanceInventory(inventoryPath)
@@ -29,14 +30,14 @@ func TestScriptGovernanceInventoryCoversTrackedScripts(t *testing.T) {
 		listed[filepath.ToSlash(script.Path)] = script
 	}
 
-	tracked, err := gitTrackedScripts(root)
+	tracked, err := gitWorkspaceScripts(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range tracked {
 		entry, ok := listed[path]
 		if !ok {
-			t.Fatalf("tracked script is missing from scripts/governance/inventory.yaml: %s", path)
+			t.Fatalf("workspace script is missing from scripts/governance/inventory.yaml: %s", path)
 		}
 		full := filepath.Join(root, filepath.FromSlash(path))
 		lines, err := countLines(full)
@@ -59,7 +60,7 @@ func TestScriptGovernanceInventoryCoversTrackedScripts(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Fatalf("inventory lists a script that is not tracked: %s", path)
+			t.Fatalf("inventory lists a script that is not in the workspace: %s", path)
 		}
 	}
 }
@@ -120,14 +121,16 @@ func parseGovernanceInventory(path string) (governanceInventory, error) {
 	return inventory, scanner.Err()
 }
 
-func gitTrackedScripts(root string) ([]string, error) {
-	cmd := exec.Command("git", "-C", root, "ls-files", "*.sh", "*.ps1", "*.py", "*.iss")
+func gitWorkspaceScripts(root string) ([]string, error) {
+	// New scripts must be checked before git add/commit too. NUL-delimited names
+	// preserve Unicode paths without depending on Git's display quoting policy.
+	cmd := exec.Command("git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "*.sh", "*.ps1", "*.py", "*.iss")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
 	var paths []string
-	for _, line := range strings.Split(string(output), "\n") {
+	for _, line := range strings.Split(string(output), "\x00") {
 		path := filepath.ToSlash(strings.TrimSpace(line))
 		if path == "" {
 			continue
@@ -142,6 +145,43 @@ func gitTrackedScripts(root string) ([]string, error) {
 		}
 	}
 	return paths, nil
+}
+
+func TestScriptInventoryIncludesNewUntrackedScripts(t *testing.T) {
+	root := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		if output, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %q: %s: %v", args, output, err)
+		}
+	}
+	git("init", "-q")
+	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{
+		".gitignore": "scripts/ignored.ps1\n", "scripts/tracked.ps1": "# tracked\n",
+		"scripts/草稿.ps1": "# new\n", "scripts/ignored.ps1": "# generated\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, filepath.FromSlash(name)), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git("add", "scripts/tracked.ps1")
+	check := func() {
+		t.Helper()
+		paths, err := gitWorkspaceScripts(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sort.Strings(paths)
+		if strings.Join(paths, "\n") != "scripts/tracked.ps1\nscripts/草稿.ps1" {
+			t.Fatalf("inventory skipped untracked script or included generated data: %q", paths)
+		}
+	}
+	check()
+	git("add", "scripts/草稿.ps1")
+	check()
 }
 
 func countLines(path string) (int, error) {

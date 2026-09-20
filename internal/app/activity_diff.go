@@ -78,7 +78,11 @@ func (r *Runtime) RuntimeActivityDiff(ctx context.Context, request ActivityDiffR
 	}
 	_, code, _, err := run("rev-parse", "--show-toplevel")
 	if err != nil || code != 0 {
-		return nil, toolError("NOT_A_REPOSITORY", "the recorded workspace target is not an available Git repository", "validation")
+		message := "the recorded workspace target is not an available Git repository"
+		if err != nil {
+			message += ": " + err.Error()
+		}
+		return nil, toolError("NOT_A_REPOSITORY", message, "validation")
 	}
 	_, tracked, _, err := run("ls-files", "--error-unmatch", "--", relative)
 	if err != nil && bounded.Err() != nil {

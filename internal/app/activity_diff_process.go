@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -84,9 +85,19 @@ func (r *Runtime) runActivityGit(ctx context.Context, record workspace.Record, o
 	event.ExitCode, event.CommandOK = &code, &ok
 	event.ElapsedMS = time.Since(started).Milliseconds()
 	event.TimedOut = errors.Is(ctx.Err(), context.DeadlineExceeded)
+	redactor := activity.NewRedactor(secrets...)
+	diagnostic := redactor.Text(completeDiffOutput(stderr), 4096)
+	event.StderrPreview, event.StderrTruncated = diagnostic, stderr.truncated
 	r.recordObservedEvent(event, nil)
-	text := stdout.buffer.String()
-	if stdout.truncated {
+	if err != nil {
+		err = fmt.Errorf("git read failed (exit %d): %s: %w", code, strings.TrimSpace(diagnostic), err)
+	}
+	return redactor.Text(completeDiffOutput(stdout), maxActivityDiffBytes), code, stdout.truncated, err
+}
+
+func completeDiffOutput(buffer *diffBuffer) string {
+	text := buffer.buffer.String()
+	if buffer.truncated {
 		// A truncated last line might contain a split credential, so omit it entirely.
 		if index := strings.LastIndexByte(text, '\n'); index >= 0 {
 			text = text[:index+1]
@@ -94,5 +105,5 @@ func (r *Runtime) runActivityGit(ctx context.Context, record workspace.Record, o
 			text = ""
 		}
 	}
-	return activity.NewRedactor(secrets...).Text(text, maxActivityDiffBytes), code, stdout.truncated, err
+	return text
 }

@@ -70,19 +70,30 @@ func ResolveTarget(record Record, request TargetRequest) (ResolvedTarget, error)
 		if request.ExternalPath == "" {
 			return result, errors.New("external_path must explicitly name the one-call external target")
 		}
-		if request.Path != "" && request.Path != "." && request.Path != request.ExternalPath {
-			return result, errors.New("external path must match the explicitly declared one-call target")
-		}
 		if record.Runtime == "wsl" {
 			if !validPOSIXRoot(request.ExternalPath) {
 				return result, ErrWorkspaceRequired
 			}
 			result.ResolvedPath = path.Clean(request.ExternalPath)
+			if request.Path != "" && request.Path != "." && (!validPOSIXRoot(request.Path) || path.Clean(request.Path) != result.ResolvedPath) {
+				return result, errors.New("external path must match the explicitly declared one-call target")
+			}
 		} else {
 			var err error
 			result.ResolvedPath, err = canonicalNativePath(request.ExternalPath)
 			if err != nil {
 				return result, err
+			}
+			if request.Path != "" && request.Path != "." {
+				// Preparation captures a canonical path; revalidation must compare
+				// that same target with the original spelling (including 8.3 aliases).
+				actual, err := canonicalNativePath(request.Path)
+				if err != nil {
+					return result, err
+				}
+				if actual != result.ResolvedPath {
+					return result, errors.New("external path must match the explicitly declared one-call target")
+				}
 			}
 		}
 		result.Root = result.ResolvedPath
