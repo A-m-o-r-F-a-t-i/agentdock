@@ -38,8 +38,8 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 	if err != nil {
 		return err
 	}
-	if runtime.mode == "none" {
-		return errors.New("Tunnel 模式为 none")
+	if runtime.mode != "quick" && runtime.mode != "named" {
+		return errors.New("只有 Cloudflare Quick/Named 使用 AgentDock Tunnel supervisor")
 	}
 
 	guard, err := acquireTunnelSupervisor(runtime.root)
@@ -80,7 +80,7 @@ func platformLaunchTunnel(ctx context.Context, runtimeRoot string) error {
 		if err != nil {
 			return err
 		}
-		if runtime.mode == "none" {
+		if runtime.mode != "quick" && runtime.mode != "named" {
 			return nil
 		}
 
@@ -171,6 +171,9 @@ func platformTunnelStatus(ctx context.Context, runtimeRoot string) (TunnelStatus
 	if err != nil {
 		return TunnelStatus{}, err
 	}
+	if runtime.mode == "funnel" {
+		return platformTailscaleStatus(ctx, runtimeRoot, "")
+	}
 	running, err := processRunningAtPath(runtime.manifest.CloudflaredBinary)
 	if err != nil {
 		return TunnelStatus{}, err
@@ -190,7 +193,12 @@ func platformTunnelStatus(ctx context.Context, runtimeRoot string) (TunnelStatus
 	if runtime.mode == "named" {
 		ready = running && publicURL != ""
 	}
+	provider := PublicAccessProviderNone
+	if runtime.mode == "quick" || runtime.mode == "named" {
+		provider = PublicAccessProviderCloudflare
+	}
 	return TunnelStatus{
+		Provider:       provider,
 		Mode:           runtime.mode,
 		Running:        running,
 		Ready:          ready,
@@ -261,7 +269,7 @@ func captureTunnelLogCursors(files tunnelFiles) (tunnelLogCursors, error) {
 	return tunnelLogCursors{stdout: stdout, stderr: stderr}, nil
 }
 
-func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
+func startCloudflareTunnel(ctx context.Context, runtime tunnelRuntime) error {
 	if runtime.mode == "none" {
 		return nil
 	}
@@ -329,7 +337,7 @@ func startTunnel(ctx context.Context, runtime tunnelRuntime) error {
 	return waitNamedTunnelReady(ctx, runtime, namedLogCursors, namedTunnelStartTimeout)
 }
 
-func stopTunnel(ctx context.Context, runtime tunnelRuntime) error {
+func stopCloudflareTunnel(ctx context.Context, runtime tunnelRuntime) error {
 	if err := signalTunnelSupervisorStop(runtime.root); err != nil {
 		return err
 	}

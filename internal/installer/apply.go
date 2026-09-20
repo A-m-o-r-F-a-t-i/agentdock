@@ -449,8 +449,15 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 	trayStartupValueName := request.TrayStartupValueName
 	cloudflaredStartupValueName := request.CloudflaredStartupValueName
 	channel := request.Channel
+	var preservedAccess *desktopruntime.Manifest
 	// repair / 省略标志时必须保留已有 runtime.json，不能把 host/port/tunnel 重置成默认值。
 	if existing, err := desktopruntime.Load(filepath.Join(request.InstallRoot, "runtime.json")); err == nil {
+		if existing.EffectivePublicAccess().Provider == desktopruntime.PublicAccessProviderTailscale {
+			if err := validateTailscaleInstallRequest(request, existing); err != nil {
+				return activatedInstall{}, err
+			}
+			preservedAccess = &existing
+		}
 		if host == "" {
 			host = existing.Host
 		}
@@ -561,6 +568,9 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 		PublicURL:                   publicURL,
 		InstallChannel:              channel,
 	}
+	if preservedAccess != nil {
+		preserveTailscaleManifest(&manifest, *preservedAccess)
+	}
 	if err := desktopruntime.Save(filepath.Join(request.InstallRoot, "runtime.json"), manifest); err != nil {
 		return activatedInstall{}, err
 	}
@@ -580,13 +590,16 @@ func activateWindows(ctx context.Context, request Request, staged stagedInstall)
 
 	return activatedInstall{
 		LocalMCPURL:   localMCPURL(host, port),
-		PublicURL:     publicURL,
+		PublicURL:     manifest.EffectivePublicAccess().URL,
 		PrivilegeMode: privilege,
 		ActiveVersion: activeVersion,
 	}, nil
 }
 
 func stageWindowsPayload(request Request, journal *rollbackJournal) (stagedInstall, error) {
+	if err := snapshotWindowsPublicAccess(request, journal); err != nil {
+		return stagedInstall{}, err
+	}
 	layout, err := updateengine.NewWindowsLayout(request.InstallRoot)
 	if err != nil {
 		return stagedInstall{}, err
@@ -943,7 +956,7 @@ func readActivatedInstall(request Request) (activatedInstall, error) {
 		}
 		return activatedInstall{
 			LocalMCPURL:   manifest.LocalMCPURL,
-			PublicURL:     manifest.PublicURL,
+			PublicURL:     manifest.EffectivePublicAccess().URL,
 			PrivilegeMode: manifest.PrivilegeMode,
 			ActiveVersion: windowsCommittedGeneration(request),
 		}, nil

@@ -116,6 +116,11 @@ public sealed partial class RuntimeService : IDisposable
             publicOrigin = manifestPublicUri.GetLeftPart(UriPartial.Authority);
         }
 
+        var usesTailscale = string.Equals(manifest.PublicAccessProvider, "tailscale", StringComparison.Ordinal);
+        if (usesTailscale)
+        {
+            publicOrigin = manifest.PublicAccessUrl;
+        }
         publicOrigin = publicOrigin.TrimEnd('/');
         var publicMcpUrl = string.IsNullOrWhiteSpace(publicOrigin) ? "" : publicOrigin + "/mcp";
         var savedNamedOrigin = ReadText(Path.Combine(RuntimeRoot, "named-server-url.txt")).TrimEnd('/');
@@ -137,6 +142,13 @@ public sealed partial class RuntimeService : IDisposable
             tunnelMode = string.IsNullOrWhiteSpace(manifest.TunnelMode) ? "none" : manifest.TunnelMode;
         }
 
+        NativeTunnelStatus? tailscale = null;
+        if (usesTailscale)
+        {
+            tunnelMode = "funnel";
+            tailscale = await ReadTailscaleStatusAsync(cancellationToken: cancellationToken);
+        }
+
         return new RuntimeSnapshot(
             manifest,
             settings,
@@ -154,7 +166,8 @@ public sealed partial class RuntimeService : IDisposable
             File.Exists(Path.Combine(RuntimeRoot, "cloudflared-token.dpapi")),
             nexus,
             nexusConnected,
-            DateTimeOffset.Now);
+            DateTimeOffset.Now,
+            tailscale);
     }
 
     public string ReadBearerToken() => ReadProtectedText(Path.Combine(RuntimeRoot, "auth-token.dpapi"), AuthEntropy);
@@ -410,13 +423,20 @@ public sealed partial class RuntimeService : IDisposable
         var arguments = new List<string>
         {
             "configure",
-            "--mode", mode,
-            "--server-url", serverUrl ?? ""
+            "--mode", mode
         };
+        if (mode == "funnel")
+        {
+            arguments.AddRange(["--provider", "tailscale"]);
+        }
+        else if (mode == "named")
+        {
+            arguments.AddRange(["--server-url", serverUrl ?? ""]);
+        }
         string? secretFile = null;
         try
         {
-            if (!string.IsNullOrWhiteSpace(tunnelToken))
+            if (mode == "named" && !string.IsNullOrWhiteSpace(tunnelToken))
             {
                 secretFile = await WriteSecretFileAsync(tunnelToken, cancellationToken);
                 arguments.AddRange(["--token-file", secretFile]);
@@ -427,6 +447,7 @@ public sealed partial class RuntimeService : IDisposable
         finally
         {
             DeleteSecretFile(secretFile);
+            InvalidateTailscaleStatus();
         }
     }
 
@@ -994,13 +1015,14 @@ public sealed partial class RuntimeService : IDisposable
         return RunNativeAgentDockAsync("service", [action], cancellationToken);
     }
 
-    internal Task RunTunnelActionAsync(string action, CancellationToken cancellationToken = default)
+    internal async Task RunTunnelActionAsync(string action, CancellationToken cancellationToken = default)
     {
         if (action is not ("start" or "stop" or "restart" or "regenerate"))
         {
             throw new ArgumentOutOfRangeException(nameof(action), action, UiText.Get("UnsupportedTunnelAction"));
         }
-        return RunNativeAgentDockAsync("tunnel", [action], cancellationToken);
+        try { await RunNativeAgentDockAsync("tunnel", [action], cancellationToken); }
+        finally { InvalidateTailscaleStatus(); }
     }
 
     private async Task RunNativeAgentDockAsync(
@@ -1027,6 +1049,8 @@ public sealed partial class RuntimeService : IDisposable
         }
         catch (InvalidOperationException) when (
             allowElevation &&
+            manifest.PublicAccessProvider != "tailscale" &&
+            !arguments.Contains("tailscale") &&
             string.Equals(manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase))
         {
             // 最高权限计划任务启动的核心进程不能保证允许普通托盘终止。

@@ -6,7 +6,7 @@ param(
     [Parameter(Mandatory = $true)][string] $BaselineArchive,
     [Parameter(Mandatory = $true)][string] $BaselineInstaller,
     [Parameter(Mandatory = $true)][string] $TestRoot,
-    [string] $ExpectedVersion = '1.0.1',
+    [string] $ExpectedVersion = '1.1.0',
     [string] $SourceHome = '',
     [string] $CoreFailureWrapper = '',
     [switch] $IncludeFreshInstall

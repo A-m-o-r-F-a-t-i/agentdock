@@ -40,6 +40,8 @@ Coding Agent 的发现、Codex / Claude Adapter 安装、Grok stdio 模式、平
 
 ## 重要边界
 
+Windows 原生 Tailscale 的 provider 状态保存在 `runtime.json` 的可选 `public_access_provider`、`public_access_mode`、`public_access_url` 和 `tailscale_binary` 字段，不是额外环境变量。Tailscale 投影保持 `schema_version=1`、旧 `tunnel_mode=none` 和空旧 `public_url`，Core 的 OAuth Origin 仍由 `server-url.txt` 生成。不要手工写入 `.ts.net` 域名来冒充设备检测，也不要传入 Cloudflare Tunnel Token。详见 [Tailscale](tailscale.md)。
+
 - Windows Desktop 不应把认证秘密直接写入 `control-panel-settings.json`。Bearer Token、OAuth 密码、OAuth 签名密钥和 Tunnel Token 使用平台受保护存储。
 - macOS Desktop 的 `agentdock.env` 包含运行所需配置，可能含秘密；文件必须保持仅当前用户可读写。
 - Linux 官方安装器默认把环境文件按 root:root、0600 写入，并通过 systemd/OpenRC 注入服务进程；不要为了方便把权限放宽。

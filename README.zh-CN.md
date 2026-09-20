@@ -6,7 +6,7 @@
 
 # AgentDock MCP
 
-本分支 Windows 发行版：**[AgentDock 1.0.1](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/tag/v1.0.1)** · [修复内容与验证范围](./docs/releases/v1.0.1.md)。1.0.0 已撤下推荐状态，请勿继续用于覆盖安装。
+本分支 Windows 发行版：**[AgentDock 1.1.0](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/tag/v1.1.0)** · [发布说明与验证范围](./docs/releases/v1.1.0.md) · [Tailscale Funnel 配置](./docs/tailscale-funnel.md)。本分支仅发布 Windows 安装包，其他平台的上游发行版保持独立。
 
 **让 AI 的双手，真正触达你的每一台设备。**
 
@@ -92,6 +92,7 @@ AgentDock 不提供聊天界面，也不负责模型推理。它专注于解决�
 - **仅本机**：客户端和 AgentDock 在同一台电脑上。
 - **临时公网地址**：没有域名，但需要从 ChatGPT、手机或其他设备连接。地址可能在 Tunnel 重启后变化。
 - **固定域名**：长期使用稳定公网地址，需要已接入 Cloudflare 的域名和 Tunnel Token。
+- **Tailscale Funnel（Windows Desktop）**：使用已登录设备的 `.ts.net` HTTPS 域名，无需 Tunnel Token。完整转发 AgentDock Origin，保留 Bearer Token／OAuth 认证，启停仅管理 AgentDock 所有的映射。配置、冲突检查与恢复见 [Tailscale 指南](./docs/tailscale-funnel.md)。
 
 安装完成后，从控制面板或终端取得 MCP 地址，以及 Bearer Token 或 OAuth 登录信息，再填入客户端的 MCP、Tools 或 Connectors 设置。公网访问必须保留认证，不要把凭据放进截图、Issue 或公开聊天。
 

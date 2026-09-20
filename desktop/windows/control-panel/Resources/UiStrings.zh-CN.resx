@@ -97,13 +97,13 @@
     <value>仅允许这台电脑访问，不启用 Cloudflare 公网访问；或者自行配置内网穿透或反向代理。</value>
   </data>
   <data name="TemporaryAddress" xml:space="preserve">
-    <value>临时地址</value>
+    <value>Cloudflare 临时地址</value>
   </data>
   <data name="TemporaryAddressDescription" xml:space="preserve">
     <value>通过 Cloudflare 自动生成临时公网地址，无需配置域名。适合临时访问或测试，地址可能会变化。</value>
   </data>
   <data name="CustomDomain" xml:space="preserve">
-    <value>固定域名</value>
+    <value>Cloudflare 固定域名</value>
   </data>
   <data name="CustomDomainDescription" xml:space="preserve">
     <value>通过 Cloudflare Tunnel 使用自己的 HTTPS 域名，完成配置后即可获得稳定的公网地址。</value>
@@ -887,4 +887,20 @@
   <data name="RuntimeOptionsInvalid" xml:space="preserve">
     <value>请填写绝对工作区路径、有效的 JSON 字符串映射，并确保 ACP 数值在标注范围内。</value>
   </data>
+  <data name="TailscaleDescription" xml:space="preserve"><value>使用当前设备的 .ts.net HTTPS 域名。请先安装并登录 Tailscale，无需 Tunnel Token。AgentDock 仅管理自身映射，并保留 Bearer Token／OAuth 认证。</value></data>
+  <data name="TailscaleClient" xml:space="preserve"><value>客户端</value></data>
+  <data name="TailscaleDevice" xml:space="preserve"><value>设备名</value></data>
+  <data name="TailscaleDomain" xml:space="preserve"><value>设备域名（只读）</value></data>
+  <data name="TailscaleKeyExpiry" xml:space="preserve"><value>设备密钥到期</value></data>
+  <data name="TailscaleLocalTarget" xml:space="preserve"><value>本机目标</value></data>
+  <data name="TailscaleDetect" xml:space="preserve"><value>检测 Tailscale</value></data>
+  <data name="TailscaleEnable" xml:space="preserve"><value>启用 Funnel</value></data>
+  <data name="TailscaleStop" xml:space="preserve"><value>停用 AgentDock Funnel</value></data>
+  <data name="TailscaleAuthorize" xml:space="preserve"><value>打开 Tailscale 授权页</value></data>
+  <data name="TailscaleNotInstalled" xml:space="preserve"><value>未检测到 Tailscale</value></data>
+  <data name="TailscalePending" xml:space="preserve"><value>映射已运行，等待验证</value></data>
+  <data name="TailscaleNoKeyExpiry" xml:space="preserve"><value>客户端未报告到期日期</value></data>
+  <data name="TailscaleOutputTooLarge" xml:space="preserve"><value>Tailscale 状态输出超过大小上限。</value></data>
+  <data name="PublicAccessSwitchWarning" xml:space="preserve"><value>从“{0}”切换到“{1}”？AgentDock 将停止当前由它管理的公网入口并重启 Core，现有公网连接可能中断。其他 Tailscale 服务和账户设置保持不变。</value></data>
+  <data name="CopyPublicMcp" xml:space="preserve"><value>复制公网 MCP 地址</value></data>
 </root>

@@ -35,6 +35,10 @@ type Manifest struct {
 	LocalMCPURL                 string `json:"local_mcp_url"`
 	TunnelMode                  string `json:"tunnel_mode"`
 	PublicURL                   string `json:"public_url,omitempty"`
+	PublicAccessProvider        string `json:"public_access_provider,omitempty"`
+	PublicAccessMode            string `json:"public_access_mode,omitempty"`
+	PublicAccessURL             string `json:"public_access_url,omitempty"`
+	TailscaleBinary             string `json:"tailscale_binary,omitempty"`
 	InstallChannel              string `json:"install_channel"`
 }
 
@@ -272,7 +276,7 @@ func (manifest Manifest) Validate() error {
 			return fmt.Errorf("invalid public_url: %w", err)
 		}
 	}
-	return nil
+	return manifest.validatePublicAccess()
 }
 
 func (manifest Manifest) UsesScheduledTask() bool {

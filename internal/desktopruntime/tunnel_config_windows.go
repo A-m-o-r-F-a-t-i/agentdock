@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-func platformConfigureTunnel(ctx context.Context, request TunnelConfigureRequest) error {
+func configureCloudflareTunnel(ctx context.Context, request TunnelConfigureRequest) error {
 	runtime, err := loadTunnelRuntime(request.RuntimeRoot)
 	if err != nil {
 		return err
@@ -57,7 +57,7 @@ func platformConfigureTunnel(ctx context.Context, request TunnelConfigureRequest
 		}
 	}
 
-	if err := stopTunnel(ctx, runtime); err != nil {
+	if err := stopCloudflareTunnel(ctx, runtime); err != nil {
 		return err
 	}
 	switch request.Mode {
