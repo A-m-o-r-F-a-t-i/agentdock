@@ -44,6 +44,11 @@ func (s *Store) acquireStoreLock() (func(), error) {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("lock task state: %w", err)
 	}
+	if err := s.recoverThreadTransactionLocked(); err != nil {
+		releaseFileLock()
+		s.mu.Unlock()
+		return nil, err
+	}
 	return func() {
 		releaseFileLock()
 		s.mu.Unlock()

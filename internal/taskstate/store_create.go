@@ -111,5 +111,5 @@ func (s *Store) CreateWithContext(title, goal, project, device string, condition
 	if err := s.saveLocked(task); err != nil {
 		return Task{}, err
 	}
-	return task, nil
+	return s.attachThreadLocked(task)
 }

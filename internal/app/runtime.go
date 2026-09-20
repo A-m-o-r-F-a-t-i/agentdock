@@ -10,6 +10,7 @@ import (
 	"time"
 
 	acpruntime "github.com/uvwt/agentdock/internal/acp"
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/evolution"
@@ -34,6 +35,7 @@ import (
 type Result = toolcore.Result
 
 type Runtime struct {
+	activity       *activity.Store
 	cfg            config.Config
 	toolNames      []string
 	toolValidators map[string]*toolcontract.InputValidator
@@ -101,9 +103,14 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		_ = mcpClients.Close()
 		return nil, err
 	}
+	activityStore, err := activity.New(filepath.Join(cfg.AgentDockHome, "tasks", "activity"), activity.Options{}, cfg.AuthToken, cfg.NexusDeviceToken)
+	if err != nil {
+		_ = mcpClients.Close()
+		return nil, fmt.Errorf("initialize activity journal: %w", err)
+	}
 	commandCtx, commandCancel := context.WithCancel(context.Background())
 	runtime := &Runtime{
-		cfg: cfg, ws: ws, skills: skills,
+		cfg: cfg, ws: ws, skills: skills, activity: activityStore,
 		toolNames: toolNames, toolValidators: toolValidators,
 		commandCtx: commandCtx, commandCancel: commandCancel,
 	}
@@ -132,6 +139,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("initialize plugin Skill provider: %w", err)
 	}
 	runtime.command = toolcommand.New(func() config.Config { return runtime.cfg }, ws, envs, skills.ResolveActive, runtime.commandExecutionContext)
+	runtime.command.SetActivityStore(activityStore)
 	runtime.files = toolfile.New(ws, skills.ResolveResource, runtime.command.CommandEnv)
 	runtime.dynamicMCP = toolmcp.New(mcpClients, envs)
 	runtime.plugins = toolplugin.New(
@@ -187,6 +195,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	runtime.recall = toolrecall.New(func() config.Config { return runtime.cfg })
 	runtime.evolution = evolution.New(func() config.Config { return runtime.cfg }, tasks)
 	runtime.taskTools = tooltask.New(func() config.Config { return runtime.cfg }, tasks, runtime.evolution)
+	runtime.taskTools.SetActivityStore(activityStore)
 	if cfg.ACPEnabled {
 		managers := make(map[string]*acpruntime.Manager)
 		for _, profile := range cfg.EffectiveACPProfiles() {

@@ -37,6 +37,7 @@ func contextToolContract(name string, cfg config.Config) (ToolContract, bool) {
 	output := maps.Clone(contract.OutputSchema["properties"].(map[string]any))
 	output["instruction_files"] = instructionFilesSchema()
 	output["plugins"] = pluginIndexSchema()
+	output["tasks"] = taskIndexSchema()
 	contract.OutputSchema["properties"] = output
 	return contract, true
 }

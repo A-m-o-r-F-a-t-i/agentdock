@@ -40,6 +40,10 @@ func (s *Store) Delete(id string) (Task, error) {
 }
 
 func (s *Store) List(status Status, limit int) ([]Task, error) {
+	return s.ListHistory(status, limit, false)
+}
+
+func (s *Store) ListHistory(status Status, limit int, includeArchived bool) ([]Task, error) {
 	release, err := s.acquireStoreLock()
 	if err != nil {
 		return nil, err
@@ -65,6 +69,14 @@ func (s *Store) List(status Status, limit int) ([]Task, error) {
 		task, err := decodeTask(data, entry.Name())
 		if err != nil {
 			slog.Warn("skip invalid task state", "file", entry.Name(), "error", err)
+			continue
+		}
+		if task.ArchivedAt != nil && !includeArchived {
+			continue
+		}
+		task, err = s.attachThreadLocked(task)
+		if err != nil {
+			slog.Warn("skip invalid task thread", "file", entry.Name(), "error", err)
 			continue
 		}
 		if status == "" || task.Status == status {
@@ -93,10 +105,11 @@ func (s *Store) loadLocked(id string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	return task, nil
+	return s.attachThreadLocked(task)
 }
 
-func (s *Store) saveLocked(task Task) error {
+func (s *Store) saveTaskOnlyLocked(task Task) error {
+	task.ActiveThread = nil
 	if err := validateID(task.ID); err != nil {
 		return err
 	}
@@ -142,6 +155,12 @@ func decodeTask(data []byte, label string) (Task, error) {
 	var task Task
 	if err := json.Unmarshal(data, &task); err != nil {
 		return Task{}, fmt.Errorf("decode task %s: %w", label, err)
+	}
+	if task.ActiveThreadID == "" {
+		task.ActiveThreadID = MainThreadID
+	}
+	if task.Status == StatusCompleted && task.Outcome == "" {
+		task.Outcome = "success"
 	}
 	if task.SchemaVersion != SchemaVersion {
 		return Task{}, fmt.Errorf("unsupported task schema version %d", task.SchemaVersion)

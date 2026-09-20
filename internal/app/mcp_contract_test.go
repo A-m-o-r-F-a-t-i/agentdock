@@ -32,6 +32,7 @@ func TestCanonicalToolDefinitionsMatchSharedContract(t *testing.T) {
 			actualInput = withoutLocalContextProperty(t, actualInput, "workdir")
 			actualOutput = withoutLocalContextProperty(t, actualOutput, "instruction_files")
 			actualOutput = withoutLocalContextProperty(t, actualOutput, "plugins")
+			actualOutput = withoutLocalContextProperty(t, actualOutput, "tasks")
 		}
 		if !reflect.DeepEqual(actualInput, wantInput) {
 			t.Fatalf("%s input schema drifted from shared contract", name)

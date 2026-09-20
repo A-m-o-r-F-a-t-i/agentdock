@@ -34,6 +34,9 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 	if request.Cmd == "" {
 		return nil, toolError("INVALID_ARGUMENT", "cmd is required", "validation")
 	}
+	if err := request.Binding.Validate(); err != nil {
+		return nil, toolError("INVALID_ACTIVITY_BINDING", err.Error(), "validation")
+	}
 	invocation, err := svc.prepareCommandInvocation(request)
 	if err != nil {
 		return nil, err
@@ -88,11 +91,14 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 	})
 	// 只有 invocation.start 完整返回后，runner、平台进程控制器以及 cmdCtx 取消监听才都已经建立。
 	// Runtime.Close 会等待这个启动窗口排空，再取消 commandCtx，避免在半启动状态抢占进程。
-	svc.sessions.FinishStart()
 	if err != nil {
+		svc.sessions.FinishStart()
 		return nil, err
 	}
 	s.SetExecutionContext(invocation.execution)
+	s.SetActivityBinding(request.Binding)
+	activityDone := svc.trackCommandActivity(s, request)
+	svc.sessions.FinishStart()
 	if request.Stdin != "" {
 		if err := s.Write(request.Stdin); err != nil {
 			s.Kill()
@@ -141,6 +147,7 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 
 	err = s.WaitError()
 	s.Cancel()
+	waitCommandActivity(activityDone)
 	result := snapshotResult(s.Snapshot("exited", maxBytes))
 	result["sandbox"] = preparationStatusResult(sandboxStatus)
 	if s.TimedOut {
@@ -203,6 +210,10 @@ func snapshotResult(snapshot session.Snapshot) Result {
 		"stdout_omitted_bytes": snapshot.StdoutOmittedBytes, "stderr_omitted_bytes": snapshot.StderrOmittedBytes,
 		"stdout_output_lines": snapshot.StdoutOutputLines, "stderr_output_lines": snapshot.StderrOutputLines,
 		"stdout_truncated": snapshot.StdoutTruncated, "stderr_truncated": snapshot.StderrTruncated,
+	}
+	addBindingResult(result, snapshot.Binding)
+	if snapshot.ActivityWarning != "" {
+		result["activity_warning"] = snapshot.ActivityWarning
 	}
 	if snapshot.Completed {
 		result["exit_code"] = snapshot.ExitCode
@@ -426,6 +437,7 @@ func (svc *Service) listSessions() (Result, error) {
 	for _, s := range svc.sessions.List() {
 		summary := s.Summary()
 		item := map[string]any{"session_id": summary.ID, "status": summary.Status, "elapsed_ms": summary.ElapsedMS, "timed_out": summary.TimedOut}
+		addBindingResult(item, summary.Binding)
 		if summary.Runtime != "" {
 			item["runtime"] = summary.Runtime
 		}

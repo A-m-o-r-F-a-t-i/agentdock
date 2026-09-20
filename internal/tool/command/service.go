@@ -2,7 +2,9 @@ package command
 
 import (
 	"context"
+	"sync"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/tool/command/session"
@@ -14,6 +16,8 @@ type SkillResolver func(skill string) (string, error)
 type CommandContext func() (context.Context, error)
 
 type Service struct {
+	activity       *activity.Store
+	activityWG     sync.WaitGroup
 	config         ConfigProvider
 	ws             *workspace.Workspace
 	envs           *envstore.Store

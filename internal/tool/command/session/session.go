@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/textutil"
 )
 
@@ -34,16 +35,19 @@ type ExecutionContext struct {
 }
 
 type Session struct {
-	ID         string
-	Command    *exec.Cmd
-	Cancel     context.CancelFunc
-	Stdin      io.WriteCloser
-	StartedAt  time.Time
-	FinishedAt time.Time
-	Done       chan struct{}
-	TimedOut   bool
-	Terminal   string
-	execution  ExecutionContext
+	ID                   string
+	Command              *exec.Cmd
+	Cancel               context.CancelFunc
+	Stdin                io.WriteCloser
+	StartedAt            time.Time
+	FinishedAt           time.Time
+	Done                 chan struct{}
+	TimedOut             bool
+	Terminal             string
+	execution            ExecutionContext
+	activityBinding      activity.Binding
+	activityWarning      string
+	terminationRequested bool
 
 	runner   commandRunner
 	killOnce sync.Once
@@ -64,31 +68,34 @@ type Session struct {
 }
 
 type Snapshot struct {
-	SessionID          string
-	Status             string
-	Stdout             string
-	Stderr             string
-	ElapsedMS          int64
-	TimedOut           bool
-	Terminal           string
-	StdoutOutputBytes  int
-	StderrOutputBytes  int
-	StdoutTotalBytes   int
-	StderrTotalBytes   int
-	StdoutDroppedBytes int
-	StderrDroppedBytes int
-	StdoutOmittedBytes int
-	StderrOmittedBytes int
-	StdoutOutputLines  int
-	StderrOutputLines  int
-	StdoutTruncated    bool
-	StderrTruncated    bool
-	Completed          bool
-	ExitCode           int
-	CommandOK          bool
-	Runtime            string
-	WSLDistribution    string
-	Workdir            string
+	activity.Binding
+	ActivityWarning      string
+	TerminationRequested bool
+	SessionID            string
+	Status               string
+	Stdout               string
+	Stderr               string
+	ElapsedMS            int64
+	TimedOut             bool
+	Terminal             string
+	StdoutOutputBytes    int
+	StderrOutputBytes    int
+	StdoutTotalBytes     int
+	StderrTotalBytes     int
+	StdoutDroppedBytes   int
+	StderrDroppedBytes   int
+	StdoutOmittedBytes   int
+	StderrOmittedBytes   int
+	StdoutOutputLines    int
+	StderrOutputLines    int
+	StdoutTruncated      bool
+	StderrTruncated      bool
+	Completed            bool
+	ExitCode             int
+	CommandOK            bool
+	Runtime              string
+	WSLDistribution      string
+	Workdir              string
 }
 
 type Store struct {
@@ -102,6 +109,7 @@ type Store struct {
 }
 
 type Summary struct {
+	activity.Binding
 	ID           string `json:"id"`
 	Status       string `json:"status"`
 	ElapsedMS    int64  `json:"elapsed_ms"`
@@ -343,6 +351,7 @@ func (s *Session) Summary() Summary {
 		}
 	}
 	return Summary{
+		Binding:      s.activityBinding,
 		ID:           s.ID,
 		Status:       status,
 		ElapsedMS:    finishedAt.Sub(s.StartedAt).Milliseconds(),
@@ -496,6 +505,11 @@ func (s *Session) Kill() (bool, error) {
 	}
 	s.killOnce.Do(func() {
 		s.killErr = runner.Kill()
+		if s.killErr == nil {
+			s.mu.Lock()
+			s.terminationRequested = true
+			s.mu.Unlock()
+		}
 		s.Cancel()
 	})
 	return true, s.killErr
@@ -530,9 +544,14 @@ func (s *Session) snapshot(status string, maxBytes int, advance bool) Snapshot {
 	}
 	stdout := trim(stdoutSegment, maxBytes)
 	stderr := trim(stderrSegment, maxBytes)
+	finished := time.Now()
+	if s.completed {
+		finished = s.FinishedAt
+	}
 	return Snapshot{
+		Binding: s.activityBinding, ActivityWarning: s.activityWarning, TerminationRequested: s.terminationRequested,
 		SessionID: s.ID, Status: status, Stdout: stdout, Stderr: stderr,
-		ElapsedMS: time.Since(s.StartedAt).Milliseconds(), TimedOut: s.TimedOut, Terminal: s.Terminal,
+		ElapsedMS: finished.Sub(s.StartedAt).Milliseconds(), TimedOut: s.TimedOut, Terminal: s.Terminal,
 		StdoutOutputBytes: len([]byte(stdout)), StderrOutputBytes: len([]byte(stderr)),
 		StdoutTotalBytes: s.stdoutTotalBytes, StderrTotalBytes: s.stderrTotalBytes,
 		StdoutDroppedBytes: s.stdoutDroppedBytes, StderrDroppedBytes: s.stderrDroppedBytes,

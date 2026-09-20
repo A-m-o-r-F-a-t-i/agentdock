@@ -73,6 +73,13 @@ type Event struct {
 }
 
 type Task struct {
+	WorkspaceID           string                 `json:"workspace_id,omitempty"`
+	ActiveThreadID        string                 `json:"active_thread_id,omitempty"`
+	ActiveThread          *TaskThread            `json:"active_thread,omitempty"`
+	Outcome               string                 `json:"outcome,omitempty"`
+	CancelReason          string                 `json:"cancel_reason,omitempty"`
+	CancelledAt           *time.Time             `json:"cancelled_at,omitempty"`
+	ArchivedAt            *time.Time             `json:"archived_at,omitempty"`
 	SchemaVersion         int                    `json:"schema_version"`
 	ID                    string                 `json:"id"`
 	Title                 string                 `json:"title"`

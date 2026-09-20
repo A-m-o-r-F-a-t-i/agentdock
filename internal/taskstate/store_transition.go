@@ -282,6 +282,7 @@ func completeTask(task *Task, summary string, now time.Time, emitEvent bool) err
 		return errors.New("task must reach closeout before completion")
 	}
 	task.Status = StatusCompleted
+	task.Outcome = "success"
 	task.Summary = summary
 	task.CompletedAt = &now
 	if emitEvent {
@@ -308,5 +309,5 @@ func (s *Store) mutate(id string, fn func(*Task, time.Time) error) (Task, error)
 	if err := s.saveLocked(task); err != nil {
 		return Task{}, err
 	}
-	return task, nil
+	return s.attachThreadLocked(task)
 }

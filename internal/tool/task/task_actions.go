@@ -9,7 +9,7 @@ import (
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
 
-var taskActions = []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete"}
+var taskActions = []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete", "cancel", "archive", "unarchive", "thread_create", "thread_list", "thread_get", "thread_switch", "thread_checkpoint", "thread_block", "thread_resume", "thread_fork", "thread_close"}
 
 var workflowTemplateActions = []string{"publish", "retire", "list", "get", "get_many", "match", "vector_index"}
 
@@ -148,7 +148,7 @@ func (input *workflowTemplateInput) applyTemplateGuardrails() {
 	}
 }
 
-func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, error) {
+func (s *Service) manageLegacy(ctx context.Context, request ManageRequest) (Result, error) {
 	input, err := normalizeTaskManageRequest(request)
 	if err != nil {
 		return nil, err
@@ -219,7 +219,7 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		if status != "" && status != taskstate.StatusActive && status != taskstate.StatusBlocked && status != taskstate.StatusCompleted {
 			return nil, toolErrorDetails("INVALID_STATUS", "unsupported task status filter", "validation", map[string]any{"status": status, "allowed": []string{"active", "blocked", "completed"}})
 		}
-		tasks, listErr := s.tasks.List(status, input.Limit)
+		tasks, listErr := s.tasks.ListHistory(status, input.Limit, request.IncludeArchived)
 		if listErr != nil {
 			return nil, taskToolError(listErr)
 		}

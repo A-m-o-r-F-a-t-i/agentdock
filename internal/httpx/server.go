@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -61,6 +62,9 @@ func Serve(ctx context.Context, server *mcp.Server, runtime runtimeapi.Runtime, 
 	return serveHTTP(ctx, httpServer)
 }
 func serveHTTP(ctx context.Context, server *http.Server) error {
+	if server.BaseContext == nil {
+		server.BaseContext = func(net.Listener) context.Context { return ctx }
+	}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.ListenAndServe() }()
 

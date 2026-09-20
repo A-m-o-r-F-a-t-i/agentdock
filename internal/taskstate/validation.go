@@ -217,6 +217,9 @@ func requireActive(task *Task) error {
 	if task.Status != StatusActive {
 		return fmt.Errorf("task status must be active, got %s", task.Status)
 	}
+	if task.ActiveThread != nil && task.ActiveThread.Status != "open" {
+		return errors.New("active task thread must be open")
+	}
 	return nil
 }
 

@@ -11,7 +11,12 @@ func ManageInputSchema(cfg config.Config) map[string]any {
 	stringProp := toolcontract.String
 	boundedIntProp := toolcontract.BoundedInteger
 	props := map[string]any{
-		"action":                map[string]any{"type": "string", "description": "Task lifecycle action. Use checkpoint to update live step progress.", "enum": []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete"}},
+		"action":                map[string]any{"type": "string", "description": "Task and recoverable thread lifecycle action. A thread is a persistent execution context, not an autonomous AI worker.", "enum": append([]string(nil), taskActions...)},
+		"thread_id":             stringProp("Explicit thread within task_id. Omit to use that task's active thread; fork uses this as its source."),
+		"workspace_id":          stringProp("Registered workspace to bind to this task or thread."),
+		"next_action":           stringProp("Concrete next action retained by thread_checkpoint for cross-conversation recovery."),
+		"source_ref":            stringProp("Optional source conversation reference; never confers exclusive ownership."),
+		"include_archived":      toolcontract.Boolean("Include archived tasks only when explicitly inspecting history."),
 		"task_id":               stringProp("Persistent task id for get, checkpoint, block, resume, final_review, or complete."),
 		"title":                 stringProp("Short task title. Required for action=create."),
 		"goal":                  stringProp("Fixed task goal. Required for action=create."),

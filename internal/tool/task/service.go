@@ -3,6 +3,7 @@ package task
 import (
 	"context"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
@@ -17,6 +18,7 @@ type EvolutionProvider interface {
 }
 
 type Service struct {
+	activity  *activity.Store
 	config    ConfigProvider
 	tasks     *taskstate.Store
 	evolution EvolutionProvider

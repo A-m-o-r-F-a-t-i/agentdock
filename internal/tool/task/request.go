@@ -16,6 +16,11 @@ type LearningCheckRequest struct {
 // ManageRequest 只表达 task_manage 对模型公开的输入字段。
 // 持久化状态中的 phase、bound_at 等内部字段在规范化阶段由 Task 域模型补齐，不能从边界注入。
 type ManageRequest struct {
+	ThreadID             string                 `json:"thread_id,omitempty"`
+	WorkspaceID          string                 `json:"workspace_id,omitempty"`
+	NextAction           string                 `json:"next_action,omitempty"`
+	SourceRef            string                 `json:"source_ref,omitempty"`
+	IncludeArchived      bool                   `json:"include_archived,omitempty"`
 	Action               string                 `json:"action"`
 	Title                string                 `json:"title,omitempty"`
 	Goal                 string                 `json:"goal,omitempty"`

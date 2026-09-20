@@ -1,10 +1,15 @@
 package task
 
 import (
+	"context"
 	"strings"
 
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
+
+func (s *Service) ContextIndex(ctx context.Context) (taskstate.TaskIndex, error) {
+	return s.tasks.Discover(ctx)
+}
 
 func (s *Service) RuntimeTasks(status string, limit int) (Result, error) {
 	statusFilter := taskstate.Status(strings.ToLower(strings.TrimSpace(status)))

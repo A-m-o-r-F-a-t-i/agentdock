@@ -56,6 +56,8 @@ func compactTaskSummary(task taskstate.Task) map[string]any {
 		conditionRefs = append(conditionRefs, map[string]any{"id": condition.ID, "text": truncateString(condition.Text, 160)})
 	}
 	summary := map[string]any{
+		"active_thread_id": task.ActiveThreadID, "active_thread": taskstate.SummarizeThread(task.ActiveThread),
+		"workspace_id": task.WorkspaceID, "outcome": task.Outcome, "archived_at": task.ArchivedAt,
 		"id": task.ID, "title": task.Title, "status": task.Status, "phase": task.Phase,
 		"completed_step_count": completedSteps, "step_count": len(task.Steps), "steps": steps,
 		"condition_count": len(task.Conditions), "condition_refs": conditionRefs, "review_status": reviewStatus(task),
@@ -92,7 +94,7 @@ func compactTaskListItem(task taskstate.Task) map[string]any {
 		"completed_step_count": summary["completed_step_count"], "step_count": summary["step_count"],
 		"review_status": summary["review_status"], "updated_at": summary["updated_at"],
 	}
-	for _, key := range []string{"current_step", "summary", "blocker"} {
+	for _, key := range []string{"current_step", "summary", "blocker", "active_thread_id", "active_thread", "workspace_id", "outcome", "archived_at"} {
 		if value, ok := summary[key]; ok {
 			item[key] = value
 		}
@@ -152,6 +154,10 @@ func compactTemplateSummary(template taskstate.Template) map[string]any {
 }
 
 func taskToolError(err error) error {
+	var existing *ToolError
+	if errors.As(err, &existing) {
+		return existing
+	}
 	if errors.Is(err, taskstate.ErrTaskNotFound) {
 		return toolErrorDetails("TASK_NOT_FOUND", err.Error(), "not_found", map[string]any{"retryable": false})
 	}

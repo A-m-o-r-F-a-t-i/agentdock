@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // BeginClose 先关闭新的 command reservation 入口。
@@ -53,6 +54,11 @@ func (s *Service) Close() error {
 	}
 	if _, err := s.killAll(); err != nil {
 		closeErrors = append(closeErrors, fmt.Errorf("stop command sessions: %w", err))
+	}
+	activityCtx, activityCancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer activityCancel()
+	if err := s.WaitActivity(activityCtx); err != nil {
+		closeErrors = append(closeErrors, fmt.Errorf("flush command activity: %w", err))
 	}
 	return errors.Join(closeErrors...)
 }

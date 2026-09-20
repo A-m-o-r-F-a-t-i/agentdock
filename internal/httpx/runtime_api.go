@@ -26,15 +26,23 @@ func registerRuntimeAPI(mux *http.ServeMux, runtime runtimeapi.Runtime, cfg conf
 	mux.HandleFunc("/internal/runtime/plugins/", h)
 	mux.HandleFunc("/internal/runtime/tasks", h)
 	mux.HandleFunc("/internal/runtime/tasks/", h)
+	mux.HandleFunc("/internal/runtime/activity", h)
+	mux.HandleFunc("/internal/runtime/activity/", h)
 	mux.HandleFunc("/internal/runtime/evolve", h)
 	mux.HandleFunc("/internal/runtime/mcp", h)
 	mux.HandleFunc("/internal/runtime/mcp/", h)
 }
 
 func runtimeAPIHandler(runtime runtimeapi.Runtime, cfg config.Config, oauthStore *auth.OAuthStore) http.HandlerFunc {
+	localRuntime, _ := runtime.(activityRuntime)
+	localActivity := &activityHTTP{runtime: localRuntime, config: cfg, oauth: oauthStore}
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
 	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
+		if isActivityRoute(r.URL.Path) {
+			localActivity.ServeHTTP(w, r)
+			return
+		}
 		if !runtimeapi.MethodAllowed(r.Method, r.URL.Path) {
 			w.Header().Set("Allow", runtimeapi.AllowHeader(r.URL.Path))
 			writeRuntimeAPIError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")

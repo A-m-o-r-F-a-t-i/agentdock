@@ -17,6 +17,7 @@ func InputSchema(name string) (map[string]any, bool) {
 
 	switch name {
 	case ToolExecCommand:
+		toolcontract.ActivityProperties(props)
 		props["cmd"] = stringProp("Command to run.")
 		props["workdir"] = stringProp(WorkdirDescription())
 		AddRuntimeProperties(props)
@@ -51,6 +52,11 @@ func OutputSchema(name string) (map[string]any, bool) {
 	boolProp := toolcontract.Boolean
 	arrayProp := toolcontract.ObjectArray
 	props := map[string]any{
+		"task_id":          stringProp("Persisted task binding inherited by subsequent session operations."),
+		"thread_id":        stringProp("Execution thread fixed when the command was started."),
+		"step_id":          stringProp("Step associated with the original command."),
+		"workspace_id":     stringProp("Resolved workspace for the original command."),
+		"activity_warning": stringProp("Command execution state is valid but the activity journal is incomplete."),
 		"sessions":         arrayProp("Command session summaries returned by list or bulk session actions."),
 		"count":            intProp("Command session count when a list or bulk action returns multiple sessions."),
 		"session_id":       stringProp("Command session id."),

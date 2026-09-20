@@ -10,6 +10,7 @@ import (
 	"github.com/uvwt/agentdock/internal/agentinstructions"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/taskstate"
 	tooltask "github.com/uvwt/agentdock/internal/tool/task"
 )
 
@@ -73,6 +74,14 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 			AgentDockHome: r.cfg.AgentDockHome, AgentDockDefaultDir: r.cfg.AgentDockDefaultDir,
 			DefaultCWD: r.ws.DefaultDisplay(), PathModel: config.PathModel,
 		}
+		indexCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		index, indexErr := r.taskTools.ContextIndex(indexCtx)
+		cancel()
+		contextResult.Tasks = &index
+		if indexErr != nil {
+			contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "tasks", Message: "任务索引暂不可用；现有能力仍可使用，请检查任务存储。"})
+		}
+		contextResult.Rules = append(contextResult.Rules, "恢复任务时优先复用 tasks 索引中的 task_id 和 active_thread；明确项目时匹配工作区。执行工具绑定 task_id/thread_id/step_id，运行中的命令继续观察原 session_id。多候选无法区分时只返回候选摘要，不创建重复任务。")
 	}
 	if skillErr != nil {
 		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "skills", Message: "Skill 索引暂不可用。"})
@@ -142,6 +151,7 @@ func (r *Runtime) agentDockContextTool(ctx context.Context, args map[string]any)
 }
 
 type capabilityContext struct {
+	Tasks             *taskstate.TaskIndex        `json:"tasks,omitempty"`
 	InstructionFiles  *agentinstructions.Snapshot `json:"instruction_files,omitempty"`
 	Runtime           *capabilityRuntimeContext   `json:"runtime,omitempty"`
 	Skills            []capabilitySkillItem       `json:"skills"`
