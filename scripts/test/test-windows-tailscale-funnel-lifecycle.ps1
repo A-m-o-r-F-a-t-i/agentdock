@@ -4,7 +4,7 @@ param(
     [Parameter(Mandatory=$true)][string] $Archive,
     [Parameter(Mandatory=$true)][string] $FakeTailscaleBinary,
     [Parameter(Mandatory=$true)][string] $ReportRoot,
-    [string] $ExpectedVersion = '1.1.1'
+    [Parameter(Mandatory=$true)][string] $ExpectedVersion
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -65,11 +65,12 @@ function Invoke-FixtureInstall([string] $Script,[string] $Name,[bool] $ExpectFai
 }
 function Assert-FixtureHealthy {
     $deadline=[DateTime]::UtcNow.AddSeconds(30)
+    $lastVersion='no successful health response'
     do {
-        try {$health=Invoke-RestMethod "http://127.0.0.1:$port/healthz" -TimeoutSec 2;if($health.version -eq $ExpectedVersion){return}}catch{}
+        try {$health=Invoke-RestMethod "http://127.0.0.1:$port/healthz" -TimeoutSec 2;$lastVersion=[string]$health.version;if($health.version -eq $ExpectedVersion){return}}catch{}
         Start-Sleep -Milliseconds 200
     }while([DateTime]::UtcNow -lt $deadline)
-    throw 'The isolated Core did not recover at the expected version.'
+    throw "The isolated Core did not recover: expected $ExpectedVersion; last observed $lastVersion."
 }
 function Assert-FunnelPreserved([hashtable] $Files) {
     Assert-FixtureHealthy

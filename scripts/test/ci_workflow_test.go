@@ -102,6 +102,7 @@ func TestWindowsReleaseKeepsBoundedCompleteValidation(t *testing.T) {
 		"name: Backend full regression",
 		"name: Static analysis",
 		"name: Windows installer contracts",
+		"-ExpectedVersion $expectedVersion",
 		"execution-go.jsonl",
 		"name: Execution policy compatibility with actual 1.1.1 Core",
 		"7505e8044c6daa78ed73c603a2dd9ff214883d82",
@@ -120,5 +121,15 @@ func TestWindowsReleaseKeepsBoundedCompleteValidation(t *testing.T) {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Windows release must retain complete bounded validation: missing %q", want)
 		}
+	}
+}
+
+func TestFunnelFixtureRequiresExplicitTargetVersion(t *testing.T) {
+	source, err := os.ReadFile("test-windows-tailscale-funnel-lifecycle.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), "[Parameter(Mandatory=$true)][string] $ExpectedVersion") {
+		t.Fatal("Funnel lifecycle must not silently inherit an older hardcoded target version")
 	}
 }

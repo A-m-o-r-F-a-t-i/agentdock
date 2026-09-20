@@ -80,7 +80,10 @@ jobs:
           $fake = Join-Path $env:RUNNER_TEMP 'fake-tailscale.exe'
           go build -o $fake ./scripts/test/testdata/fake-tailscale
           if ($LASTEXITCODE -ne 0) { throw 'Fake Tailscale build failed.' }
+          $expectedVersion = (& go run ./tools/release version).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve the Funnel test target version.' }
           & .\scripts\test\test-windows-tailscale-funnel-lifecycle.ps1 `
+            -ExpectedVersion $expectedVersion `
             -Archive .\dist\windows-release\release\agentdock_windows_amd64.zip `
             -FakeTailscaleBinary $fake `
             -ReportRoot (Join-Path $env:RUNNER_TEMP 'tailscale-installer-e2e')
