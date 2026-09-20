@@ -49,7 +49,7 @@ func (r *Runtime) executionGuidance(name string, state executionObservation, res
 		guidance["next_required"] = []map[string]any{{"action": "verify", "text": "Verify the changed files, inspect the current diff, and record a thread checkpoint after the stage is verified."}}
 	}
 	if binding.TaskID != "" {
-		guidance["constraints"] = []map[string]string{{"code": "KEEP_THREAD_BINDING", "text": "Keep this explicit task_id and thread_id on subsequent execution calls. A view or default-thread switch does not move existing command sessions."}}
+		guidance["constraints"] = []map[string]string{{"code": "SERVER_BINDING_SNAPSHOT", "text": "The server inherits task and thread binding automatically. Ordinary calls omit task_id/thread_id; use task_manage resume or set_current to change the active task once. Existing command sessions keep their original binding."}}
 	}
 	if state.target != nil {
 		redactor := activity.NewRedactor(r.cfg.AuthToken, r.cfg.NexusDeviceToken)

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/auth"
 	"github.com/uvwt/agentdock/internal/config"
@@ -26,6 +27,10 @@ func registerRuntimeAPI(mux *http.ServeMux, runtime runtimeapi.Runtime, cfg conf
 	mux.HandleFunc("/internal/runtime/plugins/", h)
 	mux.HandleFunc("/internal/runtime/tasks", h)
 	mux.HandleFunc("/internal/runtime/tasks/", h)
+	for _, path := range []string{"execution", "conversations", "calls", "permissions", "approvals"} {
+		mux.HandleFunc("/internal/runtime/"+path, h)
+		mux.HandleFunc("/internal/runtime/"+path+"/", h)
+	}
 	mux.HandleFunc("/internal/runtime/activity", h)
 	mux.HandleFunc("/internal/runtime/activity/", h)
 	mux.HandleFunc("/internal/runtime/evolve", h)
@@ -39,7 +44,17 @@ func runtimeAPIHandler(runtime runtimeapi.Runtime, cfg config.Config, oauthStore
 	authorizer := auth.Bearer{Token: cfg.AuthToken}
 	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
-		if isActivityRoute(r.URL.Path) {
+		managementPath := strings.TrimSuffix(r.URL.Path, "/")
+		managementWrite := managementPath == "/internal/runtime/skills" || managementPath == "/internal/runtime/plugins" || managementPath == "/internal/runtime/mcp" || managementPath == "/internal/runtime/evolve" || managementPath == "/internal/runtime/workflow-templates"
+		if r.Method == http.MethodPost && managementWrite && !directLoopbackRequest(r) {
+			writeRuntimeAPIError(w, 403, "LOCAL_ONLY", "runtime management writes require a direct authenticated local client")
+			return
+		}
+		if r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/internal/runtime/tasks/") && !directLoopbackRequest(r) {
+			writeRuntimeAPIError(w, 403, "LOCAL_ONLY", "task deletion requires a direct local client")
+			return
+		}
+		if isActivityRoute(r.URL.Path) || isExecutionRoute(r.URL.Path) {
 			localActivity.ServeHTTP(w, r)
 			return
 		}
@@ -49,13 +64,23 @@ func runtimeAPIHandler(runtime runtimeapi.Runtime, cfg config.Config, oauthStore
 			return
 		}
 		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
-		oauthOK := authorizedOAuth(r, cfg, oauthStore)
+		principal, oauthOK := oauthExecutionPrincipal(r, cfg, oauthStore)
 		if authRequired && !staticOK && !oauthOK {
 			setBearerChallenge(w, cfg, r, strings.TrimSpace(r.Header.Get("Authorization")) != "")
 			writeRuntimeAPIError(w, http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized")
 			return
 		}
 
+		if staticOK {
+			principal = "http:static"
+		} else if !oauthOK {
+			principal = "http:local"
+		}
+		sourceCtx := activity.WithSource(r.Context(), activity.Source{Principal: principal, Provider: "local-ui", Namespace: "http:runtime"})
+		if r.Method == http.MethodGet {
+			sourceCtx = activity.WithDiagnostic(sourceCtx)
+		}
+		r = r.WithContext(sourceCtx)
 		body, err := runtimeRequestBody(r)
 		if err != nil {
 			writeRuntimeAPIError(w, http.StatusBadRequest, "INVALID_ARGUMENT", "failed to read runtime request body")
@@ -91,6 +116,10 @@ func writeRuntimeAPIHandlerError(w http.ResponseWriter, err error) {
 		switch toolErr.Category {
 		case "validation":
 			status = http.StatusBadRequest
+		case "conflict":
+			status = http.StatusConflict
+		case "permission":
+			status = http.StatusForbidden
 		case "not_found":
 			status = http.StatusNotFound
 		}

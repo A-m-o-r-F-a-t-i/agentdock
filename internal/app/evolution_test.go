@@ -70,7 +70,7 @@ func TestTaskFinalReviewAutomaticallyResolvesPreboundLearningCheck(t *testing.T)
 	defer nexus.Close()
 
 	home := t.TempDir()
-	runtime, err := NewRuntime(config.Config{
+	runtime, err := newUnrestrictedTestRuntime(config.Config{
 		AgentDockHome: home, AgentDockDefaultDir: home,
 		NexusEndpoint: nexus.URL, NexusDeviceToken: "device-token",
 	})
@@ -156,7 +156,7 @@ func TestRuntimeEvolveStageThreeIsProposalOnlyAndForcesProvisional(t *testing.T)
 	defer nexus.Close()
 
 	home := t.TempDir()
-	runtime, err := NewRuntime(config.Config{
+	runtime, err := newUnrestrictedTestRuntime(config.Config{
 		AgentDockHome: home, AgentDockDefaultDir: home,
 		NexusEndpoint: nexus.URL, NexusDeviceToken: "device-token",
 	})

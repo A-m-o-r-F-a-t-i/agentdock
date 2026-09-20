@@ -53,10 +53,11 @@ public partial class MainWindow
         try
         {
             using var client = new ActivityClient(_runtime);
-            var tasks = await client.TasksAsync("", false, CancellationToken.None);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+            var overview = await client.ExecutionGetAsync("/internal/runtime/execution", timeout.Token);
+            var stats = overview.Field("statistics");
             _activitySummaryAt = DateTimeOffset.Now;
-            ActivitySummaryText.Text = UiText.Format("ActivityCounts", tasks.Tasks.Count(item => item.Status == "active"),
-                tasks.Tasks.Count(item => item.Status == "blocked"), tasks.Tasks.Count >= 200 ? "+" : "", _activitySummaryAt);
+            ActivitySummaryText.Text = $"{stats.Number("running")} 运行中 · {stats.Number("pending")} 待审批 · {stats.Number("unknown")} 结果未知";
         }
         catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or System.IO.IOException or System.Text.Json.JsonException or OperationCanceledException or InvalidOperationException)
         {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/config"
 )
 
@@ -77,7 +78,7 @@ func TestDynamicMCPToolsStaySeparateAndAppearLightweightInContext(t *testing.T) 
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := NewRuntime(cfg)
+	runtime, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,6 +176,30 @@ func TestDynamicMCPToolsStaySeparateAndAppearLightweightInContext(t *testing.T) 
 		t.Fatalf("unexpected call result: %#v", called)
 	}
 	assertToolResultMatchestestOutputSchema(t, "mcp_tool_call", called)
+	parent, err := runtime.activity.Call(context.Background(), stringArg(called, "call_id"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	children, err := runtime.activity.Calls(context.Background(), activity.CallQuery{ParentCallID: parent.CallID, IncludeOutput: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(children.Calls) != 1 || children.Calls[0].ToolName != "demo:echo" || children.Calls[0].ConversationID != parent.ConversationID || children.Calls[0].TaskID != "" || children.Calls[0].CallID == parent.CallID {
+		t.Fatalf("dynamic MCP was not recorded as an inherited child: %+v", children)
+	}
+	top, err := runtime.activity.Calls(context.Background(), activity.CallQuery{TopLevel: true, Search: "demo:echo"})
+	actual := 0
+	for _, call := range top.Calls {
+		if call.ToolName == "mcp_tool_call" && call.CallID == parent.CallID {
+			actual++
+		}
+		if call.ToolName == "demo:echo" {
+			t.Fatal("dynamic child was projected as an unrelated top-level call")
+		}
+	}
+	if err != nil || actual != 1 {
+		t.Fatalf("forwarder and actual action became unrelated top-level cards: %+v %v", top, err)
+	}
 
 	for _, name := range runtime.ToolNames() {
 		if name == "demo:echo" {
@@ -188,7 +213,7 @@ func TestAgentDockContextReportsDynamicMCPRefreshErrorCode(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := NewRuntime(cfg)
+	runtime, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

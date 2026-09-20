@@ -17,109 +17,23 @@ import (
 )
 
 type executionObservation struct {
-	binding   activity.Binding
-	target    *workspace.ResolvedTarget
-	originals map[string]string
-	scoped    bool
-	started   time.Time
-}
-
-func observedTool(name string) bool {
-	switch name {
-	case "exec_command", "file_edit", "mcp_tool_call", "browser_act", "browser_snapshot", "browser_session", "plugin_manage":
-		return true
-	}
-	return false
-}
-
-func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[string]any) (Result, error) {
-	args := make(map[string]any, len(original)+4)
-	for key, value := range original {
-		args[key] = value
-	}
-	if spec.Name == "task_manage" {
-		action := stringArg(args, "action")
-		if action == "create" || stringArg(args, "workspace_id") != "" {
-			selected, err := r.workspaceRegistry.Select(ctx, stringArg(args, "workspace_id"), stringArg(args, "project"))
-			if err != nil {
-				return nil, workspaceFailure(err, activity.Binding{}, nil)
-			}
-			args["workspace_id"] = selected.ID
-		}
-	}
-	state := executionObservation{started: time.Now(), originals: map[string]string{}}
-	if observedTool(spec.Name) {
-		var err error
-		state, err = r.prepareObservedExecution(ctx, spec.Name, args)
-		if err != nil {
-			return nil, err
-		}
-		ctx = activity.WithBinding(ctx, state.binding)
-		if spec.Name != "exec_command" {
-			r.recordObservedEvent(activity.Event{Binding: state.binding, Kind: "tool.started", ToolName: spec.Name, Status: "running", Title: state.binding.Label}, nil)
-		}
-	}
-	result, err := spec.Handler(ctx, r, args)
-	if observedTool(spec.Name) && spec.Name != "exec_command" {
-		status := "success"
-		if err != nil || resultReportsFailure(result) {
-			status = "failed"
-		}
-		if result != nil && stringArg(result, "status") == "partial" {
-			status = "partial"
-		}
-		event := activity.Event{Binding: state.binding, Kind: "tool.completed", ToolName: spec.Name, Status: status, Title: state.binding.Label, ElapsedMS: time.Since(state.started).Milliseconds()}
-		if state.target != nil {
-			event.Workdir = state.target.ResolvedPath
-			event.Runtime = state.target.Runtime
-		}
-		r.recordObservedEvent(event, result)
-		if spec.Name == "file_edit" && err == nil {
-			r.recordFileChanges(args, result, state)
-		}
-	}
-	if err != nil {
-		var toolErr *ToolError
-		if errors.As(err, &toolErr) {
-			copy := *toolErr
-			copy.Details = map[string]any{}
-			for key, value := range toolErr.Details {
-				copy.Details[key] = value
-			}
-			copy.Details["agentdock_guidance"] = r.executionGuidance(spec.Name, state, nil, true)
-			return nil, &copy
-		}
-		return nil, err
-	}
-	if result == nil {
-		result = Result{}
-	}
-	// Decorate an owned top-level result only. Nested MCP/plugin payloads are untrusted
-	// data and cannot replace the server-generated guidance envelope.
-	if observedTool(spec.Name) || spec.Name == "task_manage" || spec.Name == "workspace_manage" || spec.Name == "session_observe" || spec.Name == "session_act" || spec.Name == "read_file" || spec.Name == "search_text" {
-		decorated := Result{}
-		for key, value := range result {
-			decorated[key] = value
-		}
-		if observedTool(spec.Name) {
-			for key, value := range bindingArguments(state.binding) {
-				if value != "" {
-					decorated[key] = value
-				}
-			}
-		}
-		if state.target != nil {
-			decorated["workspace_target"] = *state.target
-		}
-		decorated["agentdock_guidance"] = r.executionGuidance(spec.Name, state, result, false)
-		return decorated, nil
-	}
-	return result, nil
+	entryBinding activity.Binding
+	binding      activity.Binding
+	target       *workspace.ResolvedTarget
+	originals    map[string]string
+	scoped       bool
+	started      time.Time
+	selected     *workspace.Record
 }
 
 func (r *Runtime) prepareObservedExecution(ctx context.Context, name string, args map[string]any) (executionObservation, error) {
 	state := executionObservation{started: time.Now(), originals: map[string]string{}}
-	state.binding = activity.Binding{TaskID: stringArg(args, "task_id"), ThreadID: stringArg(args, "thread_id"), StepID: stringArg(args, "step_id"), WorkspaceID: stringArg(args, "workspace_id"), Label: stringArg(args, "activity_label")}
+	state.entryBinding = activity.FromContext(ctx)
+	var err error
+	state.binding, err = applyExecutionOverrides(name, args, state.entryBinding)
+	if err != nil {
+		return state, err
+	}
 	state.scoped = state.binding.TaskID != "" || state.binding.WorkspaceID != "" || stringArg(args, "target_kind") != "" || stringArg(args, "external_path") != ""
 	binding, err := r.taskTools.ResolveBinding(state.binding, false)
 	if err != nil {
@@ -133,6 +47,7 @@ func (r *Runtime) prepareObservedExecution(ctx context.Context, name string, arg
 			return state, workspaceFailure(err, binding, nil)
 		}
 		state.binding.WorkspaceID = selected.ID
+		state.selected = &selected
 	}
 	if state.scoped && (name == "exec_command" || name == "file_edit") {
 		if runtimeName := stringArg(args, "runtime"); runtimeName != "" && runtimeName != selected.Runtime {
@@ -149,7 +64,7 @@ func (r *Runtime) prepareObservedExecution(ctx context.Context, name string, arg
 			args["wsl_distribution"] = selected.Distribution
 		}
 		if name == "exec_command" {
-			target, err := workspace.ResolveCommandDirectory(selected, workspace.TargetRequest{Kind: stringArg(args, "target_kind"), Path: stringArg(args, "workdir"), TaskID: state.binding.TaskID, ExternalPath: stringArg(args, "external_path")})
+			target, err := workspace.ResolveCommandPreview(selected, workspace.TargetRequest{Kind: stringArg(args, "target_kind"), Path: stringArg(args, "workdir"), TaskID: state.binding.TaskID, ExternalPath: stringArg(args, "external_path")})
 			if err != nil {
 				return state, workspaceFailure(err, state.binding, &selected)
 			}
@@ -161,14 +76,35 @@ func (r *Runtime) prepareObservedExecution(ctx context.Context, name string, arg
 			}
 		}
 	}
-	binding, err = r.taskTools.ResolveBinding(state.binding, true)
-	if err != nil {
-		return state, toolErrorDetails("INVALID_ACTIVITY_BINDING", err.Error(), "validation", map[string]any{"task_id": state.binding.TaskID, "thread_id": state.binding.ThreadID})
+	if state.scoped && (name == "read_file" || name == "list_dir" || name == "search_text") {
+		logical := stringArg(args, "path")
+		if !strings.HasPrefix(logical, "skill://") && !strings.HasPrefix(logical, "~") {
+			if selected.Runtime == "wsl" {
+				if !path.IsAbs(logical) {
+					args["path"] = path.Join(selected.Root, logical)
+				}
+			} else if !filepath.IsAbs(logical) {
+				args["path"] = filepath.Join(selected.Root, logical)
+			}
+			if selected.Runtime != "unix" && stringArg(args, "runtime") == "" {
+				args["runtime"] = selected.Runtime
+			}
+			if selected.Distribution != "" && stringArg(args, "wsl_distribution") == "" {
+				args["wsl_distribution"] = selected.Distribution
+			}
+		}
 	}
-	state.binding = binding
-	for key, value := range bindingArguments(binding) {
-		if value != "" {
-			args[key] = value
+	// Resolution is side-effect free. Persist an execution binding only after
+	// permission is granted, never while preparing a pending approval.
+	if name == "task_manage" {
+		// Lifecycle handlers consume task identifiers as business parameters.
+		// Ordinary tools obtain the same snapshot exclusively through context.
+		for _, key := range []string{"task_id", "thread_id", "workspace_id"} {
+			if stringArg(args, key) == "" {
+				if value := bindingArguments(state.binding)[key]; value != "" {
+					args[key] = value
+				}
+			}
 		}
 	}
 	return state, nil
@@ -284,7 +220,7 @@ func workspaceFailure(err error, binding activity.Binding, record *workspace.Rec
 }
 
 func bindingArguments(binding activity.Binding) map[string]string {
-	return map[string]string{"task_id": binding.TaskID, "thread_id": binding.ThreadID, "step_id": binding.StepID, "workspace_id": binding.WorkspaceID, "activity_label": binding.Label}
+	return map[string]string{"conversation_id": binding.ConversationID, "call_id": binding.CallID, "parent_call_id": binding.ParentCallID, "retry_of_call_id": binding.RetryOfCallID, "task_id": binding.TaskID, "thread_id": binding.ThreadID, "step_id": binding.StepID, "workspace_id": binding.WorkspaceID, "activity_label": binding.Label}
 }
 func stringArg(args map[string]any, key string) string { value, _ := args[key].(string); return value }
 

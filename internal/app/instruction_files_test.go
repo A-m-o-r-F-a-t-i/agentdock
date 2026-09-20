@@ -22,7 +22,7 @@ func newInstructionRuntime(t *testing.T, configure func(*config.Config)) *Runtim
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	rt, err := NewRuntime(cfg)
+	rt, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

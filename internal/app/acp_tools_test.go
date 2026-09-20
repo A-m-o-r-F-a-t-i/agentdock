@@ -14,7 +14,7 @@ func TestACPToolsAreFeatureGatedAndUseStrictSchemas(t *testing.T) {
 	if err := disabled.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	disabledRuntime, err := NewRuntime(disabled)
+	disabledRuntime, err := newUnrestrictedTestRuntime(disabled)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestACPToolsAreFeatureGatedAndUseStrictSchemas(t *testing.T) {
 	if err := enabled.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := NewRuntime(enabled)
+	runtime, err := newUnrestrictedTestRuntime(enabled)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestACPContextListsConfiguredProfiles(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := NewRuntime(cfg)
+	runtime, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

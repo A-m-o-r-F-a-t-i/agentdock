@@ -30,11 +30,12 @@ type Options struct {
 	Segments     int
 }
 type Store struct {
-	root     string
-	options  Options
-	mu       sync.Mutex
-	changed  chan struct{}
-	redactor Redactor
+	projection *callProjection
+	root       string
+	options    Options
+	mu         sync.Mutex
+	changed    chan struct{}
+	redactor   Redactor
 }
 type sequenceState struct {
 	Seq           uint64 `json:"seq"`
@@ -157,6 +158,7 @@ func (s *Store) Append(ctx context.Context, e Event) (Event, error) {
 	if err = errors.Join(writeErr, syncErr, closeErr); err != nil {
 		return Event{}, err
 	}
+	s.projectAppendedLocked(e)
 	close(s.changed)
 	s.changed = make(chan struct{})
 	files, err = s.segments()
@@ -184,7 +186,7 @@ func (s *Store) Query(ctx context.Context, q Query) (Page, error) {
 	if q.Limit <= 0 || q.Limit > MaxQueryEvents {
 		q.Limit = MaxQueryEvents
 	}
-	if err := (Binding{TaskID: q.TaskID, ThreadID: q.ThreadID}).Validate(); err != nil {
+	if err := (Binding{TaskID: q.TaskID, ThreadID: q.ThreadID, ConversationID: q.ConversationID, CallID: q.CallID}).Validate(); err != nil {
 		return page, err
 	}
 	release, err := s.lock(ctx)
@@ -220,7 +222,11 @@ func (s *Store) Query(ctx context.Context, q Query) (Page, error) {
 			if e.Seq <= q.After || e.Seq <= page.PrunedThrough {
 				return true
 			}
-			if q.TaskID != "" && e.TaskID != q.TaskID || q.ThreadID != "" && e.ThreadID != q.ThreadID {
+			if q.TaskID != "" && e.TaskID != q.TaskID || q.ThreadID != "" && e.ThreadID != q.ThreadID || q.ConversationID != "" && e.ConversationID != q.ConversationID || q.CallID != "" && e.CallID != q.CallID {
+				page.NextSeq = e.Seq
+				return true
+			}
+			if q.MilestonesOnly && !(strings.HasPrefix(e.Kind, "task.") || strings.HasPrefix(e.Kind, "step.") || strings.HasPrefix(e.Kind, "review.") || strings.HasPrefix(e.Kind, "thread.")) {
 				page.NextSeq = e.Seq
 				return true
 			}
@@ -390,8 +396,22 @@ func scanEvents(path string, visit func(Event) bool, warning *bool) error {
 	reader := bufio.NewReaderSize(f, MaxEventBytes+1)
 	for {
 		line, readErr := reader.ReadSlice('\n')
-		if len(line) > MaxEventBytes {
-			return errors.New("activity record exceeds read limit")
+		if len(line) > MaxEventBytes || errors.Is(readErr, bufio.ErrBufferFull) {
+			// A damaged oversized line is skipped in bounded chunks. A later valid
+			// record and other tasks remain readable; original bytes stay intact.
+			if warning != nil {
+				*warning = true
+			}
+			for errors.Is(readErr, bufio.ErrBufferFull) {
+				_, readErr = reader.ReadSlice('\n')
+			}
+			if readErr == io.EOF {
+				return nil
+			}
+			if readErr != nil {
+				return readErr
+			}
+			continue
 		}
 		if len(bytes.TrimSpace(line)) > 0 {
 			var e Event

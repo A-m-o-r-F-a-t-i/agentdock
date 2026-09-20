@@ -1,0 +1,23 @@
+{
+  "version": "1.1.2",
+  "release_ready": false,
+  "checks": {
+    "backend_full_regression": false,
+    "static_analysis": false,
+    "desktop_window_regression": false,
+    "large_scale_backend_and_desktop": false,
+    "windows_x64_candidate": false,
+    "windows_arm64_candidate": false,
+    "install_upgrade_and_repair": false,
+    "rollback_preserves_data_and_permission_intent": false,
+    "real_chatgpt_metadata": false,
+    "real_chatgpt_reconnect": false,
+    "production_configuration_preserved": false
+  },
+  "evidence": {},
+  "limitations": [
+    "Current acceptance is in progress. SDK/HTTP fixtures do not establish that the actual ChatGPT webpage connector supplies metadata.",
+    "AgentDock 1.1.1 does not implement 1.1.2 permissions. Preserving policy bytes alone is not an accepted remote-execution rollback.",
+    "Candidate compilation or unsigned packaging does not authorize publication."
+  ]
+}

@@ -3,6 +3,7 @@ package taskstate
 import (
 	"errors"
 	"fmt"
+	"github.com/uvwt/agentdock/internal/activity"
 	"strings"
 	"time"
 )
@@ -415,15 +416,16 @@ func (s *Store) Cancel(id, reason string) (Task, error) {
 }
 
 func (s *Store) Archive(id string, archive bool) (Task, error) {
-	return s.mutate(id, func(task *Task, now time.Time) error {
-		if task.Status != StatusCompleted {
-			return errors.New("only completed tasks may be archived")
-		}
-		if archive {
-			task.ArchivedAt = &now
-		} else {
-			task.ArchivedAt = nil
-		}
-		return nil
-	})
+	task, err := s.Get(id)
+	if err != nil {
+		return Task{}, err
+	}
+	if task.Status != StatusCompleted {
+		return Task{}, errors.New("only completed tasks may be archived through the task lifecycle API")
+	}
+	action := "unarchive"
+	if archive {
+		action = "archive"
+	}
+	return s.ManageMetadata(id, activity.MetadataChange{Action: action})
 }

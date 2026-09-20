@@ -23,7 +23,7 @@ func main() {
 
 func run(args []string, stdout io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("用法：release <catalog|version|verify-version|verify-dist|checksum> [参数]")
+		return errors.New("用法：release <catalog|version|verify-version|verify-acceptance|verify-dist|checksum> [参数]")
 	}
 	switch args[0] {
 	case "version":
@@ -38,6 +38,11 @@ func run(args []string, stdout io.Writer) error {
 			return fmt.Errorf("release tag v%s does not match buildinfo.Version %s", tag, buildinfo.Version)
 		}
 		return nil
+	case "verify-acceptance":
+		if len(args) != 2 {
+			return errors.New("用法：release verify-acceptance <验收报告>")
+		}
+		return verifyAcceptance(args[1], strings.TrimPrefix(buildinfo.Version, "v"))
 	case "catalog":
 		return json.NewEncoder(stdout).Encode(ReleaseCatalog())
 	case "verify-dist":

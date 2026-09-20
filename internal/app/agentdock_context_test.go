@@ -27,7 +27,7 @@ func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-	rt, err := NewRuntime(cfg)
+	rt, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestAgentDockContextExposesShortACPOrientationWhenEnabled(t *testing.T) {
 	if err := disabled.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	disabledRuntime, err := NewRuntime(disabled)
+	disabledRuntime, err := newUnrestrictedTestRuntime(disabled)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestAgentDockContextExposesShortACPOrientationWhenEnabled(t *testing.T) {
 	if err := enabled.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	enabledRuntime, err := NewRuntime(enabled)
+	enabledRuntime, err := newUnrestrictedTestRuntime(enabled)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestNexusUnavailableHidesWorkflowTemplateCapability(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	rt, err := NewRuntime(cfg)
+	rt, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestAgentDockLocalContextSkipsSharedNexusLookups(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	rt, err := NewRuntime(cfg)
+	rt, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +345,7 @@ func TestSkillCapabilityIndexOmitsLegacyExecutableSkills(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	rt, err := NewRuntime(cfg)
+	rt, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

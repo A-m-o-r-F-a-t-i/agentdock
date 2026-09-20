@@ -268,3 +268,12 @@ func removeLockDirectory(path string) bool {
 	}
 	return false
 }
+
+// ProcessAlive is conservative on access errors, so another runtime never
+// steals an execution owned by a process it could not inspect.
+func ProcessAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	return processAlive(pid)
+}

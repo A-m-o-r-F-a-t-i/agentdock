@@ -132,8 +132,9 @@ func TestReadLimitAndCorruptRecordWarning(t *testing.T) {
 	f, _ = os.OpenFile(files[0], os.O_APPEND|os.O_WRONLY, 0600)
 	_, _ = f.WriteString(strings.Repeat("x", MaxEventBytes+50))
 	_ = f.Close()
-	if _, err = s.Query(context.Background(), Query{}); err == nil {
-		t.Fatal("oversized record accepted")
+	page, err = s.Query(context.Background(), Query{})
+	if err != nil || len(page.Events) != 1 || len(page.Warnings) == 0 {
+		t.Fatalf("oversized corrupt record must be skipped with a warning while preserving the valid record: %+v %v", page, err)
 	}
 }
 func TestSecretsAreAbsentFromPersistedEvents(t *testing.T) {

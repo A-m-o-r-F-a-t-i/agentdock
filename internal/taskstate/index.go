@@ -95,7 +95,8 @@ func (s *Store) Discover(ctx context.Context) (TaskIndex, error) {
 			warn("Invalid task " + entry.Name())
 			continue
 		}
-		if task.ArchivedAt != nil {
+		task = s.applyManagementLocked(task)
+		if task.TrashedAt != nil || task.ArchivedAt != nil {
 			continue
 		}
 		switch task.Status {

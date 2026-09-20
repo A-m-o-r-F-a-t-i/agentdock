@@ -16,6 +16,8 @@ type SkillResolver func(skill string) (string, error)
 type CommandContext func() (context.Context, error)
 
 type Service struct {
+	activityMu     sync.Mutex
+	activeCommands map[string]*session.Session
 	activity       *activity.Store
 	activityWG     sync.WaitGroup
 	config         ConfigProvider
@@ -28,7 +30,8 @@ type Service struct {
 
 func New(configProvider ConfigProvider, ws *workspace.Workspace, envs *envstore.Store, resolveSkill SkillResolver, commandContext CommandContext) *Service {
 	return &Service{
-		config: configProvider, ws: ws, envs: envs, sessions: session.NewStore(),
+		activeCommands: map[string]*session.Session{},
+		config:         configProvider, ws: ws, envs: envs, sessions: session.NewStore(),
 		resolveSkill: resolveSkill, commandContext: commandContext,
 	}
 }

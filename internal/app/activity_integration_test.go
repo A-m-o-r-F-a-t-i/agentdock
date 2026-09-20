@@ -120,8 +120,8 @@ func TestActivityAsyncSessionKeepsOriginalThread(t *testing.T) {
 	if _, err = r.RuntimeActivityControl(context.Background(), ActivityControlRequest{Action: "stop", TaskID: id, ThreadID: branch.ID, SessionID: sessionID}); err == nil {
 		t.Fatal("wrong thread controlled a session")
 	}
-	if _, err = r.Call(context.Background(), "task_manage", map[string]any{"action": "cancel", "task_id": id, "summary": "isolated cancellation reason"}); err != nil {
-		t.Fatal(err)
+	if _, err = r.Call(context.Background(), "task_manage", map[string]any{"action": "cancel", "task_id": id, "summary": "isolated cancellation reason"}); err == nil {
+		t.Fatal("cancellation accepted while a command was still running")
 	}
 	live, err := r.RuntimeActivityLive(context.Background(), id, branch.ID)
 	if err != nil {
@@ -142,8 +142,8 @@ func TestActivityAsyncSessionKeepsOriginalThread(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(taskList)
-	if !strings.Contains(string(encoded), `"cancel_reason":"isolated cancellation reason"`) {
-		t.Fatal("task list omitted cancellation reason")
+	if strings.Contains(string(encoded), `"cancel_reason":"isolated cancellation reason"`) {
+		t.Fatal("protected cancellation changed task state")
 	}
 	stopped, err := r.RuntimeActivityControl(context.Background(), ActivityControlRequest{Action: "stop", TaskID: id, ThreadID: "main", SessionID: sessionID})
 	if err != nil || stopped["thread_id"] != "main" {
@@ -171,6 +171,9 @@ func TestActivityAsyncSessionKeepsOriginalThread(t *testing.T) {
 	}
 	if !completed {
 		t.Fatal("stopped command missing completion event")
+	}
+	if _, err = r.Call(context.Background(), "task_manage", map[string]any{"action": "cancel", "task_id": id, "summary": "isolated cancellation reason"}); err != nil {
+		t.Fatal(err)
 	}
 	if _, err = r.RuntimeActivityControl(context.Background(), ActivityControlRequest{Action: "stop", TaskID: id, ThreadID: "main", SessionID: sessionID}); err == nil {
 		t.Fatal("an exited session remained actionable")

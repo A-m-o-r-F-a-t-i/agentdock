@@ -33,7 +33,7 @@ func (s *Store) Delete(id string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	if err := os.Remove(filepath.Join(s.root, id+".json")); err != nil {
+	if err := s.deleteManagedLocked(task); err != nil {
 		return Task{}, fmt.Errorf("delete task %s: %w", id, err)
 	}
 	return task, nil
@@ -71,7 +71,8 @@ func (s *Store) ListHistory(status Status, limit int, includeArchived bool) ([]T
 			slog.Warn("skip invalid task state", "file", entry.Name(), "error", err)
 			continue
 		}
-		if task.ArchivedAt != nil && !includeArchived {
+		task = s.applyManagementLocked(task)
+		if task.TrashedAt != nil || task.ArchivedAt != nil && !includeArchived {
 			continue
 		}
 		task, err = s.attachThreadLocked(task)
@@ -105,7 +106,7 @@ func (s *Store) loadLocked(id string) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	return s.attachThreadLocked(task)
+	return s.attachThreadLocked(s.applyManagementLocked(task))
 }
 
 func (s *Store) saveTaskOnlyLocked(task Task) error {

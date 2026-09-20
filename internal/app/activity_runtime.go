@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/activity"
+	tooltask "github.com/uvwt/agentdock/internal/tool/task"
 )
 
 // ActivityJournal is intentionally outside the shared Nexus Runtime API interface.
@@ -13,6 +14,14 @@ import (
 func (r *Runtime) ActivityJournal() *activity.Store { return r.activity }
 
 func (r *Runtime) RuntimeActivityTask(ctx context.Context, arguments map[string]any) (Result, error) {
+	switch stringArg(arguments, "action") {
+	case "list", "get", "thread_list", "thread_get":
+		var request tooltask.ManageRequest
+		if err := decodeToolInput("task_manage", arguments, &request); err != nil {
+			return nil, err
+		}
+		return r.taskTools.Manage(ctx, request)
+	}
 	return r.Call(ctx, "task_manage", arguments)
 }
 

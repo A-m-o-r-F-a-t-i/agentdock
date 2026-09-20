@@ -23,7 +23,7 @@ func TestHeavyPluginProgressiveDisclosureAndAvailabilityOverlay(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	rt, err := NewRuntime(cfg)
+	rt, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

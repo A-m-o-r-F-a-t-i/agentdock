@@ -301,6 +301,9 @@ func (s *Store) mutate(id string, fn func(*Task, time.Time) error) (Task, error)
 	if err != nil {
 		return Task{}, err
 	}
+	if task.TrashedAt != nil {
+		return Task{}, errors.New("restore the trashed task before changing execution state")
+	}
 	now := time.Now().UTC()
 	if err := fn(&task, now); err != nil {
 		return Task{}, err

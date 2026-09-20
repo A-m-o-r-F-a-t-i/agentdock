@@ -81,6 +81,8 @@ func (s ToolSpec) definition(cfg config.Config) ToolDefinition {
 		contract, _ = s.Contract(s.Name, cfg)
 	}
 	annotations := cloneToolAnnotations(s.Annotations)
+	// Input contracts contain business arguments only. Transport identity and
+	// inherited execution scope never become model-supplied schema properties.
 	if canonical, ok := mcpcontract.AnnotationContract(s.Name); ok {
 		annotations = canonicalToolAnnotations(canonical)
 	}
@@ -92,7 +94,7 @@ func (s ToolSpec) definition(cfg config.Config) ToolDefinition {
 		FileArgRewritePaths:    append([]string(nil), s.FileArgRewritePaths...),
 		FileResultRewritePaths: append([]string(nil), s.FileResultRewritePaths...),
 		InputSchema:            contract.InputSchema,
-		OutputSchema:           contract.OutputSchema,
+		OutputSchema:           executionOutputSchema(contract.OutputSchema),
 		Annotations:            annotations,
 	}
 }

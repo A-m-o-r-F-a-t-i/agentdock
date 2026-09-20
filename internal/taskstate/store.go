@@ -14,8 +14,9 @@ import (
 )
 
 type Store struct {
-	root string
-	mu   sync.Mutex
+	management map[string]taskManagement
+	root       string
+	mu         sync.Mutex
 }
 
 func New(root string) (*Store, error) {
@@ -45,6 +46,16 @@ func (s *Store) acquireStoreLock() (func(), error) {
 		return nil, fmt.Errorf("lock task state: %w", err)
 	}
 	if err := s.recoverThreadTransactionLocked(); err != nil {
+		releaseFileLock()
+		s.mu.Unlock()
+		return nil, err
+	}
+	if err := s.loadManagementLocked(); err != nil {
+		releaseFileLock()
+		s.mu.Unlock()
+		return nil, err
+	}
+	if err := s.recoverManagementDeleteLocked(); err != nil {
 		releaseFileLock()
 		s.mu.Unlock()
 		return nil, err

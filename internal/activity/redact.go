@@ -48,6 +48,7 @@ func (r Redactor) Text(value string, limit int) string {
 func (r Redactor) Event(e Event) Event {
 	e.Label = r.Text(e.Label, 512)
 	e.Title = r.Text(e.Title, 512)
+	e.ParameterSummary = r.Text(e.ParameterSummary, 4096)
 	e.DisplayCommand = r.Text(e.DisplayCommand, 4096)
 	e.Workdir = r.Text(e.Workdir, 2048)
 	e.LogicalPath = r.Text(e.LogicalPath, 2048)

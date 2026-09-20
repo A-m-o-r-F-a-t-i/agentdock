@@ -152,7 +152,7 @@ func newScopedEnvTestRuntime(t *testing.T) *Runtime {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := NewRuntime(cfg)
+	runtime, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

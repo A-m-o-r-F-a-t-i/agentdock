@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 	toolmcp "github.com/uvwt/agentdock/internal/tool/mcp"
@@ -45,14 +46,7 @@ func (r *Runtime) RuntimeSkill(skill string) (Result, error) {
 }
 
 func (r *Runtime) RuntimeSkillManage(ctx context.Context, args map[string]any) (Result, error) {
-	if err := r.validateToolArguments(toolskill.ToolPackage, args); err != nil {
-		return nil, err
-	}
-	var request toolskill.PackageRequest
-	if err := decodeToolInput(toolskill.ToolPackage, args, &request); err != nil {
-		return nil, err
-	}
-	result, err := r.skills.Package(ctx, request)
+	result, err := r.Call(WithLocalUserAction(ctx), toolskill.ToolPackage, args)
 	if err != nil {
 		return nil, err
 	}
@@ -78,11 +72,25 @@ func (r *Runtime) RuntimeTask(id string) (Result, error) {
 }
 
 func (r *Runtime) RuntimeTaskDelete(id string) (Result, error) {
-	return r.taskTools.RuntimeTaskDelete(id)
+	selected, err := r.tasks.Get(id)
+	if err != nil {
+		return nil, toolError("TASK_NOT_FOUND", err.Error(), "not_found")
+	}
+	batch, err := r.RuntimeManagementBatch(context.Background(), "task", BatchRequest{IDs: []string{id}, Action: "delete", ConfirmPermanent: true})
+	if err != nil {
+		return nil, err
+	}
+	if len(batch.Items) != 1 {
+		return nil, toolError("TASK_DELETE_FAILED", "No per-item deletion result was returned.", "runtime")
+	}
+	if batch.Items[0].Status != "succeeded" {
+		return nil, toolError("TASK_DELETE_PROTECTED", batch.Items[0].Message, "conflict")
+	}
+	return Result{"ok": true, "source": runtimeAPISource, "action": "delete", "task_id": id, "management_only": true, "deleted_task": selected}, nil
 }
 
 func (r *Runtime) RuntimeCapabilities(ctx context.Context, refresh bool) (Result, error) {
-	result, err := r.AgentDockContext(ctx)
+	result, err := r.AgentDockContext(activity.WithDiagnostic(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +107,13 @@ func (r *Runtime) RuntimeMCPServer(ctx context.Context, name string) (Result, er
 }
 
 func (r *Runtime) RuntimeMCPManage(ctx context.Context, args map[string]any) (Result, error) {
-	return r.runtimeMCPManage(ctx, args)
+	result, err := r.Call(WithLocalUserAction(ctx), toolmcp.ToolManage, args)
+	if err != nil {
+		return nil, err
+	}
+	result["ok"] = true
+	result["source"] = runtimeAPISource
+	return result, nil
 }
 
 func (r *Runtime) RuntimePlugins(ctx context.Context) (Result, error) {
@@ -111,7 +125,13 @@ func (r *Runtime) RuntimePlugin(ctx context.Context, name string) (Result, error
 }
 
 func (r *Runtime) RuntimePluginManage(ctx context.Context, args map[string]any) (Result, error) {
-	return r.runtimePluginManage(ctx, args)
+	result, err := r.Call(WithLocalUserAction(ctx), toolplugin.ToolManage, args)
+	if err != nil {
+		return nil, err
+	}
+	result["ok"] = true
+	result["source"] = runtimeAPISource
+	return result, nil
 }
 
 func (r *Runtime) runtimePluginManage(ctx context.Context, args map[string]any) (Result, error) {

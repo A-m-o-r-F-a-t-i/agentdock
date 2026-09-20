@@ -207,6 +207,9 @@ func conditionBigramSet(value string) map[string]struct{} {
 }
 
 func requireMutable(task *Task) error {
+	if task.TrashedAt != nil {
+		return errors.New("restore the trashed task before changing execution state")
+	}
 	if task.Status == StatusCompleted {
 		return errors.New("completed tasks are immutable")
 	}
@@ -214,6 +217,9 @@ func requireMutable(task *Task) error {
 }
 
 func requireActive(task *Task) error {
+	if task.TrashedAt != nil {
+		return errors.New("trashed tasks cannot execute")
+	}
 	if task.Status != StatusActive {
 		return fmt.Errorf("task status must be active, got %s", task.Status)
 	}

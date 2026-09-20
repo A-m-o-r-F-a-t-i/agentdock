@@ -10,7 +10,7 @@ using AgentDock.ControlPanel;
 
 internal static partial class Program
 {
-    private sealed class LocalFixture : IDisposable
+    private sealed partial class LocalFixture : IDisposable
     {
         public const string TaskId = "tsk_1111111111111111";
         public const string BranchId = "thr_2222222222222222";
@@ -66,6 +66,7 @@ internal static partial class Program
                 }
                 Interlocked.Increment(ref _authenticated);
                 var path = context.Request.Url!.AbsolutePath;
+                if (ExecutionMode && await RespondExecutionAsync(context)) return;
                 if (path == "/internal/runtime/activity/tasks" && RedirectTarget is not null)
                 {
                     context.Response.StatusCode = 302; context.Response.RedirectLocation = RedirectTarget; return;

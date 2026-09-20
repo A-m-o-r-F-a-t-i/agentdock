@@ -139,6 +139,12 @@ func (s *Service) ensureAvailable(name string) error {
 	return nil
 }
 
+// PermissionTargetFingerprint freezes the installed destination and scoped
+// environment without connecting or dispatching the third-party tool.
+func (s *Service) PermissionTargetFingerprint(ctx context.Context, name string) (string, error) {
+	return s.mcpClients.PermissionTargetFingerprint(ctx, name)
+}
+
 func (s *Service) Close() error {
 	if s == nil || s.mcpClients == nil {
 		return nil

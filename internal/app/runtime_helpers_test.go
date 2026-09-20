@@ -1,7 +1,9 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"github.com/uvwt/agentdock/internal/permission"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -25,7 +27,7 @@ func newCodeToolsRuntime(t *testing.T) (*Runtime, string) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatalf("Normalize() error = %v", err)
 	}
-	rt, err := NewRuntime(cfg)
+	rt, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,4 +208,22 @@ func testCompactTemplateSummary(template taskstate.Template) map[string]any {
 		"allow_long_template": template.AllowLongTemplate, "long_template_reason": template.LongTemplateReason,
 		"hash": template.Hash, "published_at": template.PublishedAt, "retired_at": template.RetiredAt,
 	}
+}
+
+// Domain regressions opt into an explicitly unrestricted test policy. Production
+// defaults and approval behavior are exercised by execution_center_test.go.
+func newUnrestrictedTestRuntime(cfg config.Config) (*Runtime, error) {
+	r, err := NewRuntime(cfg)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.permissions.Get(context.Background())
+	if err == nil {
+		_, err = r.permissions.Update(context.Background(), permission.Change{Scope: "global", Mode: permission.Full, ExpectedRevision: p.Revision, ConfirmFull: true})
+	}
+	if err != nil {
+		_ = r.Close()
+		return nil, err
+	}
+	return r, nil
 }

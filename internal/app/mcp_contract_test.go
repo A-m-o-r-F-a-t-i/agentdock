@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/uvwt/agentdock-protocol/mcpcontract"
+	"github.com/uvwt/agentdock/internal/config"
 )
 
 func TestCanonicalToolDefinitionsMatchSharedContract(t *testing.T) {
@@ -25,7 +26,15 @@ func TestCanonicalToolDefinitionsMatchSharedContract(t *testing.T) {
 			t.Fatalf("canonical tool %s missing", name)
 		}
 		wantInput, _ := mcpcontract.InputSchema(name)
-		actualInput, actualOutput := definition.InputSchema, definition.OutputSchema
+		spec, _ := toolSpecByName(name)
+		base, _ := spec.Contract(name, config.Config{})
+		actualInput, actualOutput := base.InputSchema, base.OutputSchema
+		if !reflect.DeepEqual(base.InputSchema, definition.InputSchema) {
+			t.Fatalf("%s public business contract was altered by execution metadata", name)
+		}
+		if !reflect.DeepEqual(executionOutputSchema(base.OutputSchema), definition.OutputSchema) {
+			t.Fatalf("%s execution output extension drifted", name)
+		}
 		if name == mcpcontract.ToolAgentDockContext {
 			// Standalone AgentDock adds only optional local context fields. Compare
 			// every remaining field against the unchanged shared protocol contract.

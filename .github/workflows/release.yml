@@ -420,6 +420,9 @@ jobs:
           cp scripts/install/install.sh dist/install.sh
           cp scripts/install/install.ps1 dist/install.ps1
           go run ./tools/release verify-version "$RELEASE_TAG"
+          if [ "$RELEASE_TAG" = "v1.1.2" ]; then
+            go run ./tools/release verify-acceptance docs/releases/v1.1.2-acceptance.json
+          fi
           python3 - <<'PY'
           import os
           import re

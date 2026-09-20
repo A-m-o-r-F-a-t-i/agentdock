@@ -2,7 +2,7 @@ name: Windows Release
 
 on:
   push:
-    branches: [feat/tailscale-funnel, release/windows-1.1.1]
+    branches: [feat/tailscale-funnel, release/windows-1.1.1, feat/conversation-execution-center]
   workflow_dispatch:
     inputs:
       publish:
@@ -51,7 +51,8 @@ jobs:
           $files = @(git ls-files '*.go')
           $unformatted = @(& gofmt -l $files)
           if ($unformatted.Count) { throw "Unformatted Go: $($unformatted -join ', ')" }
-          go run ./tools/release verify-version v1.1.1
+          $version = (& go run ./tools/release version).Trim()
+          go run ./tools/release verify-version "v$version"
           if ($LASTEXITCODE -ne 0) { throw 'Version validation failed.' }
           # Bound simultaneous process-heavy packages on hosted Windows runners.
           # Keep all test cases, assertions and individual operation deadlines.
@@ -63,7 +64,7 @@ jobs:
       - name: Compile Windows x64 and ARM64 releases
         run: |
           $ErrorActionPreference = 'Stop'
-          & .\packaging\windows\build-windows-release.ps1
+          & .\packaging\windows\build-windows-release.ps1 -Candidate
       - name: Tailscale install repair rollback and uninstall
         run: |
           $ErrorActionPreference = 'Stop'
@@ -182,7 +183,13 @@ jobs:
           PRERELEASE: ${{ inputs.prerelease }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = 'v1.1.1'
+          $version = (& go run ./tools/release version).Trim()
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot resolve candidate version.' }
+          $tag = "v$version"
+          if ($version -eq '1.1.2') {
+            go run ./tools/release verify-acceptance ./docs/releases/v1.1.2-acceptance.json
+            if ($LASTEXITCODE -ne 0) { throw '1.1.2 publication remains blocked by acceptance.' }
+          }
           # The immutable 1.1.0 base already contains both feature integrations.
           # Do not compare against mutable development branch tips.
           git fetch --unshallow origin
@@ -191,7 +198,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Cannot verify the 1.1.0 release base.' }
           git merge-base --is-ancestor v1.1.0 HEAD
           if ($LASTEXITCODE -ne 0) { throw 'The repaired release does not include 1.1.0.' }
-          if ($env:PRERELEASE -ne 'true') {
+          if ($version -eq '1.1.1' -and $env:PRERELEASE -ne 'true') {
             $acceptance = Get-Content ./docs/releases/v1.1.1-acceptance.json -Raw | ConvertFrom-Json
             if (-not $acceptance.real_chatgpt_oauth_and_tools -or -not $acceptance.real_chatgpt_refresh_reconnect -or -not $acceptance.production_configuration_preserved) {
               throw 'Formal release blocked: real-client and production acceptance is incomplete. Publish a preview only.'
@@ -209,7 +216,7 @@ jobs:
           $existing = git ls-remote --tags origin "refs/tags/$tag"
           if ($LASTEXITCODE -ne 0 -or $existing) { throw 'The immutable tag exists or cannot be inspected.' }
           # GITHUB_TOKEN-created tags do not trigger another push workflow.
-          gh release create $tag @($assets.FullName) --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --title 'AgentDock 1.1.1 for Windows' --notes-file ./docs/releases/v1.1.1.md
+          gh release create $tag @($assets.FullName) --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --title "AgentDock $version for Windows" --notes-file "./docs/releases/v$version.md"
           if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed.' }
           $remote = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0 -or $remote.assets.Count -ne 10) { throw 'Remote asset verification failed; draft retained.' }

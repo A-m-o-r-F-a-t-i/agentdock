@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	toolfile "github.com/uvwt/agentdock/internal/tool/file"
 )
 
@@ -18,6 +19,7 @@ func fileToolSpecs() []ToolSpec {
 			return r.files.SearchText(ctx, request)
 		})},
 		{Name: "file_edit", Contract: fileToolContract, Title: "Edit file", Description: toolfile.EditDescription("Edit files through one action-based entrypoint: replace, patch, add, delete, or move. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules."), Annotations: mutatingToolAnnotations(true, false), Handler: typedToolHandler("file_edit", func(ctx context.Context, r *Runtime, request toolfile.EditRequest) (Result, error) {
+			request.Binding = activity.FromContext(ctx)
 			return r.files.Edit(ctx, request)
 		})},
 	}

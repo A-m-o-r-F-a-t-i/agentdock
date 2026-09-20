@@ -83,7 +83,7 @@ function Invoke-Rpc([string]$Method,[hashtable]$Parameters) {
     } finally { $request.Dispose() }
 }
 function Invoke-Tool([string]$Name,[hashtable]$Arguments) {
-    $response = Invoke-Rpc 'tools/call' @{name=$Name;arguments=$Arguments}
+    $response = Invoke-Rpc 'tools/call' @{name=$Name;arguments=$Arguments;_meta=@{'openai/session'='isolated-native-conversation'}}
     if ($response.ContainsKey('isError') -and $response.isError) { throw "Tool $Name rejected fixture input: $($response.content | ConvertTo-Json -Compress -Depth 8)" }
     if ($response.ContainsKey('structuredContent')) { return $response.structuredContent }
     return ($response.content[0].text | ConvertFrom-Json -AsHashtable)
@@ -93,18 +93,30 @@ function Read-Local([string]$Path) {
     try { Require $response.IsSuccessStatusCode "Local request failed: $Path"; return ($response.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json -AsHashtable) }
     finally { $response.Dispose() }
 }
+function Write-Local([string]$Path,[hashtable]$Body) {
+    $content = [Net.Http.StringContent]::new(($Body | ConvertTo-Json -Depth 12 -Compress),[Text.Encoding]::UTF8,'application/json')
+    $response = $client.PostAsync($origin+$Path,$content).GetAwaiter().GetResult()
+    try { Require $response.IsSuccessStatusCode "Local write failed: $Path"; return ($response.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json -AsHashtable) }
+    finally { $response.Dispose(); $content.Dispose() }
+}
 function New-Task([string]$Title) {
     return (Invoke-Tool 'task_manage' @{action='create';title=$Title;goal='isolated execution recovery';steps=@(@{id='verify';title='Verify'});completion_conditions=@('correct execution state')}).task_id
 }
 try {
     Start-Fixture
+    $permission = Read-Local '/internal/runtime/permissions/effective'
+    Require ($permission.policy.global_mode -eq 'rules') 'New fixture must start with normal rule-based permissions.'
+    [void](Write-Local '/internal/runtime/permissions' @{scope='global';mode='full';confirm_full=$true;expected_revision=$permission.policy.revision})
+    $cases.Add('explicit authenticated local confirmation configures only the isolated fixture permissions')
     $id = New-Task 'Native activity test'
     $legacyId = New-Task 'Legacy task fixture'
     $fork = Invoke-Tool 'task_manage' @{action='thread_fork';task_id=$id;title='Isolated branch'}
     $thread = $fork.thread.id
-    $command = Invoke-Tool 'exec_command' @{cmd="Write-Output 'activity-中文'; Write-Output `$env:FIXTURE_SECRET; Start-Sleep -Milliseconds 350; exit 7";task_id=$id;thread_id=$thread;execution_mode='sync';env=@{FIXTURE_SECRET='never-persist-fixture-value'}}
+    [void](Invoke-Tool 'task_manage' @{action='set_current';task_id=$id;thread_id=$thread})
+    $command = Invoke-Tool 'exec_command' @{cmd="Write-Output 'activity-中文'; Write-Output `$env:FIXTURE_SECRET; Start-Sleep -Milliseconds 350; exit 7";execution_mode='sync';env=@{FIXTURE_SECRET='never-persist-fixture-value'}}
+    Require ($command.task_id -eq $id -and $command.thread_id -eq $thread -and $command.conversation_id.StartsWith('conv_')) 'Ordinary command did not inherit the server conversation/task/thread scope.'
     Require ($command.command_ok -eq $false -and $command.exit_code -eq 7 -and $command.stdout.Contains('activity-中文')) 'Real command state or Chinese output changed.'
-    $edit = Invoke-Tool 'file_edit' @{action='add';path='delivery.txt';target_kind='artifact';task_id=$id;thread_id=$thread;content='isolated delivery'}
+    $edit = Invoke-Tool 'file_edit' @{action='add';path='delivery.txt';target_kind='artifact';content='isolated delivery'}
     $target = $edit.workspace_target
     Require (Test-Path -LiteralPath (Join-Path $target.resolved_path 'delivery.txt')) 'Artifact did not land under its routed task directory.'
     $page = Read-Local "/internal/runtime/tasks/$id/threads/$thread/activity"
@@ -113,6 +125,7 @@ try {
     Require (@($events | Where-Object kind -EQ 'command.completed').Count -eq 1) 'Command completion event count is incorrect.'
     Require (@($events | Where-Object kind -EQ 'file.changed').Count -eq 1) 'File event is missing.'
     Require (-not (($page | ConvertTo-Json -Depth 30).Contains('never-persist-fixture-value'))) 'Secret leaked into the activity API.'
+    $cases.Add('native binary automatic metadata and task/thread inheritance without business identity arguments')
     $cases.Add('real command, file routing, typed events and redaction')
     $request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Get,"$origin/internal/runtime/tasks/$id/activity/stream?thread_id=$thread")
     $resume = [string]($events[0].seq)

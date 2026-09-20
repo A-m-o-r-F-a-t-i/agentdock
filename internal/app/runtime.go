@@ -15,6 +15,7 @@ import (
 	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/evolution"
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
+	"github.com/uvwt/agentdock/internal/permission"
 	pluginregistry "github.com/uvwt/agentdock/internal/plugin"
 	"github.com/uvwt/agentdock/internal/taskstate"
 	toolacp "github.com/uvwt/agentdock/internal/tool/acp"
@@ -36,6 +37,16 @@ import (
 type Result = toolcore.Result
 
 type Runtime struct {
+	executionMaintenanceDone chan struct{}
+	executionInstance        string
+	conversations            *activity.ConversationRegistry
+	permissions              *permission.Store
+	tasks                    *taskstate.Store
+	executionMu              sync.Mutex
+	activeCalls              map[string]*liveExecution
+	pendingCalls             map[string]*preparedExecution
+	executionWG              sync.WaitGroup
+
 	workspaceRegistry *workspace.Registry
 	workspaceTools    *toolworkspace.Service
 	activity          *activity.Store
@@ -115,8 +126,25 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		_ = mcpClients.Close()
 		return nil, fmt.Errorf("initialize activity journal: %w", err)
 	}
+	conversations, err := activity.NewConversationRegistry(filepath.Join(cfg.AgentDockHome, "execution"))
+	if err != nil {
+		_ = mcpClients.Close()
+		return nil, fmt.Errorf("initialize conversations: %w", err)
+	}
+	permissions, err := permission.New(filepath.Join(cfg.AgentDockHome, "execution", "permissions"))
+	if err != nil {
+		_ = mcpClients.Close()
+		return nil, fmt.Errorf("initialize permissions: %w", err)
+	}
+	instance, err := activity.NewExecutionID("call_")
+	if err != nil {
+		return nil, err
+	}
 	commandCtx, commandCancel := context.WithCancel(context.Background())
 	runtime := &Runtime{
+		executionInstance: instance,
+		conversations:     conversations, permissions: permissions, tasks: tasks,
+		activeCalls: map[string]*liveExecution{}, pendingCalls: map[string]*preparedExecution{},
 		workspaceRegistry: workspaceRegistry, workspaceTools: toolworkspace.New(workspaceRegistry),
 		cfg: cfg, ws: ws, skills: skills, activity: activityStore,
 		toolNames: toolNames, toolValidators: toolValidators,
@@ -149,6 +177,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	runtime.command = toolcommand.New(func() config.Config { return runtime.cfg }, ws, envs, skills.ResolveActive, runtime.commandExecutionContext)
 	runtime.command.SetActivityStore(activityStore)
 	runtime.files = toolfile.New(ws, skills.ResolveResource, runtime.command.CommandEnv)
+	mcpClients.SetCallObserver(runtime.observeRemoteTool)
 	runtime.dynamicMCP = toolmcp.New(mcpClients, envs)
 	runtime.plugins = toolplugin.New(
 		pluginStore,
@@ -235,6 +264,11 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		}
 		runtime.acp = toolacp.NewMulti(cfg.EffectiveACPDefaultProfile(), managers)
 	}
+	if err = runtime.recoverExecutionState(context.Background()); err != nil {
+		_ = runtime.Close()
+		return nil, fmt.Errorf("recover execution state: %w", err)
+	}
+	runtime.startExecutionMaintenance()
 	return runtime, nil
 }
 
@@ -261,6 +295,7 @@ func (r *Runtime) Close() error {
 				closeErrors = append(closeErrors, err)
 			}
 		}
+		r.cancelPendingOnClose()
 		if commandCancel != nil {
 			commandCancel()
 		}
@@ -283,6 +318,9 @@ func (r *Runtime) Close() error {
 			if err := r.dynamicMCP.Close(); err != nil {
 				closeErrors = append(closeErrors, fmt.Errorf("close dynamic MCP clients: %w", err))
 			}
+		}
+		if err := r.drainExecutionsOnClose(); err != nil {
+			closeErrors = append(closeErrors, err)
 		}
 		r.closeErr = errors.Join(closeErrors...)
 	})
@@ -322,12 +360,9 @@ func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (R
 	if args == nil {
 		args = map[string]any{}
 	}
-	if err := r.validateToolArguments(name, args); err != nil {
-		return nil, err
-	}
 	spec, ok := toolSpecByName(name)
-	if !ok || spec.Handler == nil {
-		return nil, toolErrorDetails("UNKNOWN_TOOL", "tool has no handler", "validation", map[string]any{"tool": name})
+	if !ok {
+		spec = ToolSpec{Name: name}
 	}
 	return r.callObserved(ctx, spec, args)
 }

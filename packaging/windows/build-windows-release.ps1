@@ -4,7 +4,8 @@ param(
     [ValidateSet('amd64','arm64')][string[]] $Architectures = @('amd64','arm64'),
     [string] $OutputDirectory = '',
     [string] $CloudflaredBinary = '',
-    [switch] $SignedBuild
+    [switch] $SignedBuild,
+    [switch] $Candidate
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -16,6 +17,13 @@ $releaseRoot = Join-Path $outputRoot 'release'
 New-Item -ItemType Directory -Force -Path $outputRoot,$releaseRoot | Out-Null
 $version = (& go -C $repository run ./tools/release version).Trim()
 if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+$') { throw 'Could not read the release version.' }
+if ($version -eq '1.1.2' -and -not $Candidate) {
+    & go -C $repository run ./tools/release verify-acceptance (Join-Path $repository 'docs/releases/v1.1.2-acceptance.json')
+    if ($LASTEXITCODE -ne 0) { throw 'Formal 1.1.2 build is blocked. Use -Candidate only for isolated verification, never as release acceptance.' }
+}
+$sourceChanges = @(& git -C $repository status --porcelain)
+if ($LASTEXITCODE -ne 0) { throw 'Could not inspect source state.' }
+if (-not $Candidate -and $version -eq '1.1.2' -and $sourceChanges.Count -gt 0) { throw 'Formal release requires a clean verified source commit.' }
 $commit = (& git -C $repository rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Could not read the source commit.' }
 $buildDate = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
@@ -92,7 +100,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $repository 'scripts\install\install.ps1') -Destination (Join-Path $releaseRoot 'install.ps1') -Force
     Write-Checksum (Join-Path $releaseRoot 'install.ps1')
     [ordered]@{
-        version=$version; commit=$commit; build_date=$buildDate; platforms=@($Architectures | ForEach-Object {"windows/$_"})
+        version=$version; channel=$(if($Candidate){'candidate-not-released'}else{'release'}); source_dirty=($sourceChanges.Count -gt 0); changed_paths=$sourceChanges; commit=$commit; build_date=$buildDate; platforms=@($Architectures | ForEach-Object {"windows/$_"})
         agentdock_authenticode=$(if($SignedBuild){'signed'}else{'unsigned'}); cloudflared_authenticode='valid'
         wsl_helpers='Windows feature payload only; no separate Linux release'
     } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $outputRoot 'build-report.json') -Encoding utf8NoBOM

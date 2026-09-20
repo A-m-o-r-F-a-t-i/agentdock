@@ -16,14 +16,15 @@ import (
 )
 
 type Manager struct {
-	registryMu sync.Mutex
-	closed     atomic.Bool
-	mu         sync.RWMutex
-	store      *store
-	envs       *envstore.Store
-	external   ExternalServerProvider
-	servers    map[string]ServerConfig
-	states     map[string]*serverState
+	callObserver atomic.Pointer[toolCallObserver]
+	registryMu   sync.Mutex
+	closed       atomic.Bool
+	mu           sync.RWMutex
+	store        *store
+	envs         *envstore.Store
+	external     ExternalServerProvider
+	servers      map[string]ServerConfig
+	states       map[string]*serverState
 }
 
 // ExternalServerProvider supplies dynamic MCP definitions owned by direct
@@ -524,6 +525,15 @@ func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutMS)*time.Millisecond)
 	defer cancel()
+	if _, approved := ctx.Value(approvedToolTargetKey{}).(string); approved {
+		resolved, targetErr := m.runtimeConfig(cfg)
+		if targetErr != nil {
+			return nil, targetErr
+		}
+		if targetErr = checkApprovedToolTarget(ctx, resolved); targetErr != nil {
+			return nil, targetErr
+		}
+	}
 	if state.client == nil || len(state.tools) == 0 {
 		runtimeCfg, err := m.runtimeConfig(cfg)
 		if err != nil {
@@ -541,7 +551,16 @@ func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[
 	if err := validateToolArguments(tool, arguments); err != nil {
 		return nil, err
 	}
-	result, err := state.client.callTool(ctx, name, arguments)
+	observer := m.callObserver.Load()
+	dispatch := func(callCtx context.Context) (map[string]any, error) {
+		return state.client.callTool(callCtx, name, arguments)
+	}
+	var result map[string]any
+	if observer != nil {
+		result, err = observer.call(ctx, qualifiedName, dispatch)
+	} else {
+		result, err = dispatch(ctx)
+	}
 	if err != nil {
 		// 工具调用失败是请求级结果，不代表 MCP server 的连接或发现状态失效。
 		// server 的 lastError 只记录 refresh / initialize / tools/list 生命周期故障。
@@ -844,4 +863,16 @@ func toolMatchScore(query string, tool Tool) int {
 		}
 	}
 	return score
+}
+
+type toolCallObserver struct {
+	call func(context.Context, string, func(context.Context) (map[string]any, error)) (map[string]any, error)
+}
+
+func (m *Manager) SetCallObserver(observer func(context.Context, string, func(context.Context) (map[string]any, error)) (map[string]any, error)) {
+	if observer == nil {
+		m.callObserver.Store(nil)
+	} else {
+		m.callObserver.Store(&toolCallObserver{call: observer})
+	}
 }

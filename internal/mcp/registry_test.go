@@ -104,7 +104,17 @@ func TestAgentDockContextSchemaIsStructuredEntrypoint(t *testing.T) {
 	}
 
 	inputProps := schemaProperties(t, "agentdock_context")
-	if len(inputProps) != 1 || inputProps["workdir"] == nil {
+	if inputProps["conversation_id"] != nil || inputProps["call_id"] != nil {
+		t.Fatal("invalid public execution context")
+	}
+	businessProps := map[string]any{}
+	for key, value := range inputProps {
+		businessProps[key] = value
+	}
+	for _, key := range []string{"conversation_id", "task_id", "thread_id", "step_id", "workspace_id", "activity_label", "retry_of_call_id"} {
+		delete(businessProps, key)
+	}
+	if len(businessProps) != 1 || inputProps["workdir"] == nil {
 		t.Fatalf("agentdock_context should expose only the optional request-local workdir selector: %#v", inputProps)
 	}
 	if required, _ := inputSchema("agentdock_context")["required"].([]string); len(required) != 0 {
@@ -123,7 +133,12 @@ func TestAgentDockContextSchemaIsStructuredEntrypoint(t *testing.T) {
 	if _, legacy := outputProps["context"]; legacy {
 		t.Fatalf("agentdock_context output schema still exposes legacy Markdown context: %#v", outputProps)
 	}
-	required, ok := output["required"].([]string)
+	alternatives, ok := output["anyOf"].([]any)
+	if !ok || len(alternatives) != 2 {
+		t.Fatal("execution output must distinguish success from pending approval")
+	}
+	success := alternatives[0].(map[string]any)
+	required, ok := success["required"].([]string)
 	if !ok || !reflect.DeepEqual(required, []string{"runtime", "skills", "dynamic_mcp", "workflow_templates", "rules"}) {
 		t.Fatalf("agentdock_context output schema required = %#v", output["required"])
 	}
@@ -225,7 +240,7 @@ func assertObjectSchema(t *testing.T, name, kind string, schema map[string]any) 
 
 func TestTaskManageSchemaExposesLifecycleActions(t *testing.T) {
 	props := schemaProperties(t, "task_manage")
-	assertSameStrings(t, enumStrings(t, props["action"]), []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete", "cancel", "archive", "unarchive", "thread_create", "thread_list", "thread_get", "thread_switch", "thread_checkpoint", "thread_block", "thread_resume", "thread_fork", "thread_close"})
+	assertSameStrings(t, enumStrings(t, props["action"]), []string{"create", "list", "get", "set_current", "unbind", "checkpoint", "block", "resume", "final_review", "complete", "cancel", "archive", "unarchive", "thread_create", "thread_list", "thread_get", "thread_switch", "thread_checkpoint", "thread_block", "thread_resume", "thread_fork", "thread_close"})
 	for _, name := range []string{"completion_conditions", "steps", "step_id", "completed_step_ids", "current_step_id", "status", "summary", "verified", "risks", "thread_id", "workspace_id", "next_action", "source_ref", "include_archived"} {
 		if _, ok := props[name]; !ok {
 			t.Fatalf("task_manage input schema missing %q", name)
@@ -437,6 +452,9 @@ func TestRecallSearchSchemaHidesInternalRoutingFields(t *testing.T) {
 		if _, ok := inputProps[name]; ok {
 			t.Fatalf("recall_search input schema should hide internal field %q", name)
 		}
+	}
+	for _, key := range []string{"conversation_id", "task_id", "thread_id", "step_id", "workspace_id", "activity_label", "retry_of_call_id"} {
+		delete(inputProps, key)
 	}
 	if len(inputProps) != 3 || inputProps["query"] == nil || inputProps["kind"] == nil || inputProps["max_results"] == nil {
 		t.Fatalf("recall_search model-facing inputs drifted: %#v", inputProps)

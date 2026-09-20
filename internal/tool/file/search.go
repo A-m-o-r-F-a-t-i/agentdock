@@ -122,6 +122,9 @@ func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts Sea
 	defer cancel()
 	cmd := exec.CommandContext(ctx, rg, args...)
 	cmd.Dir = p.Abs
+	if info, statErr := os.Stat(p.Abs); statErr == nil && !info.IsDir() {
+		cmd.Dir = filepath.Dir(p.Abs)
+	}
 	processcontrol.Configure(cmd)
 	output, err := cmd.Output()
 	if err != nil {

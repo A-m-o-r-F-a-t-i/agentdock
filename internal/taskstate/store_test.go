@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/uvwt/agentdock/internal/activity"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -330,6 +331,12 @@ func TestDeleteRemovesOnlySelectedTask(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if _, err = store.Delete(first.ID); err == nil {
+		t.Fatal("permanent deletion skipped recycle-bin protection")
+	}
+	if _, err = store.ManageMetadata(first.ID, activity.MetadataChange{Action: "trash"}); err != nil {
+		t.Fatal(err)
+	}
 	deleted, err := store.Delete(first.ID)
 	if err != nil {
 		t.Fatal(err)

@@ -1,10 +1,12 @@
 package contract
 
-// ActivityProperties extends only the explicit execution entrypoints that own this contract.
+// ActivityProperties retains optional advanced overrides on existing execution
+// tools. Conversation identity is exclusively resolved by the trusted ingress.
 func ActivityProperties(properties map[string]any) {
+	properties["retry_of_call_id"] = map[string]any{"type": "string", "pattern": "^call_[a-f0-9]{32}$", "maxLength": 37, "description": "Explicit retry of a previous call in this conversation. A new call_id is generated. Never automatically retry a call whose side-effect result is unknown."}
 	for name, description := range map[string]string{
-		"task_id":      "Persistent task associated with this execution. Omit only for a legacy unassigned operation.",
-		"thread_id":    "Explicit task thread. Omit to resolve the selected task's active thread once at command start.",
+		"task_id":      "Optional advanced task override, validated against the server's current conversation binding. Normally omit: task creation, resume or set_current establishes the binding once.",
+		"thread_id":    "Optional advanced task-thread override. Normally omit: the server inherits a fixed snapshot of the conversation's current task thread.",
 		"step_id":      "Step within the selected thread; inherited from its checkpoint when omitted.",
 		"workspace_id": "Registered workspace. Explicit selection takes priority over thread and task defaults.",
 	} {

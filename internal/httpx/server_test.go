@@ -225,8 +225,14 @@ func TestRuntimeAPIDeletesOnlySelectedTask(t *testing.T) {
 	keptTaskID := createTask("Keep me")
 
 	handler := runtimeAPIHandler(runtime, cfg, auth.NewOAuthStore())
+	if _, err := runtime.RuntimeManagementBatch(context.Background(), "task", app.BatchRequest{IDs: []string{deletedTaskID}, Action: "trash"}); err != nil {
+		t.Fatal(err)
+	}
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodDelete, "/internal/runtime/tasks/"+deletedTaskID, nil))
+	request := httptest.NewRequest(http.MethodDelete, "/internal/runtime/tasks/"+deletedTaskID, nil)
+	request.RemoteAddr = "127.0.0.1:12000"
+	request.Host = "127.0.0.1"
+	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("delete status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}

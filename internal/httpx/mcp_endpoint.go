@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/auth"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
@@ -26,13 +27,19 @@ func agentDockContextHandler(server *mcp.Server, cfg config.Config, oauthStore *
 			return
 		}
 		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
-		oauthOK := authorizedOAuth(r, cfg, oauthStore)
+		principal, oauthOK := oauthExecutionPrincipal(r, cfg, oauthStore)
 		if authRequired && !staticOK && !oauthOK {
 			setBearerChallenge(w, cfg, r, strings.TrimSpace(r.Header.Get("Authorization")) != "")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		if staticOK {
+			principal = "http:static"
+		} else if !oauthOK {
+			principal = "http:local"
+		}
+		sourceCtx := activity.WithSource(r.Context(), activity.Source{Principal: principal, Namespace: "mcp:http"})
+		ctx, cancel := context.WithTimeout(sourceCtx, 8*time.Second)
 		defer cancel()
 		result, err := server.AgentDockContext(ctx)
 		if err != nil {
@@ -48,7 +55,7 @@ func mcpEndpointHandler(server *mcp.Server, cfg config.Config, oauthStore *auth.
 	transport := server.HTTPHandler()
 	return func(w http.ResponseWriter, r *http.Request) {
 		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
-		oauthOK := authorizedOAuth(r, cfg, oauthStore)
+		principal, oauthOK := oauthExecutionPrincipal(r, cfg, oauthStore)
 		if authRequired && !staticOK && !oauthOK {
 			setBearerChallenge(w, cfg, r, strings.TrimSpace(r.Header.Get("Authorization")) != "")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -57,7 +64,13 @@ func mcpEndpointHandler(server *mcp.Server, cfg config.Config, oauthStore *auth.
 		if r.Method == http.MethodPost && !prepareMCPRequestBody(w, r) {
 			return
 		}
-		ctx := requestmeta.WithBaseURL(r.Context(), requestPublicBaseURL(cfg, r))
+		if staticOK {
+			principal = "http:static"
+		} else if !oauthOK {
+			principal = "http:local"
+		}
+		sourceCtx := activity.WithSource(r.Context(), activity.Source{Principal: principal, Namespace: "mcp:http"})
+		ctx := requestmeta.WithBaseURL(sourceCtx, requestPublicBaseURL(cfg, r))
 		transport.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

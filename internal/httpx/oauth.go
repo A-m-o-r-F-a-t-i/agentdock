@@ -516,6 +516,23 @@ func authorizedOAuth(r *http.Request, cfg config.Config, store *auth.OAuthStore)
 	_, err := newOAuthProtocolServer(cfg, store).ValidationBearerToken(r.WithContext(ctx))
 	return err == nil
 }
+
+// oauthExecutionPrincipal is stable across access-token refreshes and scoped
+// to the authenticated OAuth client/user rather than an untrusted chat ID.
+func oauthExecutionPrincipal(r *http.Request, cfg config.Config, store *auth.OAuthStore) (string, bool) {
+	if !cfg.OAuthEnabled || store == nil {
+		return "", false
+	}
+	issuer := issuerFor(cfg, r)
+	ctx := auth.WithOAuthRequest(r.Context(), issuer, issuer+"/mcp", "")
+	token, err := newOAuthProtocolServer(cfg, store).ValidationBearerToken(r.WithContext(ctx))
+	if err != nil || token == nil {
+		return "", false
+	}
+	raw, _ := json.Marshal([]string{"oauth", token.GetClientID(), token.GetUserID()})
+	return string(raw), true
+}
+
 func newOAuthProtocolServer(cfg config.Config, store *auth.OAuthStore) *oauthserver.Server {
 	accessTokenTTLSeconds := cfg.OAuthAccessTokenTTLSeconds
 	if cfg.OAuthAccessTokenNeverExpires {

@@ -4,13 +4,14 @@ namespace AgentDock.ControlPanel;
 
 public partial class App
 {
-    private ActivityWindow? _activityWindow;
+    private ExecutionWindow? _activityWindow;
 
     // The dedicated monitor entrypoint does not acquire the tray singleton, start services,
     // run upgrade handoffs, or modify runtime settings. It can observe an isolated runtime.
     private bool TryStartActivityWindow(string[] arguments)
     {
-        if (!arguments.Contains("--activity", StringComparer.OrdinalIgnoreCase)) return false;
+        var legacy = arguments.Contains("--legacy-activity", StringComparer.OrdinalIgnoreCase);
+        if (!arguments.Contains("--activity", StringComparer.OrdinalIgnoreCase) && !legacy) return false;
         var index = Array.FindIndex(arguments, argument => string.Equals(argument, "--runtime-root", StringComparison.OrdinalIgnoreCase));
         if (index >= 0 && (index + 1 == arguments.Length || arguments[index + 1].StartsWith("--", StringComparison.Ordinal)))
         {
@@ -20,7 +21,8 @@ public partial class App
         }
         Runtime = new RuntimeService(index >= 0 ? arguments[index + 1] : null);
         ShutdownMode = ShutdownMode.OnMainWindowClose;
-        _activityWindow = new ActivityWindow(Runtime);
+        if (legacy) { MainWindow = new ActivityWindow(Runtime); MainWindow.Show(); return true; }
+        _activityWindow = new ExecutionWindow(Runtime);
         MainWindow = _activityWindow;
         _activityWindow.Closed += (_, _) => _activityWindow = null;
         _activityWindow.Show();
@@ -33,7 +35,7 @@ public partial class App
         {
             if (_activityWindow is null)
             {
-                _activityWindow = new ActivityWindow(Runtime);
+                _activityWindow = new ExecutionWindow(Runtime);
                 _activityWindow.Closed += (_, _) => _activityWindow = null;
             }
             if (!_activityWindow.IsVisible) _activityWindow.Show();

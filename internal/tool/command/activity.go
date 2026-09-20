@@ -2,6 +2,7 @@ package command
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -15,7 +16,17 @@ func (svc *Service) SetActivityStore(store *activity.Store) { svc.activity = sto
 func (svc *Service) SessionBinding(id string) (activity.Binding, bool) {
 	s, ok := svc.sessions.Get(id)
 	if !ok {
-		return activity.Binding{}, false
+		svc.activityMu.Lock()
+		for _, candidate := range svc.activeCommands {
+			if candidate.ID == id {
+				s, ok = candidate, true
+				break
+			}
+		}
+		svc.activityMu.Unlock()
+		if !ok {
+			return activity.Binding{}, false
+		}
 	}
 	return s.Summary().Binding, true
 }
@@ -74,8 +85,12 @@ func (svc *Service) trackCommandActivity(s *session.Session, request ExecRequest
 	started := base
 	started.Kind, started.Status = "command.started", "running"
 	appendEvent(started)
+	svc.activityMu.Lock()
+	svc.activeCommands[s.ID] = s
+	svc.activityMu.Unlock()
 	svc.activityWG.Add(1)
 	go func() {
+		defer func() { svc.activityMu.Lock(); delete(svc.activeCommands, s.ID); svc.activityMu.Unlock() }()
 		defer svc.activityWG.Done()
 		defer close(done)
 		cursor := session.OutputCursor{}
@@ -152,6 +167,12 @@ func (svc *Service) WaitActivity(ctx context.Context) error {
 }
 
 func addBindingResult(result Result, binding activity.Binding) {
+	if binding.ConversationID != "" {
+		result["conversation_id"] = binding.ConversationID
+	}
+	if binding.CallID != "" {
+		result["call_id"] = binding.CallID
+	}
 	if binding.TaskID != "" {
 		result["task_id"] = binding.TaskID
 	}
@@ -163,5 +184,67 @@ func addBindingResult(result Result, binding activity.Binding) {
 	}
 	if binding.WorkspaceID != "" {
 		result["workspace_id"] = binding.WorkspaceID
+	}
+}
+
+// TaskActivityRunning includes synchronous commands that have not yet returned
+// a public session. It is used by the server-side task deletion guard.
+func (svc *Service) TaskActivityRunning(taskID string) bool {
+	svc.activityMu.Lock()
+	defer svc.activityMu.Unlock()
+	for _, command := range svc.activeCommands {
+		if command.Summary().Binding.TaskID != taskID {
+			continue
+		}
+		select {
+		case <-command.Done:
+		default:
+			return true
+		}
+	}
+	return false
+}
+func (svc *Service) CallActivityRunning(callID string) bool {
+	svc.activityMu.Lock()
+	defer svc.activityMu.Unlock()
+	for _, command := range svc.activeCommands {
+		if command.Summary().Binding.CallID != callID {
+			continue
+		}
+		select {
+		case <-command.Done:
+		default:
+			return true
+		}
+	}
+	return false
+}
+func (svc *Service) StopActivityCall(ctx context.Context, callID string) (bool, error) {
+	svc.activityMu.Lock()
+	var target *session.Session
+	for _, command := range svc.activeCommands {
+		if command.Summary().Binding.CallID == callID {
+			target = command
+			break
+		}
+	}
+	svc.activityMu.Unlock()
+	if target == nil {
+		return false, errors.New("the command is no longer running in this runtime")
+	}
+	select {
+	case <-target.Done:
+		return true, nil
+	default:
+	}
+	target.Kill()
+	target.Cancel()
+	select {
+	case <-target.Done:
+		return true, nil
+	case <-ctx.Done():
+		return false, ctx.Err()
+	case <-time.After(3 * time.Second):
+		return false, nil
 	}
 }

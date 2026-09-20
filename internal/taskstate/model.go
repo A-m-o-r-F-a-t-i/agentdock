@@ -73,6 +73,10 @@ type Event struct {
 }
 
 type Task struct {
+	Pinned                bool                   `json:"pinned,omitempty"`
+	Tags                  []string               `json:"tags,omitempty"`
+	TrashedAt             *time.Time             `json:"trashed_at,omitempty"`
+	PurgeAfter            *time.Time             `json:"purge_after,omitempty"`
 	WorkspaceID           string                 `json:"workspace_id,omitempty"`
 	ActiveThreadID        string                 `json:"active_thread_id,omitempty"`
 	ActiveThread          *TaskThread            `json:"active_thread,omitempty"`

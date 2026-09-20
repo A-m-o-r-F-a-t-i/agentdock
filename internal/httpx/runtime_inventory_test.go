@@ -10,13 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/auth"
 )
 
 func TestRuntimeInventorySummaryAndSkillToggleHTTPBody(t *testing.T) {
 	cfg := testConfig(t)
-	runtime, err := app.NewRuntime(cfg)
+	runtime, err := newHTTPUnrestrictedRuntime(t, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,6 +33,8 @@ func TestRuntimeInventorySummaryAndSkillToggleHTTPBody(t *testing.T) {
 	for _, action := range []string{"disable", "enable"} {
 		request := httptest.NewRequest(http.MethodPost, "/internal/runtime/skills", strings.NewReader(`{"action":"`+action+`","skill":"inventory-skill"}`))
 		response := httptest.NewRecorder()
+		request.RemoteAddr = "127.0.0.1:12000"
+		request.Host = "127.0.0.1"
 		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
 			t.Fatalf("HTTP skill %s lost its body: %d %s", action, response.Code, response.Body.String())
@@ -68,7 +69,7 @@ func TestRuntimeInventorySummaryAndSkillToggleHTTPBody(t *testing.T) {
 
 func TestRuntimePluginToggleHTTPBody(t *testing.T) {
 	cfg := testConfig(t)
-	runtime, err := app.NewRuntime(cfg)
+	runtime, err := newHTTPUnrestrictedRuntime(t, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +87,8 @@ func TestRuntimePluginToggleHTTPBody(t *testing.T) {
 	for _, action := range []string{"heavy_enable", "heavy_disable", "disable", "enable"} {
 		request := httptest.NewRequest(http.MethodPost, "/internal/runtime/plugins", strings.NewReader(`{"action":"`+action+`","name":"inventory-plugin"}`))
 		response := httptest.NewRecorder()
+		request.RemoteAddr = "127.0.0.1:12000"
+		request.Host = "127.0.0.1"
 		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
 			t.Fatalf("HTTP plugin %s lost its body: %d %s", action, response.Code, response.Body.String())

@@ -10,13 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/auth"
 )
 
 func TestRuntimeAPISkillFilesStayInsideActivePackage(t *testing.T) {
 	cfg := testConfig(t)
-	runtime, err := app.NewRuntime(cfg)
+	runtime, err := newHTTPUnrestrictedRuntime(t, cfg)
 	if err != nil {
 		t.Fatalf("new runtime: %v", err)
 	}

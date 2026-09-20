@@ -109,6 +109,24 @@ function Remove-RegistryValueIfPresent {
     }
 }
 
+function Remove-OwnedStartupValue {
+    param([string] $Name)
+    $entry = Get-ItemProperty -LiteralPath $runKey -Name $Name -ErrorAction SilentlyContinue
+    if ($null -eq $entry) { return }
+    $command = [string]$entry.$Name
+    $owned = $false
+    foreach ($target in @($agentDockBinary, $trayBinary, $cloudflaredBinary,
+        (Join-Path $runtimeDir 'start-agentdock.ps1'), (Join-Path $runtimeDir 'start-cloudflared.ps1'))) {
+        $pattern = '(?i)(?:^|["''\s])' + [regex]::Escape([IO.Path]::GetFullPath($target)) + '(?=$|["''\s])'
+        if ($command -match $pattern) { $owned = $true; break }
+    }
+    if (-not $owned) {
+        Write-Warning "Preserving startup value '$Name': its executable or launcher belongs to another installation."
+        return
+    }
+    Remove-RegistryValueIfPresent -Path $runKey -Name $Name
+}
+
 function Remove-AgentDockScheduledTask {
     param(
         [string] $AdminLauncherPath,
@@ -167,6 +185,20 @@ $managedTaskName = ''
 if (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf) {
     try {
         $runtimeManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw | ConvertFrom-Json
+        # Setup does not repeat custom startup names on uninstall. Resolve the
+        # managed names before the engine removes runtime.json, and preserve any
+        # explicitly supplied one-off override for legacy callers.
+        foreach ($binding in @(
+            @{ Parameter = 'StartupValueName'; Field = 'startup_value_name' },
+            @{ Parameter = 'TrayStartupValueName'; Field = 'tray_startup_value_name' },
+            @{ Parameter = 'CloudflaredStartupValueName'; Field = 'cloudflared_startup_value_name' }
+        )) {
+            $property = $runtimeManifest.PSObject.Properties[$binding.Field]
+            if (-not $PSBoundParameters.ContainsKey($binding.Parameter) -and $null -ne $property -and
+                -not [string]::IsNullOrWhiteSpace([string]$property.Value)) {
+                Set-Variable -Name $binding.Parameter -Value ([string]$property.Value).Trim() -Scope Script
+            }
+        }
         if ([string]::Equals([string] $runtimeManifest.privilege_mode, 'elevated', [StringComparison]::OrdinalIgnoreCase) -and
             -not [string]::IsNullOrWhiteSpace([string] $runtimeManifest.agentdock_task_name)) {
             $managedTaskName = ([string] $runtimeManifest.agentdock_task_name).Trim()
@@ -289,9 +321,9 @@ Stop-ProcessByPath -ProcessName 'agentdock-tray' -BinaryPath $trayBinary
 Stop-ProcessByPath -ProcessName 'cloudflared' -BinaryPath $cloudflaredBinary
 Stop-ProcessByPath -ProcessName 'agentdock' -BinaryPath $agentDockBinary
 
-Remove-RegistryValueIfPresent -Path $runKey -Name $StartupValueName
-Remove-RegistryValueIfPresent -Path $runKey -Name $CloudflaredStartupValueName
-Remove-RegistryValueIfPresent -Path $runKey -Name $TrayStartupValueName
+Remove-OwnedStartupValue -Name $StartupValueName
+Remove-OwnedStartupValue -Name $CloudflaredStartupValueName
+Remove-OwnedStartupValue -Name $TrayStartupValueName
 if (-not $KeepInstallDir) {
     Remove-DirectoryWithRetry -Path $InstallDir
 }

@@ -16,6 +16,21 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 	var result Result
 	var err error
 	switch {
+	case request.Action == "set_current":
+		task, getErr := s.tasks.Get(request.TaskID)
+		if getErr != nil {
+			return nil, taskToolError(getErr)
+		}
+		if task.TrashedAt != nil || string(task.Status) == "completed" || string(task.Status) == "cancelled" {
+			return nil, toolErrorDetails("TASK_NOT_ACTIVE", "Only an active or blocked task can be selected for continuation.", "validation", nil)
+		}
+		thread, getErr := s.tasks.GetThread(request.TaskID, request.ThreadID)
+		if getErr != nil {
+			return nil, taskToolError(getErr)
+		}
+		result = Result{"action": request.Action, "task_id": task.ID, "thread_id": thread.ID, "task_summary": compactTaskSummary(task)}
+	case request.Action == "unbind":
+		result = Result{"action": request.Action}
 	case strings.HasPrefix(request.Action, "thread_"):
 		result, err = s.manageThread(request)
 	case request.Action == "cancel" || request.Action == "archive" || request.Action == "unarchive":
@@ -55,7 +70,7 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		}
 		result["thread"] = thread
 	}
-	s.recordTaskActivity(request, result)
+	s.recordTaskActivity(ctx, request, result)
 	return result, nil
 }
 
@@ -143,7 +158,7 @@ func (s *Service) ResolveBinding(binding activity.Binding, persist bool) (activi
 	return binding, err
 }
 
-func (s *Service) recordTaskActivity(request ManageRequest, result Result) {
+func (s *Service) recordTaskActivity(parent context.Context, request ManageRequest, result Result) {
 	if s.activity == nil {
 		return
 	}
@@ -158,7 +173,16 @@ func (s *Service) recordTaskActivity(request ManageRequest, result Result) {
 	if id == "" {
 		id = request.TaskID
 	}
-	binding := activity.Binding{TaskID: id, ThreadID: request.ThreadID, WorkspaceID: request.WorkspaceID}
+	binding := activity.FromContext(parent)
+	// Milestones retain their causal Call without changing that Call's scope.
+	binding.ParentCallID, binding.CallID = binding.CallID, ""
+	binding.TaskID = id
+	if request.ThreadID != "" {
+		binding.ThreadID = request.ThreadID
+	}
+	if request.WorkspaceID != "" {
+		binding.WorkspaceID = request.WorkspaceID
+	}
 	var thread *taskstate.TaskThread
 	switch value := result["thread"].(type) {
 	case taskstate.TaskThread:

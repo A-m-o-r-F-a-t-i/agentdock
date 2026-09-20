@@ -132,6 +132,24 @@ func ResolveTarget(record Record, request TargetRequest) (ResolvedTarget, error)
 	return result, nil
 }
 
+// ResolveCommandPreview resolves an execution target without creating auxiliary
+// directories. The dispatcher calls ResolveCommandDirectory only after approval.
+func ResolveCommandPreview(record Record, request TargetRequest) (ResolvedTarget, error) {
+	if request.Path == "" && (request.Kind == "" || request.Kind == "source") {
+		request.Path = record.DefaultWorkdir
+	}
+	target, err := ResolveTarget(record, request)
+	if err != nil {
+		return target, err
+	}
+	if record.Runtime != "wsl" && target.Kind != "artifact" && target.Kind != "scratch" && target.Kind != "cache" {
+		if err = directoryExists(target.ResolvedPath); err != nil {
+			return target, err
+		}
+	}
+	return target, nil
+}
+
 func ResolveCommandDirectory(record Record, request TargetRequest) (ResolvedTarget, error) {
 	if request.Path == "" && (request.Kind == "" || request.Kind == "source") {
 		request.Path = record.DefaultWorkdir

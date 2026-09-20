@@ -33,6 +33,7 @@ $results = [Collections.Generic.List[object]]::new()
 $faults = [Collections.Generic.List[object]]::new()
 $failure = $null
 $preservedData = @{}
+$legacyActivity = ''
 $initialEnvironment = @{}
 Get-ChildItem Env:AGENTDOCK_* | ForEach-Object { $initialEnvironment[$_.Name] = $_.Value }
 $initialPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -122,13 +123,16 @@ function Assert-UserFixture {
     foreach ($name in $preservedData.Keys) {
         if ([IO.File]::ReadAllText((Join-Path $testHome $name)) -ne $preservedData[$name]) { throw "Upgrade changed user fixture: $name" }
     }
+    $journal = Join-Path $testHome 'tasks\activity\00000000000000000001.jsonl'
+    if ($legacyActivity -and (-not (Test-Path $journal) -or -not [IO.File]::ReadAllText($journal).StartsWith($legacyActivity, [StringComparison]::Ordinal))) { throw 'Upgrade rewrote or removed the original legacy activity records.' }
+    if ([IO.File]::ReadAllText((Join-Path $workspace 'project-sentinel.txt')) -ne 'preserve-project-source') { throw 'Install, rollback or uninstall changed a project file.' }
     $registry = Get-Content (Join-Path $testHome 'workspaces.json') -Raw | ConvertFrom-Json
     $registered = @($registry.workspaces | Where-Object workspace_id -EQ 'wsp_1111111111111111')[0]
     if ($registered.root -ne $workspace -or $registered.rules_revision -ne 9 -or $registered.artifact_root -ne (Join-Path $root 'custom-artifacts')) { throw 'Upgrade changed the registered workspace policy.' }
 }
 
 function Get-ProductionStartupFingerprint {
-    $snapshot = @{}
+    $snapshot = [ordered]@{}
     $values = Get-ItemProperty $runKey -ErrorAction SilentlyContinue
     if ($null -ne $values) {
         foreach ($name in @('AgentDock','AgentDockTray','AgentDockTunnel','AgentDockCloudflared')) {
@@ -138,6 +142,7 @@ function Get-ProductionStartupFingerprint {
     return ($snapshot | ConvertTo-Json -Compress)
 }
 $productionStartupBefore = Get-ProductionStartupFingerprint
+[IO.File]::WriteAllText((Join-Path $root 'production-startup-before.json'),$productionStartupBefore)
 
 try {
     foreach ($key in $initialEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key, $null, 'Process') }
@@ -152,6 +157,7 @@ try {
         }
     }
     [IO.File]::WriteAllText((Join-Path $testHome 'test-preserve.txt'), 'preserve')
+    [IO.File]::WriteAllText((Join-Path $workspace 'project-sentinel.txt'), 'preserve-project-source')
     Copy-Item (Join-Path $repository 'packaging\windows') (Join-Path $copyRoot 'packaging\windows') -Recurse
     Copy-Item (Join-Path $repository 'scripts\install') (Join-Path $copyRoot 'scripts\install') -Recurse
     $definition = Join-Path $copyRoot 'packaging\windows\AgentDock.iss'
@@ -203,6 +209,21 @@ try {
     $preservedData['skills\upgrade-fixture\SKILL.md'] = "---`nname: upgrade-fixture`ndescription: Isolated upgrade fixture.`nversion: 1.0.0`n---`n# Preserve this user Skill`n"
     $preservedData['plugins\upgrade-fixture\plugin.json'] = '{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"upgrade-fixture","version":"1.0.0","description":"Isolated user plugin fixture."}'
     $preservedData['mcp\upgrade-fixture.txt'] = 'User MCP companion state must survive install and uninstall.'
+    # A persisted 1.1.2 policy must survive failed trials and uninstall verbatim.
+    # This asserts data preservation only: 1.1.1 has no approval engine.
+    $preservedData['execution\permissions\policy.json'] = (@{
+        schema_version=1; revision=7; global_mode='rules'; scopes=@(); updated_at=$stamp
+        rules=@(@{id='deny_fixture_delete';tool='file_edit';action='delete';effect='deny';reason='Preserve the user file-delete prohibition.'})
+    } | ConvertTo-Json -Depth 8)
+    $legacyRecords = @(
+        @{schema_version=1;seq=1;event_id='evt_legacy_start';created_at=$stamp;task_id='tsk_1111111111111111';thread_id='main';workspace_id='wsp_1111111111111111';kind='command.started';status='running';tool_name='exec_command';session_id='legacy-upgrade-session'},
+        @{schema_version=1;seq=2;event_id='evt_legacy_output';created_at=$stamp;task_id='tsk_1111111111111111';thread_id='main';workspace_id='wsp_1111111111111111';kind='command.output';tool_name='exec_command';session_id='legacy-upgrade-session';output_preview="preserved legacy output`n"},
+        @{schema_version=1;seq=3;event_id='evt_legacy_complete';created_at=$stamp;task_id='tsk_1111111111111111';thread_id='main';workspace_id='wsp_1111111111111111';kind='command.completed';status='success';tool_name='exec_command';session_id='legacy-upgrade-session';exit_code=0}
+    )
+    $legacyActivity = (($legacyRecords | ForEach-Object { $_ | ConvertTo-Json -Depth 8 -Compress }) -join "`n") + "`n"
+    $activityRoot = Join-Path $testHome 'tasks\activity'
+    New-Item -ItemType Directory -Path $activityRoot -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $activityRoot '00000000000000000001.jsonl'), $legacyActivity, [Text.UTF8Encoding]::new($false))
     foreach ($name in $preservedData.Keys) {
         $fixtureFile = Join-Path $testHome $name
         New-Item -ItemType Directory -Path (Split-Path $fixtureFile -Parent) -Force | Out-Null
@@ -236,6 +257,7 @@ try {
     }
     $leftovers = @(Get-ScheduledTask | Where-Object { $_.TaskName -like 'AgentDock Setup Native *' -and $_.TaskName -notin $beforeTasks })
     if ($leftovers.Count) { throw 'Temporary native tasks remain after the Inno matrix.' }
+    [IO.File]::WriteAllText((Join-Path $root 'production-startup-after.json'),(Get-ProductionStartupFingerprint))
     if ((Get-ProductionStartupFingerprint) -ne $productionStartupBefore) { throw 'Production startup configuration changed during isolated regression.' }
     if ($productionPointerHash -and (Get-FileHash $productionPointer).Hash -ne $productionPointerHash) { throw 'Production generation pointer changed during isolated regression.' }
 } catch { $failure = $_ }
@@ -255,7 +277,8 @@ finally {
         passed = ($null -eq $failure); version = $ExpectedVersion; runtime_root = $runtimeRoot; port = $port
         app_id = $id; production_state_unchanged = ((Get-ProductionStartupFingerprint) -eq $productionStartupBefore -and (-not $productionPointerHash -or (Get-FileHash $productionPointer).Hash -eq $productionPointerHash)); payload_sha256 = (Get-FileHash $Archive).Hash.ToLowerInvariant()
         baseline_sha256 = (Get-FileHash $BaselineArchive).Hash.ToLowerInvariant(); cases = $results.ToArray()
-        preserved_user_fixtures = @('legacy Task','user Skill','user Plugin','MCP companion state','Workspace policy')
+        preserved_user_fixtures = @('legacy Task','legacy Activity','permission policy bytes','project source file','user Skill','user Plugin','MCP companion state','Workspace policy')
+        legacy_permission_enforcement = 'not asserted: 1.1.1 has no 1.1.2 approval engine'
         observer_self_test = 'passed'; error = $(if ($null -eq $failure) { '' } else { $failure.Exception.Message })
     } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $root 'result.json') -Encoding utf8NoBOM
 }

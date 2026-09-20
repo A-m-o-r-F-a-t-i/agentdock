@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/evolution"
 	toolacp "github.com/uvwt/agentdock/internal/tool/acp"
@@ -118,6 +119,19 @@ func assertSchemaMatchesRequestType(t *testing.T, path string, schema map[string
 	}
 	properties, _ := schema["properties"].(map[string]any)
 	fields := jsonFields(requestType)
+	// Existing optional execution overrides are interpreted at the ingress.
+	// Only explicitly published overrides belong in the input contract.
+	if !strings.Contains(path, ".") {
+		common := map[string]any{}
+		toolcontract.ActivityProperties(common)
+		bindingFields := jsonFields(reflect.TypeOf(activity.Binding{}))
+		for name := range common {
+			if _, exists := fields[name]; !exists && properties[name] != nil {
+				fields[name] = bindingFields[name]
+			}
+		}
+
+	}
 
 	for name, property := range properties {
 		fieldType, ok := fields[name]

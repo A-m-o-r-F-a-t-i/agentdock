@@ -13,6 +13,7 @@ import (
 
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/app"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
@@ -36,6 +37,7 @@ func NewServer(runtime *app.Runtime, cfg config.Config) *Server {
 		serverOptions,
 	)
 	if runtime != nil {
+		server.sdk.AddReceivingMiddleware(server.observeDiscovery)
 		server.registerAppResources()
 		for _, definition := range runtime.ToolDefinitions() {
 			server.registerTool(definition)
@@ -144,10 +146,19 @@ func (s *Server) registerTool(def ToolDefinition) {
 
 func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	started := time.Now()
+	if request != nil && request.Params != nil {
+		var err error
+		ctx, err = requestConversationContext(ctx, request.Params.Meta)
+		if err != nil {
+			_, _ = s.runtime.RejectToolCall(ctx, name, err.Error())
+			return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInvalidParams, Message: err.Error()}
+		}
+	}
 	arguments := map[string]any{}
 	if request != nil && request.Params != nil && len(request.Params.Arguments) > 0 && string(request.Params.Arguments) != "null" {
 		if err := json.Unmarshal(request.Params.Arguments, &arguments); err != nil {
 			slog.Warn("tool params invalid", "tool", name, "duration_ms", time.Since(started).Milliseconds())
+			_, _ = s.runtime.RejectToolCall(ctx, name, "tool arguments must be a JSON object")
 			return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInvalidParams, Message: "tool arguments must be a JSON object"}
 		}
 	}
@@ -173,6 +184,21 @@ func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.Call
 		}
 	}
 	return &response, nil
+}
+
+func requestConversationContext(ctx context.Context, meta map[string]any) (context.Context, error) {
+	raw, exists := meta["openai/session"]
+	if !exists {
+		return ctx, nil
+	}
+	hostID, ok := raw.(string)
+	if !ok || hostID == "" || len(hostID) > 1024 {
+		return ctx, errors.New("invalid host conversation metadata")
+	}
+	source := activity.SourceFromContext(ctx)
+	source.Provider = "openai"
+	source.HostConversationID = hostID
+	return activity.WithSource(ctx, source), nil
 }
 
 func toolMetadata(def ToolDefinition, mcpAppsEnabled bool) map[string]any {

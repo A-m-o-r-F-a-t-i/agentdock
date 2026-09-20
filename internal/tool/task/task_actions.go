@@ -9,7 +9,7 @@ import (
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
 
-var taskActions = []string{"create", "list", "get", "checkpoint", "block", "resume", "final_review", "complete", "cancel", "archive", "unarchive", "thread_create", "thread_list", "thread_get", "thread_switch", "thread_checkpoint", "thread_block", "thread_resume", "thread_fork", "thread_close"}
+var taskActions = []string{"create", "list", "get", "set_current", "unbind", "checkpoint", "block", "resume", "final_review", "complete", "cancel", "archive", "unarchive", "thread_create", "thread_list", "thread_get", "thread_switch", "thread_checkpoint", "thread_block", "thread_resume", "thread_fork", "thread_close"}
 
 var workflowTemplateActions = []string{"publish", "retire", "list", "get", "get_many", "match", "vector_index"}
 
@@ -251,7 +251,12 @@ func (s *Service) manageLegacy(ctx context.Context, request ManageRequest) (Resu
 	case "block":
 		task, err = s.tasks.Block(input.TaskID, input.Summary)
 	case "resume":
-		task, err = s.tasks.Resume(input.TaskID, input.Summary)
+		task, err = s.tasks.Get(input.TaskID)
+		// Re-entering an active task establishes continuation without replaying
+		// lifecycle transitions. Blocked tasks still use the guarded transition.
+		if err == nil && task.Status != taskstate.StatusActive {
+			task, err = s.tasks.Resume(input.TaskID, input.Summary)
+		}
 		if err == nil {
 			task, evolutionWarning = s.refreshGuidanceBestEffort(ctx, task)
 		}

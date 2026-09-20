@@ -97,6 +97,17 @@ func (h *activityHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeRuntimeAPIError(w, http.StatusServiceUnavailable, "ACTIVITY_UNAVAILABLE", "activity service is unavailable")
 		return
 	}
+	principal, oauthOK := oauthExecutionPrincipal(r, h.config, h.oauth)
+	if h.config.AuthToken != "" && bearer.Authorized(r) {
+		principal = "http:static"
+	} else if !oauthOK {
+		principal = "http:local"
+	}
+	r = r.WithContext(activity.WithLocalManagement(activity.WithSource(r.Context(), activity.Source{Principal: principal, Provider: "local-ui", Namespace: "http:control"})))
+	if isExecutionRoute(r.URL.Path) {
+		h.serveExecution(w, r)
+		return
+	}
 	path := r.URL.Path
 	if path == "/internal/runtime/activity/control" {
 		if r.Method != http.MethodPost {
@@ -162,6 +173,14 @@ func (h *activityHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	query := activity.Query{TaskID: r.URL.Query().Get("task_id"), ThreadID: r.URL.Query().Get("thread_id")}
+	if raw := r.URL.Query().Get("milestones"); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeRuntimeAPIError(w, 400, "INVALID_ARGUMENT", "milestones must be boolean")
+			return
+		}
+		query.MilestonesOnly = value
+	}
 	streaming := path == "/internal/runtime/activity/stream"
 	parts := strings.Split(strings.TrimPrefix(path, "/internal/runtime/"), "/")
 	switch {

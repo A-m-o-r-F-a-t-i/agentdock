@@ -445,7 +445,7 @@ func TestMCPAppsBindResourcesDirectlyToBusinessTools(t *testing.T) {
 	errorResult, err := harness.session.CallTool(t.Context(), &mcpsdk.CallToolParams{
 		Name: "file_edit",
 		Arguments: map[string]any{
-			"action": "replace", "path": "note.txt", "old": "missing", "new": "beta", "expected_matches": 1,
+			"action": "replace", "path": "note.txt", "old": "missing", "new": "beta", "expected_matches": 1, "dry_run": true,
 		},
 	})
 	if err != nil || !errorResult.IsError {

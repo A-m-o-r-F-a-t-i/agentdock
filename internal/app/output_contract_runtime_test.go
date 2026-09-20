@@ -180,7 +180,7 @@ func newMemoryTestRuntime(t *testing.T, store map[string]string) (*Runtime, func
 		server.Close()
 		t.Fatal(err)
 	}
-	runtime, err := NewRuntime(cfg)
+	runtime, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		server.Close()
 		t.Fatal(err)
@@ -212,7 +212,7 @@ func TestRuntimeOutputContractACPInfoNormalizesOmittedInitializeFields(t *testin
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := NewRuntime(cfg)
+	runtime, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestRuntimeOutputContractACPOptionalFields(t *testing.T) {
 	if err := cfg.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := NewRuntime(cfg)
+	runtime, err := newUnrestrictedTestRuntime(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -371,10 +371,10 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 		"Stop-ProcessByPath -ProcessName 'agentdock-core'",
 		"Stop-ProcessByPath -ProcessName 'agentdock-arbiter'",
 		"Stop-ProcessByPath -ProcessName 'cloudflared'",
-		"Remove-RegistryValueIfPresent -Path $runKey -Name $TrayStartupValueName",
+		"Remove-OwnedStartupValue -Name $TrayStartupValueName",
 		"'runtime.json'",
 		"'desktop-version.txt'",
-		"Remove-RegistryValueIfPresent -Path $runKey -Name $CloudflaredStartupValueName",
+		"Remove-OwnedStartupValue -Name $CloudflaredStartupValueName",
 		"'start-cloudflared.ps1'",
 		"'named-server-url.txt'",
 		"'control-panel-settings.json'",
@@ -407,7 +407,7 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 	}
 	engineRunCall := strings.Index(script, "$engineUninstallJson =")
 	taskCall := strings.Index(script, "Remove-AgentDockScheduledTask -AdminLauncherPath $trayBinary")
-	registryCall := strings.LastIndex(script, "Remove-RegistryValueIfPresent -Path $runKey")
+	registryCall := strings.LastIndex(script, "Remove-OwnedStartupValue -Name")
 	commitCall := strings.Index(script, "install', 'commit'")
 	fileCall := strings.Index(script, "Remove-DirectoryWithRetry -Path $InstallDir")
 	purgeCall := strings.Index(script, "Remove-DirectoryWithRetry -Path (Join-Path $userHome '.agentdock')")
@@ -462,6 +462,39 @@ func TestWindowsUninstallerCleansManagedTunnelState(t *testing.T) {
 	helperRemoval := strings.Index(script, "Remove-Item -LiteralPath $engineCommitBinary -Force -ErrorAction SilentlyContinue")
 	if commitFailure < 0 || helperRemoval < commitFailure {
 		t.Fatal("failed uninstall commit must retain the detached Engine helper for a later retry")
+	}
+}
+func TestWindowsUninstallerPreservesOtherInstallationsStartup(t *testing.T) {
+	data, err := os.ReadFile("../install/uninstall-windows.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"$runtimeManifest.PSObject.Properties[$binding.Field]",
+		"$PSBoundParameters.ContainsKey($binding.Parameter)",
+		"Field = 'startup_value_name'", "Field = 'tray_startup_value_name'",
+		"Field = 'cloudflared_startup_value_name'",
+		"function Remove-OwnedStartupValue", "[IO.Path]::GetFullPath($target)",
+		"if (-not $owned)", "belongs to another installation.",
+		"Remove-OwnedStartupValue -Name $StartupValueName",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("uninstall must retain installation-scoped startup ownership: missing %q", want)
+		}
+	}
+	if strings.Count(script, "Remove-OwnedStartupValue -Name") != 3 {
+		t.Fatal("all three startup identities must use ownership-checked removal")
+	}
+	guard := strings.Index(script, "if (-not $owned)")
+	remove := strings.Index(script, "Remove-RegistryValueIfPresent -Path $runKey -Name $Name")
+	if guard < 0 || remove < guard || !strings.Contains(script[guard:remove], "return") {
+		t.Fatal("a startup value owned by another installation must return before registry removal")
+	}
+	resolve := strings.Index(script, "$runtimeManifest.PSObject.Properties[$binding.Field]")
+	engine := strings.Index(script, "$engineUninstallJson =")
+	if resolve > engine || engine < 0 {
+		t.Fatal("persisted startup identities must be resolved before uninstall mutates runtime.json")
 	}
 }
 func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {

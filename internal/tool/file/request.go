@@ -49,9 +49,9 @@ type SearchRequest struct {
 // EditRequest 统一承载 file_edit 五种 action 的输入，避免为每个 action 再制造一层类型。
 // action 对字段组合的业务约束仍由文件服务在对应主流程中校验。
 type EditRequest struct {
-	activity.Binding
-	TargetKind   string `json:"target_kind,omitempty"`
-	ExternalPath string `json:"external_path,omitempty"`
+	activity.Binding `json:"-"`
+	TargetKind       string `json:"target_kind,omitempty"`
+	ExternalPath     string `json:"external_path,omitempty"`
 	RuntimeOptions
 	Action          string `json:"action"`
 	Path            string `json:"path,omitempty"`
