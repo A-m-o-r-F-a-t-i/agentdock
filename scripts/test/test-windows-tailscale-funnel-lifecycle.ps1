@@ -126,11 +126,15 @@ try {
     $source=[IO.File]::ReadAllText($faultScript)
     $needle='    # Provision is complete here.'
     if(($source.Split(@($needle),[StringSplitOptions]::None)).Count -ne 2){throw 'Unique installer failure-injection point missing.'}
-    [IO.File]::WriteAllText($faultScript,$source.Replace($needle,"    throw 'isolated Funnel install failure before commit'`r`n"+$needle),$utf8)
+    [IO.File]::WriteAllText($faultScript,$source.Replace($needle,"    throw 'isolated Funnel install failure before commit'`r`n"+$needle),[Text.UTF8Encoding]::new($true))
     Invoke-FixtureInstall $faultScript 'funnel-rollback' $true
+    $faultOutput = [IO.File]::ReadAllText((Join-Path $root 'funnel-rollback.log'))
+    if (-not $faultOutput.Contains('isolated Funnel install failure before commit')) {
+        throw ('Failure occurred before the intended rollback injection: ' + $faultOutput.Substring([Math]::Max(0,$faultOutput.Length-5000)))
+    }
     Assert-FunnelPreserved $files
     $transaction=Get-Content (Join-Path $runtimeRoot 'install\transaction.json') -Raw | ConvertFrom-Json
-    if($transaction.state -ne 'rolled_back'){throw 'Failed repair did not roll back.'}
+    if($transaction.state -ne 'rolled_back'){throw ('Failed repair did not roll back: state=' + $transaction.state + '. ' + $faultOutput.Substring([Math]::Max(0,$faultOutput.Length-5000)))}
     $cases.Add('failed repair restores Core and complete Funnel configuration')
     $arguments=@('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$uninstaller,'-InstallDir',(Join-Path $runtimeRoot 'bin'))
     Invoke-TestProcess (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') $arguments 'funnel-uninstall'

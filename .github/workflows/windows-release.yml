@@ -2,7 +2,7 @@ name: Windows Release
 
 on:
   push:
-    branches: [feat/tailscale-funnel]
+    branches: [feat/tailscale-funnel, release/windows-1.1.0]
   workflow_dispatch:
     inputs:
       publish:
@@ -72,6 +72,13 @@ jobs:
             -Archive .\dist\windows-release\release\agentdock_windows_amd64.zip `
             -FakeTailscaleBinary $fake `
             -ReportRoot (Join-Path $env:RUNNER_TEMP 'tailscale-installer-e2e')
+      - name: Activity desktop and native recovery regressions
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\test\test-windows-activity-center.ps1 -TestRoot (Join-Path $env:RUNNER_TEMP 'activity-ui')
+          & .\scripts\test\test-windows-activity-runtime.ps1 `
+            -CoreBinary .\dist\windows-release\payload-amd64\agentdock.exe `
+            -TestRoot (Join-Path $env:RUNNER_TEMP 'activity-native')
       - name: Cloudflare Quick regression
         shell: powershell
         run: |
@@ -146,6 +153,10 @@ jobs:
           path: |
             dist/windows-release/build-report.json
             ${{ runner.temp }}/tailscale-installer-e2e/result.json
+            ${{ runner.temp }}/tailscale-installer-e2e/funnel-rollback.log
+            ${{ runner.temp }}/activity-ui/result.json
+            ${{ runner.temp }}/activity-ui/render/*.png
+            ${{ runner.temp }}/activity-native/result.json
           if-no-files-found: ignore
 
   publish:
@@ -178,6 +189,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'The activity feature is not ready for integration.' }
           git merge-base --is-ancestor FETCH_HEAD HEAD
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path ./internal/activity -PathType Container)) { throw 'Activity/TaskThread has not been integrated into this release commit.' }
+          git fetch origin feat/tailscale-funnel
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot verify Tailscale integration.' }
+          git merge-base --is-ancestor FETCH_HEAD HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'Tailscale has not been integrated into this release commit.' }
           $directory = Join-Path $env:GITHUB_WORKSPACE 'dist\windows-release\release'
           $expected = @('AgentDockSetup-amd64.exe','AgentDockSetup-arm64.exe','agentdock_windows_amd64.zip','agentdock_windows_arm64.zip','install.ps1')
           foreach ($name in $expected) {

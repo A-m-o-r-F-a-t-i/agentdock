@@ -32,6 +32,7 @@ $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $results = [Collections.Generic.List[object]]::new()
 $faults = [Collections.Generic.List[object]]::new()
 $failure = $null
+$preservedData = @{}
 $initialEnvironment = @{}
 Get-ChildItem Env:AGENTDOCK_* | ForEach-Object { $initialEnvironment[$_.Name] = $_.Value }
 $initialPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -114,6 +115,16 @@ function Assert-Preservation([string] $State, [string] $Version, [hashtable] $Ha
         if ((Get-FileHash (Join-Path $runtimeRoot $name)).Hash -ne $Hashes[$name]) { throw "Protected credential changed: $name" }
     }
     if ([IO.File]::ReadAllText((Join-Path $testHome 'test-preserve.txt')) -ne 'preserve') { throw 'User data marker changed.' }
+    Assert-UserFixture
+}
+
+function Assert-UserFixture {
+    foreach ($name in $preservedData.Keys) {
+        if ([IO.File]::ReadAllText((Join-Path $testHome $name)) -ne $preservedData[$name]) { throw "Upgrade changed user fixture: $name" }
+    }
+    $registry = Get-Content (Join-Path $testHome 'workspaces.json') -Raw | ConvertFrom-Json
+    $registered = @($registry.workspaces | Where-Object workspace_id -EQ 'wsp_1111111111111111')[0]
+    if ($registered.root -ne $workspace -or $registered.rules_revision -ne 9 -or $registered.artifact_root -ne (Join-Path $root 'custom-artifacts')) { throw 'Upgrade changed the registered workspace policy.' }
 }
 
 function Get-ProductionStartupFingerprint {
@@ -187,6 +198,17 @@ try {
     $baselineArgs = @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$BaselineInstaller,'-Version','latest','-OfflineArchive',$BaselineArchive,'-OfflineChecksumFile',($BaselineArchive+'.sha256'),'-OfflineCloudflaredBinary',$CloudflaredBinary,'-InstallDir',(Join-Path $runtimeRoot 'bin'),'-InstallChannel','script','-RegisterStartup','-CorePrivilegeMode','standard','-TunnelMode','none','-Port',"$port",'-StartupValueName',$names[0],'-TrayStartupValueName',$names[1],'-CloudflaredStartupValueName',$names[2])
     Invoke-IsolatedProcess (Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe') $baselineArgs 'baseline'
     $oldVersion = (Invoke-RestMethod "http://127.0.0.1:$port/healthz" -TimeoutSec 5).version
+    $stamp = [DateTime]::UtcNow.ToString('o')
+    $preservedData['tasks\tsk_1111111111111111.json'] = (@{schema_version=1;id='tsk_1111111111111111';title='Legacy upgrade fixture';goal='Preserve user task';status='active';phase='execute';conditions=@(@{id='cond_01';text='preserved';created_at=$stamp});steps=@(@{id='verify';title='Verify';status='pending';phase='execute';updated_at=$stamp});events=@();created_at=$stamp;updated_at=$stamp} | ConvertTo-Json -Depth 8)
+    $preservedData['skills\upgrade-fixture\SKILL.md'] = "---`nname: upgrade-fixture`ndescription: Isolated upgrade fixture.`nversion: 1.0.0`n---`n# Preserve this user Skill`n"
+    $preservedData['plugins\upgrade-fixture\plugin.json'] = '{"$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json","name":"upgrade-fixture","version":"1.0.0","description":"Isolated user plugin fixture."}'
+    $preservedData['mcp\upgrade-fixture.txt'] = 'User MCP companion state must survive install and uninstall.'
+    foreach ($name in $preservedData.Keys) {
+        $fixtureFile = Join-Path $testHome $name
+        New-Item -ItemType Directory -Path (Split-Path $fixtureFile -Parent) -Force | Out-Null
+        [IO.File]::WriteAllText($fixtureFile,$preservedData[$name],[Text.UTF8Encoding]::new($false))
+    }
+    @{schema_version=1;default_workspace_id='wsp_1111111111111111';workspaces=@(@{workspace_id='wsp_1111111111111111';name='Upgrade fixture';kind='directory';runtime='windows';root=$workspace;default_workdir='.';artifact_root=(Join-Path $root 'custom-artifacts');scratch_root=(Join-Path $root 'custom-scratch');cache_root=(Join-Path $root 'custom-cache');rules_revision=9;created_at=$stamp;updated_at=$stamp})} | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $testHome 'workspaces.json') -Encoding utf8NoBOM
     $hashes = @{}
     Get-ChildItem $runtimeRoot -Filter '*.dpapi' -File | ForEach-Object { $hashes[$_.Name] = (Get-FileHash $_.FullName).Hash }
     if ($hashes.Count -eq 0) { throw 'Baseline has no protected credentials.' }
@@ -206,6 +228,7 @@ try {
     Assert-Preservation 'committed' $ExpectedVersion $hashes
     Invoke-IsolatedProcess (Join-Path $runtimeRoot 'unins000.exe') @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/LOG=$(Join-Path $root 'uninstall.inno.log')") 'inno-uninstall' 0 $true
     if ([IO.File]::ReadAllText((Join-Path $testHome 'test-preserve.txt')) -ne 'preserve') { throw 'Uninstall removed user data without consent.' }
+    Assert-UserFixture
     if ($IncludeFreshInstall) {
         Invoke-Setup $setupPath 'inno-fresh'
         Assert-Preservation 'committed' $ExpectedVersion @{}
@@ -232,6 +255,7 @@ finally {
         passed = ($null -eq $failure); version = $ExpectedVersion; runtime_root = $runtimeRoot; port = $port
         app_id = $id; production_state_unchanged = ((Get-ProductionStartupFingerprint) -eq $productionStartupBefore -and (-not $productionPointerHash -or (Get-FileHash $productionPointer).Hash -eq $productionPointerHash)); payload_sha256 = (Get-FileHash $Archive).Hash.ToLowerInvariant()
         baseline_sha256 = (Get-FileHash $BaselineArchive).Hash.ToLowerInvariant(); cases = $results.ToArray()
+        preserved_user_fixtures = @('legacy Task','user Skill','user Plugin','MCP companion state','Workspace policy')
         observer_self_test = 'passed'; error = $(if ($null -eq $failure) { '' } else { $failure.Exception.Message })
     } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $root 'result.json') -Encoding utf8NoBOM
 }
