@@ -41,9 +41,14 @@ func TestWorkspaceRoutingAllKindsAndExplicitExternalTarget(t *testing.T) {
 			t.Fatalf("%s: %+v %v", test.kind, target, err)
 		}
 	}
-	external := filepath.Join(t.TempDir(), "explicit-report.txt")
+	externalParent := t.TempDir()
+	canonicalParent, err := filepath.EvalSymlinks(externalParent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	external := filepath.Join(externalParent, "explicit-report.txt")
 	target, err := ResolveTarget(record, TargetRequest{Kind: "external", ExternalPath: external})
-	if err != nil || target.ResolvedPath != external {
+	if err != nil || target.ResolvedPath != filepath.Join(canonicalParent, "explicit-report.txt") {
 		t.Fatalf("external %+v %v", target, err)
 	}
 	if _, err = ResolveTarget(record, TargetRequest{Kind: "external", Path: external}); err == nil {

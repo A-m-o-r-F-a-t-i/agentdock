@@ -38,13 +38,17 @@ func TestWorkspaceToolContractsAndContextIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	explicit := t.TempDir()
+	canonicalExplicit, err := filepath.EvalSymlinks(explicit)
+	if err != nil {
+		t.Fatal(err)
+	}
 	result, err := r.Call(ctx, "agentdock_context", map[string]any{"workdir": explicit})
 	if err != nil {
 		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(result["workspace"])
 	var chosen workspace.Record
-	if err = json.Unmarshal(encoded, &chosen); err != nil || chosen.Root != explicit {
+	if err = json.Unmarshal(encoded, &chosen); err != nil || chosen.Root != canonicalExplicit {
 		t.Fatalf("context: %s %v", encoded, err)
 	}
 	current, err := r.workspaceRegistry.Select(ctx, "", "")
