@@ -239,9 +239,55 @@ jobs:
             ${{ runner.temp }}/arm64-ui/execution-render/*.png
           if-no-files-found: ignore
 
+  windows-arm64-install:
+    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
+    name: Native Windows ARM64 installation
+    needs: [windows, windows-arm64]
+    runs-on: windows-11-vs2026-arm
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: agentdock-windows-release
+          path: dist/windows-release/release
+      - name: Install repair and uninstall the verified ARM64 package
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') { throw 'ARM64 OS required.' }
+          $release = Join-Path $env:GITHUB_WORKSPACE 'dist\windows-release\release'
+          foreach ($name in @('AgentDockSetup-arm64.exe','agentdock_windows_arm64.zip')) {
+            $file = Join-Path $release $name
+            $expected = ((Get-Content ($file+'.sha256') -Raw).Trim() -split '\s+')[0]
+            if ((Get-FileHash $file).Hash.ToLowerInvariant() -ne $expected) { throw 'ARM64 package checksum mismatch.' }
+          }
+          $payload = Join-Path $env:RUNNER_TEMP 'arm64-install-payload'
+          Expand-Archive (Join-Path $release 'agentdock_windows_arm64.zip') $payload
+          $version = & (Join-Path $payload 'agentdock.exe') version --json | ConvertFrom-Json
+          if ($version.platform -ne 'windows/arm64') { throw 'Native ARM64 Core required.' }
+          $report = @{passed=$false; core=$version; runner_architecture='arm64'; production_touched=$false}
+          try {
+            & .\scripts\test\test-windows-setup-e2e.ps1 `
+              -SetupPath (Join-Path $release 'AgentDockSetup-arm64.exe') `
+              -LegacyCorePath (Join-Path $payload 'agentdock.exe') `
+              -LegacyTrayPath (Join-Path $payload 'agentdock-tray.exe') -AllowLegacyTaskMutation
+            $report.passed = $true
+            $report.scope = 'Native ARM64 Setup install, in-place repair, service lifecycle, legacy task migration and uninstall'
+          } finally {
+            $report | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $env:RUNNER_TEMP 'arm64-install-result.json') -Encoding utf8
+          }
+      - name: Upload native ARM64 installation result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-install-verification
+          path: ${{ runner.temp }}/arm64-install-result.json
+          if-no-files-found: ignore
+
   publish:
     name: Publish only this fork's Windows assets
-    needs: [windows, windows-arm64]
+    needs: [windows, windows-arm64, windows-arm64-install]
     if: github.repository == 'A-m-o-r-F-a-t-i/agentdock' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish
     runs-on: windows-latest
     timeout-minutes: 15

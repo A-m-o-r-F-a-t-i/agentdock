@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -68,11 +67,7 @@ func (r *Runtime) RuntimeActivityDiff(ctx context.Context, request ActivityDiffR
 	}
 	bounded, cancel := context.WithTimeout(ctx, 7*time.Second)
 	defer cancel()
-	hooks := os.DevNull
-	if record.Runtime == "wsl" {
-		hooks = "/dev/null"
-	}
-	base := []string{"--no-pager", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + hooks, "-c", "diff.external=", "-c", "color.ui=false", "--literal-pathspecs", "-C", target.Root}
+	base := []string{"--no-pager", "-c", "core.fsmonitor=false", "-c", "diff.external=", "-c", "color.ui=false", "--literal-pathspecs", "-C", target.Root}
 	run := func(arguments ...string) (string, int, bool, error) {
 		return r.runActivityGit(bounded, record, event, append(append([]string(nil), base...), arguments...))
 	}

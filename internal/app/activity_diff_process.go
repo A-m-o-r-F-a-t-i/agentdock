@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -37,16 +38,30 @@ func (b *diffBuffer) Write(data []byte) (int, error) {
 
 func (r *Runtime) runActivityGit(ctx context.Context, record workspace.Record, origin activity.Event, arguments []string) (string, int, bool, error) {
 	var command *exec.Cmd
+	globalConfig := "/dev/null"
 	if record.Runtime == "wsl" {
 		args := []string{}
 		if record.Distribution != "" {
 			args = append(args, "--distribution", record.Distribution)
 		}
-		args = append(args, "--exec", "env", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "git")
+		args = append(args, "--exec", "env", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0", "git", "-c", "core.hooksPath=/dev/null")
 		args = append(args, arguments...)
 		command = exec.CommandContext(ctx, "wsl.exe", args...)
 	} else {
-		command = exec.CommandContext(ctx, "git", arguments...)
+		// Some native Windows ARM64 Git builds reject NUL as a configuration
+		// file. Use an owned empty regular file and an empty hook directory;
+		// never fall back to the user's unrelated global configuration.
+		directory, err := os.MkdirTemp("", "agentdock-git-read-")
+		if err != nil {
+			return "", -1, false, err
+		}
+		defer os.RemoveAll(directory)
+		globalConfig = filepath.Join(directory, "config")
+		if err := os.WriteFile(globalConfig, nil, 0600); err != nil {
+			return "", -1, false, err
+		}
+		args := append([]string{"-c", "core.hooksPath=" + directory}, arguments...)
+		command = exec.CommandContext(ctx, "git", args...)
 		command.Dir = r.ws.Root()
 	}
 	command.WaitDelay = 2 * time.Second
@@ -65,7 +80,7 @@ func (r *Runtime) runActivityGit(ctx context.Context, record workspace.Record, o
 			}
 		}
 	}
-	command.Env = append(command.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_TERMINAL_PROMPT=0")
+	command.Env = append(command.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+globalConfig, "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
 	process.Configure(command)
 	stdout, stderr := &diffBuffer{}, &diffBuffer{}
 	command.Stdout, command.Stderr = stdout, stderr
