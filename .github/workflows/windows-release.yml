@@ -151,7 +151,7 @@ jobs:
   publish:
     name: Publish only this fork's Windows assets
     needs: windows
-    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock' && github.event_name == 'workflow_dispatch' && inputs.publish
+    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish
     runs-on: windows-latest
     timeout-minutes: 15
     permissions:
@@ -170,6 +170,14 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $tag = 'v1.1.0'
+          # Feature artifacts are buildable independently; the final version
+          # must contain both committed, integrated development branches.
+          git fetch --unshallow origin
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read complete integration history.' }
+          git fetch origin feat/task-activity-center
+          if ($LASTEXITCODE -ne 0) { throw 'The activity feature is not ready for integration.' }
+          git merge-base --is-ancestor FETCH_HEAD HEAD
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path ./internal/activity -PathType Container)) { throw 'Activity/TaskThread has not been integrated into this release commit.' }
           $directory = Join-Path $env:GITHUB_WORKSPACE 'dist\windows-release\release'
           $expected = @('AgentDockSetup-amd64.exe','AgentDockSetup-arm64.exe','agentdock_windows_amd64.zip','agentdock_windows_arm64.zip','install.ps1')
           foreach ($name in $expected) {
