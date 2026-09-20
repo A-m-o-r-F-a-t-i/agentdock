@@ -94,6 +94,14 @@ internal static partial class Program
                     }
                     return;
                 }
+                if (path == "/internal/runtime/activity/live")
+                {
+                    await JsonAsync(context, new ActivityLive {
+                        TaskId = context.Request.QueryString["task_id"] ?? "", ThreadId = context.Request.QueryString["thread_id"] ?? "main",
+                        WorkspaceId = "wsp_fixture", WorkspaceStatus = "bound", WorkspacePath = _root, WorkspaceRuntime = "windows", ObservedAt = DateTimeOffset.UtcNow,
+                        Sessions = [new ActivitySession { SessionId = "session_running", TaskId = TaskId, ThreadId = "main", Status = "running", Workdir = _root, Runtime = "windows", ElapsedMs = 500 }]
+                    }); return;
+                }
                 if (path == "/internal/runtime/activity/tasks") { await JsonAsync(context, new { tasks = new[] { TaskRecord() }, count = 1 }); return; }
                 if (path == $"/internal/runtime/tasks/{TaskId}/threads") { await JsonAsync(context, new { threads = Threads(), count = 2 }); return; }
                 if (path == $"/internal/runtime/tasks/{TaskId}") { await JsonAsync(context, new { task = TaskRecord() }); return; }
@@ -119,7 +127,7 @@ internal static partial class Program
 
         private ActivityTask TaskRecord() => new()
         {
-            Id = TaskId, Title = "AgentDock 1.1.0 任务活动中心 · 隔离测试", Goal = "验证命令、线程与检查点的展示", Project = "AgentDock", Status = "active",
+            Id = TaskId, Title = "AgentDock 1.1.1 任务活动中心 · 隔离测试", Goal = "验证命令、线程与检查点的展示", Project = "AgentDock", Status = "active",
             ActiveThreadId = "main", WorkspaceId = "wsp_fixture", UpdatedAt = DateTimeOffset.UtcNow,
             CompletedStepCount = 1, StepCount = 2, ActiveThread = Threads()[0], Steps = Threads()[0].Steps,
             Conditions = [new ActivityCondition { Id = "cond_01", Text = "输出与退出码按真实事件展示，断线后能够续传。" }, new ActivityCondition { Id = "cond_02", Text = "原有任务与其他线程不受影响。" }],

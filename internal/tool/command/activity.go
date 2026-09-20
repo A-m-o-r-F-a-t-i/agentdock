@@ -20,6 +20,21 @@ func (svc *Service) SessionBinding(id string) (activity.Binding, bool) {
 	return s.Summary().Binding, true
 }
 
+// ActivitySessionRunning is a non-consuming availability check. The kill operation
+// checks completion again so a process exiting between observation and action is safe.
+func (svc *Service) ActivitySessionRunning(id string) bool {
+	s, ok := svc.sessions.Get(id)
+	if !ok {
+		return false
+	}
+	select {
+	case <-s.Done:
+		return false
+	default:
+		return true
+	}
+}
+
 func (svc *Service) trackCommandActivity(s *session.Session, request ExecRequest) <-chan struct{} {
 	done := make(chan struct{})
 	if svc.activity == nil {

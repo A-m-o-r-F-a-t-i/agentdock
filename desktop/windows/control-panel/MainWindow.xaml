@@ -64,6 +64,11 @@
               </Grid>
             </GroupBox>
 
+            <GroupBox Header="{local:Loc TaskActivityCenter}">
+              <DockPanel><Button DockPanel.Dock="Left" Content="{local:Loc TaskActivityCenter}" Click="OpenActivityCenter_Click" />
+                <TextBlock x:Name="ActivitySummaryText" Text="{local:Loc NotChecked}" TextWrapping="Wrap" VerticalAlignment="Center" />
+              </DockPanel>
+            </GroupBox>
             <GroupBox Header="{local:Loc ConnectionAddresses}">
               <Grid>
                 <Grid.ColumnDefinitions>
@@ -125,7 +130,15 @@
               </StackPanel>
             </GroupBox>
 
-            <GroupBox x:Name="NamedTunnelGroup" Header="{local:Loc CustomDomainConfiguration}">
+            <TextBlock x:Name="EffectiveAccessText" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6" />
+            <TextBlock x:Name="AccessDraftText" TextWrapping="Wrap" Foreground="#475467" Margin="0,0,0,12" />
+            <GroupBox x:Name="LocalAccessGroup" Header="{local:Loc LocalOnly}" Visibility="Collapsed">
+              <TextBox x:Name="LocalAccessAddress" IsReadOnly="True" />
+            </GroupBox>
+            <GroupBox x:Name="QuickAccessGroup" Header="{local:Loc TemporaryAddress}" Visibility="Collapsed">
+              <TextBox x:Name="QuickAccessAddress" IsReadOnly="True" />
+            </GroupBox>
+            <GroupBox x:Name="NamedTunnelGroup" Header="{local:Loc CustomDomainConfiguration}" Visibility="Collapsed">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="150" />
@@ -137,11 +150,11 @@
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <TextBlock Text="{local:Loc PublicHTTPSAddress}" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <TextBox x:Name="ServerUrlTextBox" Grid.Column="1" Margin="0,0,0,10" />
+                <TextBox x:Name="ServerUrlTextBox" TextChanged="NamedDraft_Changed" Grid.Column="1" Margin="0,0,0,10" />
                 <TextBlock Text="Tunnel Token" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
-                <PasswordBox x:Name="TunnelTokenPasswordBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" PreviewKeyDown="PasswordBox_PreviewKeyDown" />
+                <PasswordBox x:Name="TunnelTokenPasswordBox" PasswordChanged="NamedDraft_Changed" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" PreviewKeyDown="PasswordBox_PreviewKeyDown" />
                 <TextBlock Text="{local:Loc SavedState}" Grid.Row="2" VerticalAlignment="Center" />
-                <TextBlock x:Name="TunnelTokenStoredText" Grid.Row="2" Grid.Column="1" Text="{local:Loc NotSaved}" />
+                <TextBlock x:Name="TunnelTokenStoredText" Grid.Row="2" Grid.Column="1" Text="{local:Loc TunnelTokenMissing}" TextWrapping="Wrap" />
               </Grid>
             </GroupBox>
 
@@ -174,9 +187,7 @@
                 <TextBlock x:Name="TailscaleDiagnosticText" TextWrapping="Wrap" Margin="0,4,0,10" />
                 <WrapPanel>
                   <Button x:Name="TailscaleDetectButton" Content="{local:Loc TailscaleDetect}" Click="TailscaleDetectButton_Click" />
-                  <Button x:Name="TailscaleEnableButton" Content="{local:Loc TailscaleEnable}" Click="TailscaleEnableButton_Click" />
                   <Button x:Name="TailscaleStopButton" Content="{local:Loc TailscaleStop}" Click="TailscaleStopButton_Click" />
-                  <Button Content="{local:Loc Refresh}" Click="TailscaleDetectButton_Click" />
                   <Button x:Name="TailscaleAuthorizeButton" Content="{local:Loc TailscaleAuthorize}" Click="TailscaleAuthorizeButton_Click" />
                 </WrapPanel>
               </StackPanel>

@@ -595,34 +595,8 @@ public sealed partial class RuntimeService : IDisposable
         }
     }
 
-    public async Task<UrlTestResult> TestUrlAsync(string value, CancellationToken cancellationToken = default)
-    {
-        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-        {
-            return new UrlTestResult(false, null, TimeSpan.Zero, UiText.Get("InvalidPublicAddress"));
-        }
-
-        var healthUri = new UriBuilder(uri) { Path = "/healthz", Query = "", Fragment = "" }.Uri;
-        var stopwatch = Stopwatch.StartNew();
-        try
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, healthUri);
-            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            stopwatch.Stop();
-            var success = response.IsSuccessStatusCode;
-            return new UrlTestResult(
-                success,
-                (int)response.StatusCode,
-                stopwatch.Elapsed,
-                success ? UiText.Format("AccessSuccess", (int)response.StatusCode, stopwatch.ElapsedMilliseconds) : UiText.Format("AccessFailed", (int)response.StatusCode));
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-        {
-            stopwatch.Stop();
-            return new UrlTestResult(false, null, stopwatch.Elapsed, ex is TaskCanceledException ? UiText.Get("AccessTimeout") : ex.Message);
-        }
-    }
+    public Task<UrlTestResult> TestUrlAsync(string value, CancellationToken cancellationToken = default) =>
+        TestPublicDiscoveryAsync(value, cancellationToken);
 
     public void OpenLogsDirectory() => OpenDirectory(LogsDirectory);
     public void OpenConfigDirectory() => OpenDirectory(ConfigDirectory);

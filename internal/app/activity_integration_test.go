@@ -91,6 +91,15 @@ func TestActivityCommandLifecycleRedactionAndRecovery(t *testing.T) {
 func TestActivityAsyncSessionKeepsOriginalThread(t *testing.T) {
 	r := newRuntimeValidationTestRuntime(t)
 	id := activityTask(t, r)
+	initial, err := r.RuntimeActivityLive(context.Background(), id, "main")
+	expected, bindingErr := r.taskTools.ResolveBinding(activity.Binding{TaskID: id, ThreadID: "main"}, false)
+	if err != nil || bindingErr != nil || initial["workspace_id"] != expected.WorkspaceID || initial["workspace_status"] != "bound" {
+		t.Fatalf("live view did not use the task's explicit workspace binding: %v %v", initial, err)
+	}
+	global, globalErr := r.RuntimeActivityLive(context.Background(), "", "")
+	if globalErr != nil || global["workspace_status"] != "unbound" || global["workspace_path"] != nil {
+		t.Fatalf("unassigned activity inherited a default workspace: %v %v", global, globalErr)
+	}
 	cmd := "sleep 30"
 	if runtime.GOOS == "windows" {
 		cmd = "Start-Sleep -Seconds 30"
@@ -110,6 +119,31 @@ func TestActivityAsyncSessionKeepsOriginalThread(t *testing.T) {
 	}
 	if _, err = r.RuntimeActivityControl(context.Background(), ActivityControlRequest{Action: "stop", TaskID: id, ThreadID: branch.ID, SessionID: sessionID}); err == nil {
 		t.Fatal("wrong thread controlled a session")
+	}
+	if _, err = r.Call(context.Background(), "task_manage", map[string]any{"action": "cancel", "task_id": id, "summary": "isolated cancellation reason"}); err != nil {
+		t.Fatal(err)
+	}
+	live, err := r.RuntimeActivityLive(context.Background(), id, branch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions := live["sessions"].([]map[string]any)
+	running := false
+	for _, session := range sessions {
+		if session["session_id"] == sessionID && session["task_id"] == id && session["thread_id"] == "main" && session["status"] == "running" {
+			running = true
+		}
+	}
+	if !running {
+		t.Fatal("cancelling or selecting another branch hid the running command")
+	}
+	taskList, err := r.RuntimeActivityTask(context.Background(), map[string]any{"action": "list", "limit": 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(taskList)
+	if !strings.Contains(string(encoded), `"cancel_reason":"isolated cancellation reason"`) {
+		t.Fatal("task list omitted cancellation reason")
 	}
 	stopped, err := r.RuntimeActivityControl(context.Background(), ActivityControlRequest{Action: "stop", TaskID: id, ThreadID: "main", SessionID: sessionID})
 	if err != nil || stopped["thread_id"] != "main" {
@@ -137,6 +171,9 @@ func TestActivityAsyncSessionKeepsOriginalThread(t *testing.T) {
 	}
 	if !completed {
 		t.Fatal("stopped command missing completion event")
+	}
+	if _, err = r.RuntimeActivityControl(context.Background(), ActivityControlRequest{Action: "stop", TaskID: id, ThreadID: "main", SessionID: sessionID}); err == nil {
+		t.Fatal("an exited session remained actionable")
 	}
 }
 

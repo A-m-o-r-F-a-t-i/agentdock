@@ -17,18 +17,23 @@ internal static partial class Program
         try
         {
             TestTimeline();
+            TestPresentation();
+            TestPublicDiscoveryAsync().GetAwaiter().GetResult();
             TestParserAsync().GetAwaiter().GetResult();
             TestNetworkAsync(Path.Combine(args[0], "network")).GetAwaiter().GetResult();
             TestRendering(Path.Combine(args[0], "render"));
             File.WriteAllText(Path.Combine(args[0], "result.json"), JsonSerializer.Serialize(new
             {
                 passed = true, elapsed_ms = started.ElapsedMilliseconds,
+                access_modes_12_cross_transitions_and_4_reapplies = true, access_draft_failure_and_refresh_protection = true,
+                task_cancel_archive_and_reason_projection = true, live_session_stop_guard = true,
+                anonymous_discovery_challenge_and_metadata_validation = true,
                 timeline_deduplicates_and_merges_sessions = true, output_and_row_memory_bounded = true,
                 fragmented_sse_and_large_ids = true, bounded_sse_lines = true,
                 authenticated_loopback_client = true, redirect_refused = true,
                 reconnect_last_event_id = true, cross_thread_events_refused = true,
                 cancellation_releases_connection = true, window_close_cancels_observer = true,
-                offscreen_dpi_scaled_rendering = new[] { "1180x800@100%", "840x560@125%", "1000x700@150%" },
+                offscreen_dpi_scaled_rendering = new[] { "1180x800@100%", "840x560@125%", "1000x700@150%", "1180x800@200%" },
                 test_source = "isolated HTTP fixtures and WPF window; production tray and runtime unchanged"
             }, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine("Activity center regressions passed.");

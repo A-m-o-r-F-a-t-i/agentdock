@@ -56,6 +56,10 @@ internal sealed partial class ActivityClient(RuntimeService runtime) : IDisposab
     internal Task<ActivityThreadList> ThreadsAsync(string taskId, CancellationToken token) =>
         SendAsync<ActivityThreadList>(HttpMethod.Get, $"/internal/runtime/tasks/{Id(taskId)}/threads", null, token);
 
+    internal Task<ActivityLive> LiveAsync(string taskId, string threadId, CancellationToken token) =>
+        SendAsync<ActivityLive>(HttpMethod.Get, "/internal/runtime/activity/live" +
+            (taskId.Length == 0 ? "" : $"?task_id={Id(taskId)}" + (threadId.Length > 0 ? $"&thread_id={Id(threadId)}" : "")), null, token);
+
     internal Task<JsonElement> ControlAsync(object body, CancellationToken token) =>
         SendAsync<JsonElement>(HttpMethod.Post, "/internal/runtime/activity/control", body, token);
 

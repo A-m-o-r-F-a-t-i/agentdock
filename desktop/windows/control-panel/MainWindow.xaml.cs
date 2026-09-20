@@ -65,10 +65,16 @@ public partial class MainWindow : Window
 
         // Inventory does not depend on the slower service/Nexus status probe.
         var capabilitiesTask = RefreshCapabilitiesAsync(showErrors: false);
+        var revision = _accessRevision;
         try
         {
             FooterStatusText.Text = UiText.Get("Refreshing");
             var snapshot = await Task.Run(() => _runtime.GetSnapshotAsync(includeNexusConnection: true));
+            if (revision != _accessRevision) return;
+            if (_snapshot?.PublicOrigin != snapshot.PublicOrigin || _snapshot?.TunnelMode != snapshot.TunnelMode)
+            {
+                InvalidateAccessChecks();
+            }
             _snapshot = snapshot;
             _bearerToken = _runtime.ReadBearerToken();
             _oauthPassword = _runtime.ReadOAuthPassword();
@@ -76,6 +82,7 @@ public partial class MainWindow : Window
             await capabilitiesTask;
             if (!snapshot.Healthy) await RefreshCapabilitiesAsync(false, showErrors: false);
             FooterStatusText.Text = UiText.Format("LastRefresh", snapshot.CheckedAt);
+            await RefreshActivitySummaryAsync();
             await AutoTestPublicAsync(snapshot);
         }
         catch (Exception ex)
@@ -112,7 +119,7 @@ public partial class MainWindow : Window
             HealthStatusText.Text = snapshot.Healthy ? UiText.Get("Healthy") : UiText.Get("Unavailable");
             VersionText.Text = string.IsNullOrWhiteSpace(snapshot.Version) ? UiText.Get("Unknown") : snapshot.Version;
             LocalMcpTextBox.Text = snapshot.LocalMcpUrl;
-            PublicMcpTextBox.Text = snapshot.PublicMcpUrl;
+            PublicMcpTextBox.Text = _tunnelChangeInProgress && SelectedTunnelMode() == "quick" ? "" : snapshot.PublicMcpUrl;
             UpdateCredentialText();
 
             if (!_tunnelSelectionDirty && !_tunnelChangeInProgress)
@@ -123,14 +130,14 @@ public partial class MainWindow : Window
                 TailscaleModeRadio.IsChecked = string.Equals(snapshot.TunnelMode, "funnel", StringComparison.OrdinalIgnoreCase);
             }
             if (snapshot.Tailscale is not null) ApplyTailscaleStatus(snapshot.Tailscale);
-            if (!ServerUrlTextBox.IsKeyboardFocusWithin &&
+            if (!_namedDraftDirty && !ServerUrlTextBox.IsKeyboardFocusWithin &&
                 (string.Equals(snapshot.TunnelMode, "named", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(ServerUrlTextBox.Text)))
             {
                 ServerUrlTextBox.Text = string.Equals(snapshot.TunnelMode, "named", StringComparison.OrdinalIgnoreCase)
                     ? snapshot.PublicOrigin
                     : snapshot.SavedNamedOrigin;
             }
-            TunnelTokenStoredText.Text = snapshot.TunnelTokenStored ? UiText.Get("TunnelTokenSaved") : UiText.Get("NotSaved");
+            TunnelTokenStoredText.Text = snapshot.TunnelTokenStored ? UiText.Get("TunnelTokenSaved") : UiText.Get("TunnelTokenMissing");
             ElevatedCoreCheckBox.IsChecked = string.Equals(snapshot.Manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase);
             CoreStartupCheckBox.IsChecked = snapshot.CoreStartupEnabled;
             TrayStartupCheckBox.IsChecked = snapshot.TrayStartupEnabled;
@@ -174,6 +181,7 @@ public partial class MainWindow : Window
 
     private async Task AutoTestPublicAsync(RuntimeSnapshot snapshot)
     {
+        if (_tunnelChangeInProgress) return;
         if (snapshot.Tailscale is { Ready: false } tailscale)
         {
             PublicTestStatusText.Text = tailscale.Diagnostic;
@@ -195,8 +203,10 @@ public partial class MainWindow : Window
         _lastAutoTestOrigin = snapshot.PublicOrigin;
         _lastAutoTestAt = now;
         PublicTestStatusText.Text = UiText.Get("AutoDetectingPublicAddress");
+        var revision = _accessRevision;
         var result = await _runtime.TestUrlAsync(snapshot.PublicOrigin);
-        PublicTestStatusText.Text = result.Message;
+        if (revision == _accessRevision && _snapshot?.PublicOrigin == snapshot.PublicOrigin)
+            PublicTestStatusText.Text = result.Message;
     }
 
     private async Task<bool> ExecuteActionAsync(string pendingText, Func<Task> action, TextBlock? statusTarget = null)
@@ -241,7 +251,6 @@ public partial class MainWindow : Window
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!_tunnelChangeInProgress) _tunnelSelectionDirty = false;
         await RefreshAsync();
     }
 
@@ -269,6 +278,8 @@ public partial class MainWindow : Window
 
     private async void TestPublicButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_tunnelChangeInProgress) return;
+        var revision = _accessRevision;
         var origin = _snapshot?.PublicOrigin ?? "";
         if (string.IsNullOrWhiteSpace(origin))
         {
@@ -277,7 +288,8 @@ public partial class MainWindow : Window
         }
         PublicTestStatusText.Text = UiText.Get("Testing");
         var result = await _runtime.TestUrlAsync(origin);
-        PublicTestStatusText.Text = result.Message;
+        if (revision == _accessRevision && _snapshot?.PublicOrigin == origin)
+            PublicTestStatusText.Text = result.Message;
     }
 
     private void TunnelModeRadio_Checked(object sender, RoutedEventArgs e)
@@ -285,6 +297,8 @@ public partial class MainWindow : Window
         if (!_updatingUi)
         {
             _tunnelSelectionDirty = true;
+            _accessApplyFailed = false;
+            InvalidateAccessChecks();
             UpdateTunnelModeUi();
             if (TailscaleModeRadio.IsChecked == true) _ = RefreshTailscalePanelAsync(false);
         }
@@ -292,17 +306,28 @@ public partial class MainWindow : Window
 
     private void UpdateTunnelModeUi()
     {
-        var named = NamedModeRadio.IsChecked == true;
-        var quick = QuickModeRadio.IsChecked == true;
-        var tailscale = TailscaleModeRadio.IsChecked == true;
-        NamedTunnelGroup.IsEnabled = named;
-        NamedTunnelGroup.Visibility = tailscale ? Visibility.Collapsed : Visibility.Visible;
-        TailscaleGroup.Visibility = tailscale ? Visibility.Visible : Visibility.Collapsed;
-        RegenerateQuickButton.IsEnabled = quick;
-        RegenerateQuickButton.Visibility = quick ? Visibility.Visible : Visibility.Collapsed;
-        ApplyAccessButton.IsEnabled = !_tunnelChangeInProgress;
-        TailscaleEnableButton.IsEnabled = !_tunnelChangeInProgress;
-        TailscaleStopButton.IsEnabled = !_tunnelChangeInProgress && _snapshot?.TunnelMode == "funnel";
+        if (ApplyAccessButton is null) return;
+        var mode = SelectedTunnelMode();
+        var available = !_tunnelChangeInProgress;
+        NamedTunnelGroup.Visibility = mode == "named" ? Visibility.Visible : Visibility.Collapsed;
+        NamedTunnelGroup.IsEnabled = available;
+        TailscaleGroup.Visibility = mode == "funnel" ? Visibility.Visible : Visibility.Collapsed;
+        LocalAccessGroup.Visibility = mode == "none" ? Visibility.Visible : Visibility.Collapsed;
+        QuickAccessGroup.Visibility = mode == "quick" ? Visibility.Visible : Visibility.Collapsed;
+        LocalAccessAddress.Text = _snapshot?.LocalMcpUrl ?? UiText.Get("NotConfigured");
+        QuickAccessAddress.Text = _tunnelChangeInProgress ? "" : _snapshot?.TunnelMode == "quick" ? _snapshot.PublicMcpUrl : UiText.Get("AccessNotApplied");
+        foreach (var radio in new[] { LocalModeRadio, QuickModeRadio, NamedModeRadio, TailscaleModeRadio }) radio.IsEnabled = available;
+        RegenerateQuickButton.IsEnabled = available && mode == "quick" && _snapshot?.TunnelMode == "quick";
+        RegenerateQuickButton.Visibility = mode == "quick" ? Visibility.Visible : Visibility.Collapsed;
+        ApplyAccessButton.IsEnabled = available;
+        ApplyAccessButton.Content = UiText.Get(mode == "funnel" ? "EnableAndCheck" : mode == "named" ? "SaveAndApply" : "ApplyAccessMode");
+        TailscaleDetectButton.IsEnabled = available && !_tailscalePanelRefreshing;
+        TailscaleStopButton.IsEnabled = available && _snapshot?.TunnelMode == "funnel";
+        EffectiveAccessText.Text = UiText.Format("EffectiveAccess", _snapshot is null ? UiText.Get("Unknown") : PublicAccessName(_snapshot.TunnelMode));
+        AccessDraftText.Text = _tunnelChangeInProgress ? UiText.Get("SwitchingPublicAccess")
+            : _accessApplyFailed ? UiText.Get("AccessApplyFailedDraftKept")
+            : _tunnelSelectionDirty || (mode == "named" && _namedDraftDirty)
+                ? UiText.Format("AccessDraftPending", PublicAccessName(mode)) : UiText.Get("AccessDraftCurrent");
     }
 
     private string SelectedTunnelMode()
@@ -326,14 +351,21 @@ public partial class MainWindow : Window
 
     private async void RegenerateQuickButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_tunnelChangeInProgress || SelectedTunnelMode() != "quick" || _snapshot?.TunnelMode != "quick") return;
+        _tunnelChangeInProgress = true;
+        InvalidateAccessChecks();
+        UpdateTunnelModeUi();
         PublicMcpTextBox.Text = "";
-        PublicTestStatusText.Text = UiText.Get("GeneratingTemporaryAddress");
-        TunnelActionStatusText.Text = UiText.Get("OldAddressHidden");
-        _lastAutoTestOrigin = "";
-        await ExecuteActionAsync(
-            UiText.Get("OldAddressHidden"),
-            () => _runtime.RegenerateQuickTunnelAsync(),
-            TunnelActionStatusText);
+        QuickAccessAddress.Text = "";
+        PublicTestStatusText.Text = UiText.Get("OldAddressHidden");
+        try
+        {
+            var success = await ExecuteActionAsync(UiText.Get("GeneratingTemporaryAddress"),
+                () => _runtime.RegenerateQuickTunnelAsync(), TunnelActionStatusText);
+            _accessApplyFailed = !success;
+        }
+        finally { _tunnelChangeInProgress = false; UpdateTunnelModeUi(); }
+        await RefreshAsync();
     }
 
     private void AcpOverviewToggle_Changed(object sender, RoutedEventArgs e)

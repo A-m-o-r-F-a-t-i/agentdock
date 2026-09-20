@@ -25,6 +25,7 @@ const maxActivityStreams = 32
 type activityRuntime interface {
 	ActivityJournal() *activity.Store
 	RuntimeActivityTask(context.Context, map[string]any) (app.Result, error)
+	RuntimeActivityLive(context.Context, string, string) (app.Result, error)
 	RuntimeActivityControl(context.Context, app.ActivityControlRequest) (app.Result, error)
 	RuntimeActivityDiff(context.Context, app.ActivityDiffRequest) (app.Result, error)
 }
@@ -111,6 +112,15 @@ func (h *activityHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
+	if path == "/internal/runtime/activity/live" {
+		result, err := h.runtime.RuntimeActivityLive(ctx, r.URL.Query().Get("task_id"), r.URL.Query().Get("thread_id"))
+		if err != nil {
+			writeRuntimeAPIHandlerError(w, err)
+			return
+		}
+		writeJSON(w, result)
+		return
+	}
 	if path == "/internal/runtime/activity/diff" {
 		seq, err := strconv.ParseUint(r.URL.Query().Get("seq"), 10, 64)
 		if err != nil || seq == 0 {

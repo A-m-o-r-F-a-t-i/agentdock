@@ -903,4 +903,22 @@ Update now?</value>
   <data name="TailscaleOutputTooLarge" xml:space="preserve"><value>Tailscale status output exceeded the size limit.</value></data>
   <data name="PublicAccessSwitchWarning" xml:space="preserve"><value>Switch from {0} to {1}? AgentDock will stop its current public entry and restart Core. Other Tailscale services and account settings are preserved. Existing public connections may be interrupted.</value></data>
   <data name="CopyPublicMcp" xml:space="preserve"><value>Copy public MCP address</value></data>
+  <data name="TaskActivityCenter" xml:space="preserve"><value>Task activity center</value></data>
+  <data name="ActivityCounts" xml:space="preserve"><value>In progress: {0} · Needs attention: {1} · Latest 200 tasks{2} · {3:HH:mm:ss}</value></data>
+  <data name="TunnelTokenMissing" xml:space="preserve"><value>No Tunnel Token configured</value></data>
+  <data name="EffectiveAccess" xml:space="preserve"><value>Currently effective: {0}</value></data>
+  <data name="AccessDraftPending" xml:space="preserve"><value>{0}: changes are not applied. The current connection remains in use.</value></data>
+  <data name="AccessDraftCurrent" xml:space="preserve"><value>The displayed selection matches the saved configuration.</value></data>
+  <data name="AccessNotApplied" xml:space="preserve"><value>Apply this mode to generate its address.</value></data>
+  <data name="AccessApplyFailedDraftKept" xml:space="preserve"><value>Apply failed. Your draft is retained; the effective mode reflects the latest runtime state.</value></data>
+  <data name="EnableAndCheck" xml:space="preserve"><value>Enable and check</value></data>
+  <data name="SaveAndApply" xml:space="preserve"><value>Save and apply</value></data>
+  <data name="ServerChecksAuthorizationRequired" xml:space="preserve"><value>Server checks passed; client authorization and tool scan still required</value></data>
+  <data name="PublicCheckStage" xml:space="preserve"><value>{0} · {1} · HTTP {2} · {3:HH:mm:ss}</value></data>
+  <data name="PublicNetwork" xml:space="preserve"><value>Public network</value></data>
+  <data name="PublicDiscovery" xml:space="preserve"><value>Authentication discovery</value></data>
+  <data name="PublicCheckError" xml:space="preserve"><value>{0} · {1} · {2} · {3:HH:mm:ss}</value></data>
+  <data name="PublicMetadataMismatch" xml:space="preserve"><value>Metadata does not match the current origin</value></data>
+  <data name="PublicDiscoveryAuthorizationRequired" xml:space="preserve"><value>Network and authentication discovery passed. Client authorization and tool scan are still required.</value></data>
+  <data name="PublicOAuthCapabilitiesMissing" xml:space="preserve"><value>OAuth metadata is missing authorization code, S256 or refresh support.</value></data>
 </root>

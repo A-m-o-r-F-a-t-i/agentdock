@@ -238,3 +238,37 @@ func TestActivityStreamLimitAndDisconnectRelease(t *testing.T) {
 		t.Fatal("disconnected SSE retained a consumer slot")
 	}
 }
+
+func TestActivityLiveRequiresLocalCredentialAndExplicitBinding(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.AuthToken = "local-live-fixture"
+	rt, err := app.NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.Close()
+	handler := runtimeAPIHandler(rt, cfg, auth.NewOAuthStore())
+	for _, test := range []struct {
+		remote, token, query string
+		code                 int
+	}{
+		{"127.0.0.1:9000", "", "", 401},
+		{"203.0.113.7:9000", cfg.AuthToken, "", 403},
+		{"127.0.0.1:9000", cfg.AuthToken, "?thread_id=main", 400},
+		{"127.0.0.1:9000", cfg.AuthToken, "", 200},
+	} {
+		request := httptest.NewRequest("GET", "http://127.0.0.1:8765/internal/runtime/activity/live"+test.query, nil)
+		request.RemoteAddr = test.remote
+		if test.token != "" {
+			request.Header.Set("Authorization", "Bearer "+test.token)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != test.code {
+			t.Fatalf("live %s %s status %d, expected %d: %s", test.remote, test.query, response.Code, test.code, response.Body.String())
+		}
+		if test.code == 200 && !strings.Contains(response.Body.String(), `"workspace_status":"unbound"`) {
+			t.Fatal("global live view inherited a workspace")
+		}
+	}
+}

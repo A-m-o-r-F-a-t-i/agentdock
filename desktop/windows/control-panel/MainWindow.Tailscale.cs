@@ -17,7 +17,7 @@ public partial class MainWindow
         TailscaleDomainTextBox.Text = status.DnsName;
         TailscaleMcpTextBox.Text = string.IsNullOrEmpty(status.PublicUrl) ? "" : status.PublicUrl.TrimEnd('/') + "/mcp";
         TailscaleTargetText.Text = status.LocalOrigin;
-        TailscaleFunnelText.Text = status.Ready ? UiText.Get("Ready") : status.Running ? UiText.Get("TailscalePending") : UiText.Get("Disabled");
+        TailscaleFunnelText.Text = status.Ready ? UiText.Get("ServerChecksAuthorizationRequired") : status.Running ? UiText.Get("TailscalePending") : UiText.Get("Disabled");
         TailscaleKeyExpiryText.Text = status.KeyExpiry is { Year: > 1 } expiry
             ? expiry.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : UiText.Get("TailscaleNoKeyExpiry");
         TailscaleDiagnosticText.Text = status.Diagnostic;
@@ -27,20 +27,22 @@ public partial class MainWindow
     private async Task RefreshTailscalePanelAsync(bool force)
     {
         if (_tailscalePanelRefreshing) return;
+        var revision = _accessRevision;
         _tailscalePanelRefreshing = true;
         TailscaleDetectButton.IsEnabled = false;
         try
         {
-            ApplyTailscaleStatus(await _runtime.ReadTailscaleStatusAsync(force));
+            var status = await _runtime.ReadTailscaleStatusAsync(force);
+            if (revision == _accessRevision && SelectedTunnelMode() == "funnel") ApplyTailscaleStatus(status);
         }
         catch (Exception ex)
         {
-            TailscaleDiagnosticText.Text = ex.Message;
+            if (revision == _accessRevision && SelectedTunnelMode() == "funnel") TailscaleDiagnosticText.Text = ex.Message;
         }
         finally
         {
             _tailscalePanelRefreshing = false;
-            TailscaleDetectButton.IsEnabled = true;
+            UpdateTunnelModeUi();
         }
     }
 
@@ -65,6 +67,7 @@ public partial class MainWindow
             if (confirmation != MessageBoxResult.Yes) return;
         }
         _tunnelChangeInProgress = true;
+        InvalidateAccessChecks();
         UpdateTunnelModeUi();
         try
         {
@@ -74,34 +77,28 @@ public partial class MainWindow
                 PublicTestStatusText.Text = UiText.Get("GeneratingTemporaryAddress");
                 _lastAutoTestOrigin = "";
             }
-            await ExecuteActionAsync(UiText.Get("SwitchingPublicAccess"),
+            var success = await ExecuteActionAsync(UiText.Get("SwitchingPublicAccess"),
                 () => _runtime.SetTunnelModeAsync(mode,
                     mode == "named" ? ServerUrlTextBox.Text.Trim() : "",
                     mode == "named" ? TunnelTokenPasswordBox.Password : ""), TunnelActionStatusText);
+            FinishAccessApply(success, mode);
             if (mode == "funnel" || previous == "funnel") await RefreshTailscalePanelAsync(true);
         }
         finally
         {
-            TunnelTokenPasswordBox.Clear();
-            _tunnelSelectionDirty = false;
             _tunnelChangeInProgress = false;
-            if (_snapshot is not null) ApplySnapshot(_snapshot);
             UpdateTunnelModeUi();
         }
+        await RefreshAsync();
     }
 
     private async void TailscaleDetectButton_Click(object sender, RoutedEventArgs e) => await RefreshTailscalePanelAsync(true);
-
-    private async void TailscaleEnableButton_Click(object sender, RoutedEventArgs e)
-    {
-        TailscaleModeRadio.IsChecked = true;
-        await ApplySelectedPublicAccessAsync();
-    }
 
     private async void TailscaleStopButton_Click(object sender, RoutedEventArgs e)
     {
         if (_tunnelChangeInProgress || _snapshot?.TunnelMode != "funnel") return;
         _tunnelChangeInProgress = true;
+        InvalidateAccessChecks();
         UpdateTunnelModeUi();
         try
         {

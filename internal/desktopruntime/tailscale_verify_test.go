@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -43,9 +44,25 @@ func tailscaleProtocolFixture(t *testing.T, change func(http.ResponseWriter, *ht
 				w.WriteHeader(http.StatusOK)
 				return
 			}
-			*initialized++
-			w.Header().Set("Mcp-Session-Id", "probe-session")
-			fmt.Fprint(w, `{"jsonrpc":"2.0","id":771,"result":{"protocolVersion":"2025-03-26","serverInfo":{"name":"AgentDock"}}}`)
+			method := tailscaleFixtureMethod(r)
+			switch method {
+			case "initialize":
+				*initialized++
+				w.Header().Set("Mcp-Session-Id", "probe-session")
+				fmt.Fprint(w, `{"jsonrpc":"2.0","id":771,"result":{"protocolVersion":"2025-03-26","serverInfo":{"name":"AgentDock"}}}`)
+			case "notifications/initialized", "tools/list":
+				if r.Header.Get("Mcp-Session-Id") != "probe-session" || r.Header.Get("MCP-Protocol-Version") != "2025-03-26" {
+					t.Error("missing negotiated session or protocol")
+				}
+				if method == "notifications/initialized" {
+					w.WriteHeader(http.StatusAccepted)
+					return
+				}
+				fmt.Fprint(w, `{"jsonrpc":"2.0","id":772,"result":{"tools":[{"name":"list_dir","inputSchema":{"type":"object"}}]}}`)
+			default:
+				t.Errorf("unexpected MCP method %s", method)
+				w.WriteHeader(400)
+			}
 		case "/internal/runtime/status":
 			w.WriteHeader(http.StatusUnauthorized)
 		case "/.well-known/oauth-authorization-server":
@@ -125,7 +142,8 @@ func TestTailscalePublicProtocolRejectsSecurityFailures(t *testing.T) {
 
 func TestTailscaleInitializeSSEAndBoundedResponses(t *testing.T) {
 	client, _ := tailscaleProtocolFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
-		if r.URL.Path == "/mcp" && r.Method == http.MethodPost {
+		if r.URL.Path == "/mcp" && r.Method == http.MethodPost && tailscaleFixtureMethod(r) == "initialize" {
+			w.Header().Set("Mcp-Session-Id", "probe-session")
 			w.Header().Set("Content-Type", "text/event-stream")
 			fmt.Fprint(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":771,\"result\":{\"protocolVersion\":\"2025-03-26\",\"serverInfo\":{\"name\":\"AgentDock\"}}}\n\n")
 			return true
@@ -153,5 +171,39 @@ func TestTailscalePublicVerificationCancellation(t *testing.T) {
 	defer cancel()
 	if err := waitTailscalePublicOrigin(ctx, "https://device.example-tailnet.ts.net", "test-token", client); err == nil {
 		t.Fatal("ignored cancellation")
+	}
+}
+
+func tailscaleFixtureMethod(r *http.Request) string {
+	body, _ := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(strings.NewReader(string(body)))
+	var request struct {
+		Method string `json:"method"`
+	}
+	_ = json.Unmarshal(body, &request)
+	return request.Method
+}
+
+func TestTailscaleChallengeFormattingAndToolDiscovery(t *testing.T) {
+	client, _ := tailscaleProtocolFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/mcp" && r.Method == http.MethodGet {
+			w.Header().Set("WWW-Authenticate", `Bearer scope="mcp", resource_metadata = "https://device.example-tailnet.ts.net/.well-known/oauth-protected-resource/mcp", error_description="login, then retry"`)
+			w.WriteHeader(401)
+			return true
+		}
+		return false
+	})
+	if err := verifyTailscalePublicOrigin(context.Background(), "https://device.example-tailnet.ts.net", "test-token", client); err != nil {
+		t.Fatal(err)
+	}
+	client, _ = tailscaleProtocolFixture(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/mcp" && r.Method == http.MethodPost && tailscaleFixtureMethod(r) == "tools/list" {
+			fmt.Fprint(w, `{"jsonrpc":"2.0","id":772,"result":{"tools":[]}}`)
+			return true
+		}
+		return false
+	})
+	if err := verifyTailscalePublicOrigin(context.Background(), "https://device.example-tailnet.ts.net", "test-token", client); tailscaleDiagnosticCode(err) != "tools_list_failed" {
+		t.Fatalf("tools/list not verified: %v", err)
 	}
 }

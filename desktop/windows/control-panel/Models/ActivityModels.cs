@@ -19,6 +19,9 @@ public sealed class ActivityTask
     public string Project { get; set; } = "";
     public string Status { get; set; } = "";
     public string Outcome { get; set; } = "";
+    public string CancelReason { get; set; } = "";
+    public string Blocker { get; set; } = "";
+    public string Summary { get; set; } = "";
     public string WorkspaceId { get; set; } = "";
     public string ActiveThreadId { get; set; } = "main";
     public ActivityThread? ActiveThread { get; set; }
@@ -29,7 +32,9 @@ public sealed class ActivityTask
     public List<ActivityStep> Steps { get; set; } = [];
     public List<ActivityCondition> Conditions { get; set; } = [];
     public ActivityReview? FinalReview { get; set; }
-    public string StateLabel => ActivityText.State(ArchivedAt is null ? (Outcome == "cancelled" ? Outcome : Status) : "archived");
+    public string StateLabel => ActivityPresentation.TaskState(this);
+    public int GroupRank => Id.Length == 0 ? 3 : Status == "blocked" ? 0 : Status == "active" ? 1 : 2;
+    public string GroupLabel => ActivityText.Get(GroupRank switch { 0 => "NeedsAttention", 1 => "InProgressTasks", 2 => "EndedTasks", _ => "Records" });
     public string Detail => Id.Length == 0 ? ActivityText.Get("AllActivityDetail") : $"{StateLabel}  ·  {CompletedStepCount}/{StepCount}  ·  {UpdatedAt.ToLocalTime():MM-dd HH:mm}";
     public string SearchText => $"{Title} {Id} {Project} {WorkspaceId}";
 }
@@ -125,19 +130,39 @@ public sealed class ActivityRow : INotifyPropertyChanged
     public string Summary { get; private set; } = "";
     public string SessionId => Latest.SessionId;
     public bool IsCommand => SessionId.Length > 0 && Latest.Kind.StartsWith("command.", StringComparison.Ordinal);
-    public bool CanStop => IsCommand && Latest.Kind != "command.completed";
-    public string State => ActivityText.State(Latest.Status);
-    public string Heading => Title.Length > 0 ? Title : ActivityText.Kind(Latest.Kind);
+    private string? _observedState;
+    private bool _controlsEnabled = true;
+    public bool CanStop => IsCommand && Latest.Kind != "command.completed" && _controlsEnabled && _observedState == "running";
+    public bool HasDirectory => IsCommand && Workdir.Length > 0;
+    public bool HasFile => FilePath.Length > 0;
+    public bool CanDiff => _controlsEnabled && HasFile && Latest.TaskId.Length > 0 && Latest.ThreadId.Length > 0;
+    public string State => IsCommand && Latest.Status == "running"
+        ? _observedState == "running" ? ActivityText.Get("RunningNow")
+          : _observedState is not null ? ActivityText.State(_observedState) : ActivityText.Get("Interrupted")
+        : ActivityText.State(Latest.Status);
+    public string Heading => ActivityPresentation.EventHeading(Latest, Title);
+    public string Category => ActivityPresentation.EventCategory(Latest.Kind);
+    public string TechnicalDetails => JsonSerializer.Serialize(Latest, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower });
+
+    public void Observe(ActivitySession? session, bool controlsEnabled)
+    {
+        var state = session?.Status;
+        if (_observedState == state && _controlsEnabled == controlsEnabled) return;
+        _observedState = state; _controlsEnabled = controlsEnabled;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
+    }
     public string Metadata => string.Join("  ·  ", new[]
     {
         Latest.CreatedAt.ToLocalTime().ToString("HH:mm:ss", CultureInfo.CurrentCulture), State,
-        Latest.TaskId, Latest.ThreadId, Latest.StepId, Runtime,
         Latest.ExitCode is int code ? $"exit {code}" : "",
         IsCommand ? $"{Latest.ElapsedMs / 1000d:0.00} s" : ""
     }.Where(value => value.Length > 0));
     public string Details => string.Join(Environment.NewLine, new[]
     {
-        Command, Workdir, FilePath.Length > 0 ? FilePath + (Latest.ChangeStatsKnown ? $"  (+{Latest.Insertions} -{Latest.Deletions})" : "") : "", Summary
+        Command,
+        Workdir.Length > 0 ? ActivityText.Get("CommandDirectory") + ": " + Workdir : "",
+        FilePath.Length > 0 ? FilePath + (Latest.ChangeStatsKnown ? $"  (+{Latest.Insertions} -{Latest.Deletions})" : "") : "",
+        Summary.Length > 0 ? ActivityText.Get("Summary") + ": " + Summary : ""
     }.Where(value => value.Length > 0));
     public string Output => Stdout + (Stderr.Length == 0 ? "" : Environment.NewLine + "[stderr]" + Environment.NewLine + Stderr);
     public bool HasOutput => Output.Length > 0 || Truncated;

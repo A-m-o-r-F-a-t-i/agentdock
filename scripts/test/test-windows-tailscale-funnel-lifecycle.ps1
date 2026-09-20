@@ -4,7 +4,7 @@ param(
     [Parameter(Mandatory=$true)][string] $Archive,
     [Parameter(Mandatory=$true)][string] $FakeTailscaleBinary,
     [Parameter(Mandatory=$true)][string] $ReportRoot,
-    [string] $ExpectedVersion = '1.1.0'
+    [string] $ExpectedVersion = '1.1.1'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

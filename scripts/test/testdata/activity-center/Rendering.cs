@@ -26,6 +26,7 @@ internal static partial class Program
             var dictionary = new XElement(presentation + "ResourceDictionary", source.Attributes().Where(attribute => attribute.IsNamespaceDeclaration), source.Element(presentation + "Application.Resources")!.Elements());
             app.Resources = (ResourceDictionary)XamlReader.Parse(dictionary.ToString());
         }
+        TestAccessModes(runtimeRoot: root);
         var trace = new BindingErrors();
         PresentationTraceSources.DataBindingSource.Listeners.Add(trace);
         PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Error;
@@ -43,13 +44,15 @@ internal static partial class Program
             window.Close();
             throw new InvalidOperationException(state, ex);
         }
-        Require(((TextBlock)window.FindName("TaskTitle")).Text.Contains("1.1.0"), "Window did not load the selected task.");
+        Require(((TextBlock)window.FindName("TaskTitle")).Text.Contains("1.1.1"), "Window did not load the selected task.");
+        Require(((Expander)window.FindName("StepsExpander")).IsExpanded, "Steps are not expanded by default.");
         Require(((TextBox)window.FindName("ThreadInfo")).Text.Contains("下一动作"), "Chinese checkpoint labels were not rendered.");
         var streamCancellation = (CancellationTokenSource)typeof(ActivityWindow).GetField("_streamCancellation", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
         var firstStreamToken = streamCancellation.Token;
         threads.SelectedIndex = 1;
         Require(firstStreamToken.IsCancellationRequested && timeline.Rows.Count == 0, "Thread switch did not cancel the previous subscription and clear rows.");
         threads.SelectedIndex = 0;
+        PumpUntil(() => (bool)typeof(ActivityWindow).GetField("_liveTrusted", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!, TimeSpan.FromSeconds(6));
         PopulateTimeline(timeline, root);
         var list = (ListBox)window.FindName("TimelineList");
         list.SelectedIndex = 0;
@@ -77,6 +80,7 @@ internal static partial class Program
         Require(english.Title.Contains("Task activity", StringComparison.Ordinal), "English window title was not localized.");
         PopulateTimeline(englishTimeline, root);
         Capture(english, root, "activity-en-1000x700-150.png", 1000, 700, 1.5);
+        Capture(english, root, "activity-en-1180x800-200.png", 1180, 800, 2.0);
         english.Close();
         PumpUntil(() => fixture.ActiveStreams == 0, TimeSpan.FromSeconds(4));
         Require(trace.Messages.Count == 0, "WPF binding errors: " + string.Join("\n", trace.Messages));
@@ -107,7 +111,7 @@ internal static partial class Program
         // content only for synchronous offscreen layout; keep its margins and bindings.
         // The live-window checks still exercise subscriptions and the full lifetime.
         var content = (FrameworkElement)window.Content;
-        var controls = new[] { "TaskList", "ThreadSelector", "TimelineList", "StopButton", "DiffButton", "ConnectionStatus" }
+        var controls = new[] { "TaskList", "ThreadSelector", "TimelineList", "WorkspaceButton", "ContinueButton", "ConnectionStatus" }
             .ToDictionary(controlName => controlName, controlName => (FrameworkElement)window.FindName(controlName));
         window.Content = null;
         var surface = new Border { Background = window.Background, Child = content };

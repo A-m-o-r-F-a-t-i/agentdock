@@ -36,6 +36,9 @@ func (r *Runtime) RuntimeActivityControl(ctx context.Context, request ActivityCo
 		if binding.TaskID != request.TaskID || binding.ThreadID != request.ThreadID {
 			return nil, toolError("SESSION_BINDING_MISMATCH", "selected command belongs to another task or thread", "validation")
 		}
+		if !r.command.ActivitySessionRunning(request.SessionID) {
+			return nil, toolError("SESSION_NOT_RUNNING", "the selected command is no longer running", "validation")
+		}
 		return r.Call(ctx, "session_act", map[string]any{"action": "kill", "session_id": request.SessionID})
 	case "cleanup":
 		if request.Before.IsZero() || request.Before.After(time.Now().Add(-24*time.Hour)) {
@@ -51,7 +54,7 @@ func (r *Runtime) RuntimeActivityControl(ctx context.Context, request ActivityCo
 			result["activity_warning"] = "Cleanup succeeded; its journal record could not be written."
 		}
 		return result, nil
-	case "thread_switch", "thread_create", "thread_fork", "thread_block", "thread_resume", "thread_close", "cancel", "archive", "unarchive":
+	case "thread_switch", "thread_create", "thread_fork", "thread_block", "thread_resume", "thread_close", "resume", "cancel", "archive", "unarchive":
 		args := map[string]any{"action": request.Action, "task_id": request.TaskID}
 		if request.ThreadID != "" {
 			args["thread_id"] = request.ThreadID

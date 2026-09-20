@@ -39,8 +39,17 @@ public partial class ActivityWindow : Window
         TaskList.ItemsSource = _tasks;
         CollectionViewSource.GetDefaultView(_tasks).Filter = item => item is ActivityTask task &&
             (TaskSearch.Text.Length == 0 || task.SearchText.Contains(TaskSearch.Text.Trim(), StringComparison.CurrentCultureIgnoreCase));
+        CollectionViewSource.GetDefaultView(_tasks).GroupDescriptions.Add(new PropertyGroupDescription(nameof(ActivityTask.GroupLabel)));
         TimelineList.ItemsSource = _timeline.Rows;
-        StateFilter.ItemsSource = new[] { new StateChoice("", ActivityText.Get("All")), new StateChoice("active", ActivityText.State("active")), new StateChoice("blocked", ActivityText.State("blocked")), new StateChoice("completed", ActivityText.State("completed")) };
+        CollectionViewSource.GetDefaultView(_timeline.Rows).Filter = item => item is ActivityRow row &&
+            (CategoryFilter.SelectedItem is not StateChoice choice || choice.Value.Length == 0 || row.Category == choice.Value);
+        CategoryFilter.ItemsSource = new[] {
+            new StateChoice("", ActivityText.Get("CategoryAll")), new StateChoice("command", ActivityText.Get("CategoryCommand")),
+            new StateChoice("file", ActivityText.Get("CategoryFile")), new StateChoice("checkpoint", ActivityText.Get("CategoryCheckpoint")),
+            new StateChoice("lifecycle", ActivityText.Get("CategoryLifecycle")) };
+        CategoryFilter.SelectedIndex = 0;
+        TimelineList.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(Timeline_ScrollChanged));
+        StateFilter.ItemsSource = new[] { new StateChoice("", ActivityText.Get("All")), new StateChoice("active", ActivityText.State("active")), new StateChoice("blocked", ActivityText.State("blocked")), new StateChoice("completed", ActivityText.Get("EndedTasks")) };
         StateFilter.SelectedIndex = 0;
         _pulse.Tick += Pulse;
     }
@@ -67,7 +76,7 @@ public partial class ActivityWindow : Window
             try
             {
                 _tasks.Clear();
-                foreach (var item in result.Tasks) _tasks.Add(item);
+                foreach (var item in result.Tasks.OrderBy(item => item.GroupRank).ThenByDescending(item => item.UpdatedAt)) _tasks.Add(item);
                 _tasks.Add(new ActivityTask { Id = "", Title = ActivityText.Get("AllActivity"), Status = "", UpdatedAt = DateTimeOffset.Now });
                 var selected = _tasks.FirstOrDefault(task => task.Id == _selectedTaskId) ??
                     _tasks.FirstOrDefault(task => task.Status == "active") ?? _tasks[0];
@@ -79,11 +88,12 @@ public partial class ActivityWindow : Window
             if (_selectedTaskId != selectedId || _channel is null) await SelectTaskAsync(selectedId);
             else if (selectedId.Length > 0) await LoadTaskDetailsAsync(selectedId, _selectionGeneration, _detailCancellation?.Token ?? _lifetime.Token);
             _needsRefresh = false;
+            _lastSuccessfulRefresh = DateTimeOffset.Now;
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested || !_ready) { }
         catch (Exception ex) when (ex is IOException or System.Net.Http.HttpRequestException or JsonException or OperationCanceledException)
         {
-            if (_ready) ConnectionStatus.Text = ActivityText.Get("Unavailable") + Environment.NewLine + ex.Message;
+            if (_ready) ConnectionStatus.Text = ActivityText.Get("Unavailable") + LastSuccessfulCheck() + Environment.NewLine + ex.Message;
         }
         finally { _refreshing = false; }
     }
@@ -98,6 +108,7 @@ public partial class ActivityWindow : Window
         StopStream();
         _selectedTaskId = id; _selectedThreadId = ""; _task = null;
         _timeline.Reset(); JournalWarning.Text = "";
+        ClearLiveState();
         EmptyTimeline.Visibility = Visibility.Visible;
         ConnectionStatus.Text = ActivityText.Get("Loading");
         TaskTitle.Text = _tasks.FirstOrDefault(task => task.Id == id)?.Title ?? id;
@@ -109,7 +120,11 @@ public partial class ActivityWindow : Window
                 ThreadSelector.ItemsSource = null;
                 ThreadSelector.IsEnabled = false;
                 _suppressSelection = false;
-                ThreadInfo.Text = ""; AcceptanceInfo.Text = ActivityText.Get("Facts");
+                ThreadSelector.Visibility = ThreadLabel.Visibility = Visibility.Collapsed;
+                ThreadInfo.Text = TaskStateText.Text = TaskTechnicalInfo.Text = "";
+                AcceptanceInfo.Text = ActivityText.Get("Facts");
+                WorkspaceInfo.Text = ActivityText.Get("NoWorkspace");
+                _ = RefreshLiveAsync(true);
                 StartStream("", ""); UpdateActions();
                 return;
             }
@@ -136,6 +151,7 @@ public partial class ActivityWindow : Window
         _suppressSelection = true;
         try { ThreadSelector.ItemsSource = threads; ThreadSelector.SelectedItem = selected; ThreadSelector.IsEnabled = threads.Count > 0; }
         finally { _suppressSelection = false; }
+        ThreadSelector.Visibility = ThreadLabel.Visibility = threads.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         TaskTitle.Text = _task.Title;
         ShowThreadDetails(selected);
         if (selected is not null && (_selectedThreadId != selected.EffectiveId || _channel is null))
@@ -144,17 +160,20 @@ public partial class ActivityWindow : Window
             StartStream(id, selected.EffectiveId);
         }
         UpdateActions();
+        await RefreshLiveAsync(true);
     }
 
     private void ShowThreadDetails(ActivityThread? thread)
     {
-        if (thread is null || _task is null) return;
-        var workspace = thread.WorkspaceId.Length > 0 ? thread.WorkspaceId : _task.WorkspaceId;
-        var step = thread.Steps.FirstOrDefault(item => item.Id == thread.CurrentStepId);
-        ThreadInfo.Text = $"{ActivityText.Get("DefaultThread")}: {_task.ActiveThreadId}\n{ActivityText.Get("Workspace")}: {workspace}\n{ActivityText.Get("Step")}: {step?.Title ?? thread.CurrentStepId}\n{ActivityText.Get("Next")}: {thread.NextAction}" +
-            (thread.Summary.Length > 0 ? "\n" + thread.Summary : "") + (thread.BlockReason.Length > 0 ? "\n" + ActivityText.Get("Reason") + ": " + thread.BlockReason : "");
+        if (_task is null) return;
+        var steps = ActivityPresentation.Steps(_task, thread);
+        TaskStateText.Text = _task.StateLabel + " · " + ActivityText.Get("Progress") + $": {steps.Count(item => item.Status == "completed")}/{steps.Count}";
+        ThreadInfo.Text = ActivityPresentation.ThreadSummary(_task, thread);
+        TaskTechnicalInfo.Text = $"Task: {_task.Id}\nThread: {thread?.EffectiveId}\n{ActivityText.Get("DefaultThread")}: {_task.ActiveThreadId}\nWorkspace: {thread?.WorkspaceId ?? _task.WorkspaceId}\nCheckpoint: {thread?.CheckpointEventId}";
         var text = new StringBuilder();
-        foreach (var item in thread.Steps) text.AppendLine($"[{ActivityText.State(item.Status)}] {item.Title}");
+        text.AppendLine(ActivityText.Get(thread?.Steps.Count > 0 ? "BranchSteps" : "TaskSteps"));
+        foreach (var item in steps) text.AppendLine($"[{ActivityText.State(item.Status)}] {item.Title}");
+        if (steps.Count == 0) text.AppendLine(ActivityText.Get("NoStep"));
         text.AppendLine().AppendLine(ActivityText.Get("Conditions"));
         foreach (var condition in _task.Conditions) text.AppendLine($"{condition.Id}: {condition.Text}");
         if (_task.FinalReview is { } review)
@@ -209,11 +228,14 @@ public partial class ActivityWindow : Window
         }
         if (changed)
         {
-            EmptyTimeline.Visibility = _timeline.Rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            ApplyLiveObservations();
+            EmptyTimeline.Visibility = CollectionViewSource.GetDefaultView(_timeline.Rows).IsEmpty ? Visibility.Visible : Visibility.Collapsed;
             if (_timeline.RemovedRowCount > 0) JournalWarning.Text = ActivityText.Get("RecentOnly");
             if (FollowLatest.IsChecked == true && _timeline.Rows.Count > 0) TimelineList.ScrollIntoView(_timeline.Rows[^1]);
             UpdateActions();
         }
+        if (_liveTrusted && DateTimeOffset.UtcNow - _liveReceivedAt > TimeSpan.FromSeconds(12)) InvalidateLiveState();
+        if (!_controlBusy && DateTimeOffset.UtcNow - _lastLivePoll > TimeSpan.FromSeconds(3)) _ = RefreshLiveAsync(false);
         if (!_refreshing && !_controlBusy && DateTimeOffset.UtcNow - _lastRefresh > TimeSpan.FromSeconds(_needsRefresh ? 2 : 8)) _ = RefreshTasksAsync();
     }
 
@@ -224,13 +246,22 @@ public partial class ActivityWindow : Window
 
     private void UpdateActions()
     {
-        var selected = TimelineList.SelectedItem as ActivityRow;
-        StopButton.IsEnabled = !_controlBusy && selected?.CanStop == true;
-        CopyButton.IsEnabled = selected?.Command.Length > 0;
-        DirectoryButton.IsEnabled = selected?.Workdir.Length > 0;
-        FileButton.IsEnabled = selected?.FilePath.Length > 0;
-        DiffButton.IsEnabled = !_controlBusy && selected?.FilePath.Length > 0 && selected.Latest.TaskId.Length > 0;
+        ApplyLiveObservations();
+        WorkspaceButton.IsEnabled = _liveTrusted && _live is { WorkspaceStatus: "bound", WorkspaceRuntime: "windows" };
+        WorkspaceButton.ToolTip = WorkspaceButton.IsEnabled ? _live?.WorkspacePath : WorkspaceInfo.Text;
+        ContinueButton.IsEnabled = _task is not null && (_task.Status != "completed" || _task.Outcome == "cancelled");
+        ContinueButton.Content = ActivityText.Get(_task?.Outcome == "cancelled" ? "Retry" : "Continue");
+        ResumeTaskButton.Visibility = _task?.Status == "blocked" ? Visibility.Visible : Visibility.Collapsed;
+        ResumeTaskButton.IsEnabled = !_controlBusy;
+        LiveSessionsList.IsEnabled = !_controlBusy && _liveTrusted;
         ThreadActionsMenu.IsEnabled = !_controlBusy && _task is { Status: not "completed" } && ThreadSelector.SelectedItem is ActivityThread;
+        if (ThreadSelector.SelectedItem is ActivityThread branch)
+            foreach (var item in ThreadActionsMenu.Items.OfType<MenuItem>())
+                item.IsEnabled = (item.Tag as string) switch {
+                    "thread_resume" => branch.Status == "blocked",
+                    "thread_block" or "thread_close" => branch.Status == "open",
+                    "thread_switch" => branch.Status != "closed" && branch.EffectiveId != _task?.ActiveThreadId,
+                    _ => branch.Status != "closed" };
         TaskActionsMenu.IsEnabled = !_controlBusy;
         foreach (var item in TaskActionsMenu.Items.OfType<MenuItem>())
         {
@@ -247,7 +278,7 @@ public partial class ActivityWindow : Window
 
     private async void Control_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuItem { Tag: string action } || _controlBusy) return;
+        if (sender is not FrameworkElement { Tag: string action } || _controlBusy) return;
         if (action != "cleanup" && string.IsNullOrEmpty(_selectedTaskId)) return;
         var body = new Dictionary<string, object?> { ["action"] = action };
         if (action == "cleanup")
@@ -266,7 +297,18 @@ public partial class ActivityWindow : Window
             else if (action is "thread_block" or "cancel")
             {
                 var reason = Prompt(ActivityText.Get("Reason")); if (reason is null) return; body["summary"] = reason;
-                if (action == "cancel" && !Confirm(ActivityText.Get("CancelConfirmation"))) return;
+                if (action == "cancel")
+                {
+                    var taskId = _selectedTaskId!;
+                    try
+                    {
+                        var live = await _client.LiveAsync(taskId, "", _lifetime.Token);
+                        if (!_ready || taskId != _selectedTaskId) return;
+                        if (!Confirm(string.Format(ActivityText.Get("CancelConfirmation"), live.Sessions.Count(item => item.Status == "running")))) return;
+                    }
+                    catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { return; }
+                    catch (Exception ex) { ShowError(ex); return; }
+                }
             }
             else if (action is "thread_close" or "archive" or "unarchive")
             {
@@ -274,6 +316,7 @@ public partial class ActivityWindow : Window
             }
         }
         await RunControlAsync(body, action is "thread_create" or "thread_fork");
+        if (action is "resume" or "thread_resume") JournalWarning.Text = ActivityText.Get("ResumeHint");
     }
 
     private async Task RunControlAsync(object request, bool selectCreated = false)
@@ -294,23 +337,23 @@ public partial class ActivityWindow : Window
 
     private async void Stop_Click(object sender, RoutedEventArgs e)
     {
-        if (TimelineList.SelectedItem is not ActivityRow row || !row.CanStop || !Confirm(ActivityText.Get("ConfirmStop"))) return;
+        if (_controlBusy || EventRow(sender) is not ActivityRow row || !row.CanStop || !Confirm(ActivityText.Get("ConfirmStop"))) return;
         await RunControlAsync(new { action = "stop", task_id = row.Latest.TaskId, thread_id = row.Latest.ThreadId, session_id = row.SessionId });
     }
 
     private void Copy_Click(object sender, RoutedEventArgs e)
     {
-        try { if (TimelineList.SelectedItem is ActivityRow row && row.Command.Length > 0) System.Windows.Clipboard.SetText(row.Command); }
+        try { if (EventRow(sender) is ActivityRow row && row.Command.Length > 0) System.Windows.Clipboard.SetText(row.Command); }
         catch (Exception ex) { ShowError(ex); }
     }
-    private void Directory_Click(object sender, RoutedEventArgs e) => OpenRecordedPath(directory: true);
-    private void File_Click(object sender, RoutedEventArgs e) => OpenRecordedPath(directory: false);
+    private void Directory_Click(object sender, RoutedEventArgs e) => OpenRecordedPath(sender, directory: true);
+    private void File_Click(object sender, RoutedEventArgs e) => OpenRecordedPath(sender, directory: false);
 
-    private void OpenRecordedPath(bool directory)
+    private void OpenRecordedPath(object sender, bool directory)
     {
         try
         {
-            if (TimelineList.SelectedItem is not ActivityRow row) return;
+            if (EventRow(sender) is not ActivityRow row) return;
             var path = directory ? row.Workdir : row.FilePath;
             if (row.Runtime == "wsl" || path.Contains("[REDACTED]", StringComparison.Ordinal) || path.StartsWith(@"\\", StringComparison.Ordinal) ||
                 !Path.IsPathFullyQualified(path) || (directory ? !Directory.Exists(path) : !File.Exists(path)))
@@ -325,7 +368,7 @@ public partial class ActivityWindow : Window
 
     private async void Diff_Click(object sender, RoutedEventArgs e)
     {
-        if (TimelineList.SelectedItem is not ActivityRow row || row.FilePath.Length == 0) return;
+        if (_controlBusy || EventRow(sender) is not ActivityRow row || !row.CanDiff) return;
         _controlBusy = true; UpdateActions();
         try
         {
@@ -369,9 +412,16 @@ public partial class ActivityWindow : Window
         if (!_ready || _suppressSelection || ThreadSelector.SelectedItem is not ActivityThread thread || string.IsNullOrEmpty(_selectedTaskId)) return;
         ShowThreadDetails(thread);
         if (_selectedThreadId != thread.EffectiveId) { _selectedThreadId = thread.EffectiveId; StartStream(_selectedTaskId, thread.EffectiveId); }
+        InvalidateLiveState();
+        _ = RefreshLiveAsync(true);
         UpdateActions();
     }
-    private void TaskSearch_TextChanged(object sender, TextChangedEventArgs e) { if (_ready) CollectionViewSource.GetDefaultView(_tasks).Refresh(); }
+    private void TaskSearch_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (!_ready) return;
+        var view = CollectionViewSource.GetDefaultView(_tasks); view.Refresh();
+        TaskCountNotice.Text = view.IsEmpty ? ActivityText.Get("NoResults") : _tasks.Count > 200 ? ActivityText.Get("MoreTasks") : "";
+    }
     private async void StateFilter_SelectionChanged(object sender, SelectionChangedEventArgs e) { if (_ready && !_suppressSelection) await RefreshTasksAsync(); }
     private async void ArchiveFilter_Changed(object sender, RoutedEventArgs e) { if (_ready) await RefreshTasksAsync(); }
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshTasksAsync();

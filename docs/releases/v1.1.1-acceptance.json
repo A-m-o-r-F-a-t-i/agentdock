@@ -1,0 +1,10 @@
+{
+  "version": "1.1.1",
+  "release_channel": "prerelease",
+  "isolated_oauth_mcp_tls": true,
+  "desktop_mode_draft_and_rendering": true,
+  "real_chatgpt_oauth_and_tools": false,
+  "real_chatgpt_refresh_reconnect": false,
+  "production_configuration_preserved": false,
+  "note": "Production 1.1.0 was not upgraded or reconfigured. Formal acceptance requires actual client verification and production configuration preservation; isolated tests are recorded separately."
+}
