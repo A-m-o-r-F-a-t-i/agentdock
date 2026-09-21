@@ -1,0 +1,286 @@
+{
+  "schema_version": 1,
+  "version": "1.1.3",
+  "passed": true,
+  "build": {
+    "version": "1.1.3",
+    "channel": "candidate-not-released",
+    "source_dirty": false,
+    "changed_paths": [],
+    "commit": "22adcb769cefe018a0291cfc2bfaf15ff8c600a1",
+    "build_date": "2026-09-21T06:30:58Z",
+    "platforms": [
+      "windows/amd64"
+    ],
+    "agentdock_authenticode": "unsigned",
+    "cloudflared_authenticode": "valid",
+    "wsl_helpers": "Windows feature payload only; no separate Linux release"
+  },
+  "binary": {
+    "execution_policy_version": 1,
+    "version": "1.1.3",
+    "commit": "22adcb769cef",
+    "build_date": "2026-09-21T06:30:58Z",
+    "go_version": "go1.26.5",
+    "platform": "windows/amd64"
+  },
+  "go": {
+    "packages_passed": 53,
+    "test_results_passed": 1644,
+    "skipped": 73,
+    "failures": []
+  },
+  "race": {
+    "pattern": "Test113",
+    "test_functions": 18,
+    "packages_passed": 3,
+    "passed": true
+  },
+  "installation": {
+    "passed": true,
+    "baseline_version": "1.1.2",
+    "version": "1.1.3",
+    "production_state_unchanged": true,
+    "payload_sha256": "ef61d1613b32d85bed0274ba0890c2e5c933999653aa281ceba8f75563d15dfd",
+    "baseline_sha256": "2d2d0184e0cdaede0b0926e14a026f0f9071623c8da25d241595bdff980cb7e7",
+    "cases": [
+      {
+        "case": "compile-normal",
+        "exit_code": 0,
+        "elapsed_ms": 23216,
+        "observed": false,
+        "new_visible_consoles": 0
+      },
+      {
+        "case": "compile-fault",
+        "exit_code": 0,
+        "elapsed_ms": 21380,
+        "observed": false,
+        "new_visible_consoles": 0
+      },
+      {
+        "case": "baseline",
+        "exit_code": 0,
+        "elapsed_ms": 7771,
+        "observed": false,
+        "new_visible_consoles": 0
+      },
+      {
+        "case": "inno-upgrade-rollback",
+        "exit_code": 7,
+        "elapsed_ms": 18992,
+        "observed": true,
+        "new_visible_consoles": 0
+      },
+      {
+        "case": "inno-upgrade",
+        "exit_code": 0,
+        "elapsed_ms": 18660,
+        "observed": true,
+        "new_visible_consoles": 0
+      },
+      {
+        "case": "inno-same-version-rollback",
+        "exit_code": 7,
+        "elapsed_ms": 18924,
+        "observed": true,
+        "new_visible_consoles": 0
+      },
+      {
+        "case": "inno-same-version-repair",
+        "exit_code": 0,
+        "elapsed_ms": 18543,
+        "observed": true,
+        "new_visible_consoles": 0
+      },
+      {
+        "case": "inno-uninstall",
+        "exit_code": 0,
+        "elapsed_ms": 6176,
+        "observed": true,
+        "new_visible_consoles": 0
+      },
+      {
+        "case": "inno-fresh",
+        "exit_code": 0,
+        "elapsed_ms": 16968,
+        "observed": true,
+        "new_visible_consoles": 0
+      },
+      {
+        "case": "inno-fresh-uninstall",
+        "exit_code": 0,
+        "elapsed_ms": 4072,
+        "observed": true,
+        "new_visible_consoles": 0
+      },
+      {
+        "case": "inno-clean-profile-install",
+        "exit_code": 0,
+        "elapsed_ms": 16241,
+        "observed": true,
+        "new_visible_consoles": 0
+      },
+      {
+        "case": "inno-clean-profile-uninstall",
+        "exit_code": 0,
+        "elapsed_ms": 4184,
+        "observed": true,
+        "new_visible_consoles": 0
+      }
+    ],
+    "preserved_user_fixtures": [
+      "legacy Task",
+      "legacy Activity",
+      "permission policy bytes",
+      "project source file",
+      "user Skill",
+      "user Plugin",
+      "MCP companion state",
+      "Workspace policy"
+    ],
+    "setup_identity": "isolated AppId, startup names, shortcut and install-root fallback; production payload binaries unchanged",
+    "fresh_install_scope": "retained user data reinstall and empty user-data/installation directory",
+    "observer_self_test": "passed"
+  },
+  "real_binary_data_upgrade": {
+    "passed": true,
+    "cases": [
+      {
+        "case": "released_old_binary_created_real_task_calls_manual_title_and_pending_request",
+        "passed": true
+      },
+      {
+        "case": "upgrade_preserved_ids_history_manual_title_and_did_not_replay_old_approval",
+        "passed": true
+      },
+      {
+        "case": "unattributed_call_stable_handle_supports_management_and_deletion",
+        "passed": true
+      },
+      {
+        "case": "termination_stopped_actual_async_command_blocked_new_calls_and_preserved_other_conversation",
+        "passed": true
+      },
+      {
+        "case": "restart_preserved_termination_call_tombstone_conversation_tombstone_and_source_files",
+        "passed": true
+      }
+    ],
+    "production_touched": false,
+    "binary_generations": [
+      {
+        "version": "1.1.2",
+        "generation": 1
+      },
+      {
+        "version": "1.1.3",
+        "generation": 2
+      },
+      {
+        "version": "1.1.3",
+        "generation": 3
+      },
+      {
+        "version": "1.1.3",
+        "generation": 4
+      }
+    ]
+  },
+  "legacy_registry_performance": {
+    "original_candidate": {
+      "passed": false,
+      "count": 1000,
+      "title_mode": "legacy",
+      "measurements": [
+        {
+          "query": "first_page",
+          "status": 200,
+          "elapsed_ms": 15911.86,
+          "returned": 200,
+          "total": 1000
+        }
+      ],
+      "scope": "Synthetic persisted conversations; real Core HTTP registry queries",
+      "error": "Conversation query exceeded 5 seconds: 15911.86ms"
+    },
+    "final_candidate": {
+      "passed": true,
+      "count": 1000,
+      "title_mode": "legacy",
+      "measurements": [
+        {
+          "query": "first_page",
+          "status": 200,
+          "elapsed_ms": 29.63,
+          "returned": 200,
+          "total": 1000
+        },
+        {
+          "query": "second_page",
+          "status": 200,
+          "elapsed_ms": 15.62,
+          "returned": 200,
+          "total": 1000
+        },
+        {
+          "query": "search",
+          "status": 200,
+          "elapsed_ms": 28.5,
+          "returned": 0,
+          "total": 0
+        }
+      ],
+      "scope": "Synthetic persisted conversations; real Core HTTP registry queries"
+    },
+    "interpretation": "1000 synthetic on-disk legacy conversations, 200 rows per page; single first-request measurement including automatic naming; not production latency statistics"
+  },
+  "wpf": {
+    "passed": true,
+    "build_warnings": 0,
+    "build_errors": 0,
+    "layout": {
+      "passed": true,
+      "full_rows_at_1280x800": 16,
+      "call_height_dip": 36,
+      "themes": [
+        "light",
+        "dark",
+        "system"
+      ],
+      "details_default_closed": true,
+      "task_peers_in_sidebar": false,
+      "source_states": 5,
+      "scope": "real WPF window, isolated HTTP and rendering fixtures"
+    },
+    "large_list": {
+      "passed": true,
+      "conversations": 1000,
+      "tasks": 1000,
+      "calls": 100000,
+      "conversation_page_size": 200,
+      "call_page_size": 100,
+      "loaded_task_pages": 400,
+      "loaded_call_pages": 200,
+      "first_screen_ms": 367,
+      "realized_object_rows": 38,
+      "realized_call_rows": 18,
+      "scope": "Actual WPF window with paginated HTTP fixture; excludes real journal cold-query latency"
+    }
+  },
+  "distribution": {
+    "setup_filename": "AgentDock-1.1.3-Windows-x64-Setup.exe",
+    "setup_bytes": 109731182,
+    "setup_sha256": "944ab24c854f19b83657284ad7723e12f17561167da717cdd82d64a553d7e89a",
+    "archive_sha256": "ef61d1613b32d85bed0274ba0890c2e5c933999653aa281ceba8f75563d15dfd",
+    "archive_crc_verified": true
+  },
+  "not_performed": [
+    "production-instance replacement",
+    "public GitHub push or Release",
+    "administrator install",
+    "Windows ARM64 runtime tests",
+    "power-loss recovery"
+  ],
+  "test_environment_correction": "The first full test run used a temporary directory beneath an unrelated parent Git repository and lacked new script governance entries. The corrected inventory and standard external temporary directory passed the full suite; product rule-loading assertions were not weakened."
+}
