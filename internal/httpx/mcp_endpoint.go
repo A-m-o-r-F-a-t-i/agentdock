@@ -29,6 +29,7 @@ func agentDockContextHandler(server *mcp.Server, cfg config.Config, oauthStore *
 		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
 		principal, oauthOK := oauthExecutionPrincipal(r, cfg, oauthStore)
 		if authRequired && !staticOK && !oauthOK {
+			server.ObserveClientRequest(clientCredentialDigest(r), false)()
 			setBearerChallenge(w, cfg, r, strings.TrimSpace(r.Header.Get("Authorization")) != "")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -37,6 +38,9 @@ func agentDockContextHandler(server *mcp.Server, cfg config.Config, oauthStore *
 			principal = "http:static"
 		} else if !oauthOK {
 			principal = "http:local"
+		}
+		if staticOK || oauthOK {
+			defer server.ObserveClientRequest(clientCredentialDigest(r), true)()
 		}
 		sourceCtx := activity.WithSource(r.Context(), activity.Source{Principal: principal, Namespace: "mcp:http"})
 		ctx, cancel := context.WithTimeout(sourceCtx, 8*time.Second)
@@ -57,6 +61,7 @@ func mcpEndpointHandler(server *mcp.Server, cfg config.Config, oauthStore *auth.
 		staticOK := cfg.AuthToken != "" && authorizer.Authorized(r)
 		principal, oauthOK := oauthExecutionPrincipal(r, cfg, oauthStore)
 		if authRequired && !staticOK && !oauthOK {
+			server.ObserveClientRequest(clientCredentialDigest(r), false)()
 			setBearerChallenge(w, cfg, r, strings.TrimSpace(r.Header.Get("Authorization")) != "")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -68,6 +73,9 @@ func mcpEndpointHandler(server *mcp.Server, cfg config.Config, oauthStore *auth.
 			principal = "http:static"
 		} else if !oauthOK {
 			principal = "http:local"
+		}
+		if staticOK || oauthOK {
+			defer server.ObserveClientRequest(clientCredentialDigest(r), true)()
 		}
 		sourceCtx := activity.WithSource(r.Context(), activity.Source{Principal: principal, Namespace: "mcp:http"})
 		ctx := requestmeta.WithBaseURL(sourceCtx, requestPublicBaseURL(cfg, r))

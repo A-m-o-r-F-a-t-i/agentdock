@@ -30,6 +30,12 @@ func (r *ConversationRegistry) UpdateBinding(ctx context.Context, id string, exp
 		if record.OwnerKey != SourceOwnerKey(ctx) && !IsLocalManagement(ctx) {
 			return false, ErrConversationOwner
 		}
+		if record.DeletedAt != nil {
+			return false, ErrConversationDeleted
+		}
+		if record.TerminatedAt != nil {
+			return false, ErrConversationTerminated
+		}
 		if record.TrashedAt != nil {
 			return false, ErrConversationTrashed
 		}

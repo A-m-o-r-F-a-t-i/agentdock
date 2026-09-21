@@ -1,124 +1,178 @@
 <Window x:Class="AgentDock.ControlPanel.ExecutionWindow"
- xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
- xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- xmlns:local="clr-namespace:AgentDock.ControlPanel"
- Title="AgentDock · 任务与执行中心" Width="1220" Height="840" MinWidth="800" MinHeight="540"
- FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="14" Background="#F4F6FA" Foreground="#233249"
- Loaded="Window_Loaded" Closed="Window_Closed" PreviewKeyDown="Window_KeyDown">
- <Window.Resources>
-  <BooleanToVisibilityConverter x:Key="BoolVis"/>
-  <Style TargetType="Button"><Setter Property="Padding" Value="11,6"/><Setter Property="Margin" Value="3"/><Setter Property="MinHeight" Value="33"/><Setter Property="Background" Value="White"/><Setter Property="Foreground" Value="#233249"/><Setter Property="BorderBrush" Value="#CED7E3"/><Setter Property="BorderThickness" Value="1"/></Style>
-  <Style TargetType="TextBox"><Setter Property="Padding" Value="7,6"/><Setter Property="Margin" Value="3"/><Setter Property="BorderBrush" Value="#CED7E3"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
-  <Style TargetType="ComboBox"><Setter Property="Padding" Value="6,5"/><Setter Property="Margin" Value="3"/><Setter Property="MinHeight" Value="32"/></Style>
-  <Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style>
-  <Style x:Key="NavButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="HorizontalContentAlignment" Value="Left"/><Setter Property="Padding" Value="12,8"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Background" Value="Transparent"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
-  <ContextMenu x:Key="ManageMenu" Opened="ManageMenu_Opened">
-   <MenuItem Header="重命名" Tag="rename" Click="Manage_Click"/><MenuItem Header="置顶" Tag="pin" Click="Manage_Click"/><MenuItem Header="取消置顶" Tag="unpin" Click="Manage_Click"/><MenuItem Header="设置标签" Tag="tags" Click="Manage_Click"/>
-   <Separator/><MenuItem Header="归档" Tag="archive" Click="Manage_Click"/><MenuItem Header="移出归档" Tag="unarchive" Click="Manage_Click"/><MenuItem Header="移入回收站" Tag="trash" Click="Manage_Click"/><MenuItem Header="从回收站恢复" Tag="restore" Click="Manage_Click"/>
-   <Separator/><MenuItem Header="永久删除管理数据…" Tag="delete" Click="Manage_Click"/>
-  </ContextMenu>
-  <DataTemplate x:Key="CallTemplate">
-   <Border Margin="2,4" Padding="12,9" BorderThickness="1" CornerRadius="7">
-    <Border.Style><Style TargetType="Border"><Setter Property="BorderBrush" Value="#DCE3EC"/><Setter Property="Background" Value="White"/>
-     <Style.Triggers><DataTrigger Binding="{Binding Status}" Value="running"><Setter Property="BorderBrush" Value="#82AEE7"/><Setter Property="Background" Value="#F4F8FE"/></DataTrigger>
-      <DataTrigger Binding="{Binding Status}" Value="pending_approval"><Setter Property="BorderBrush" Value="#D9AE49"/><Setter Property="Background" Value="#FFF9E9"/></DataTrigger>
-      <DataTrigger Binding="{Binding Status}" Value="failed"><Setter Property="BorderBrush" Value="#D99B9B"/><Setter Property="Background" Value="#FFF5F5"/></DataTrigger>
-      <DataTrigger Binding="{Binding Status}" Value="unknown"><Setter Property="BorderBrush" Value="#D9AE49"/><Setter Property="Background" Value="#FFF9E9"/></DataTrigger>
-     </Style.Triggers></Style></Border.Style>
-    <Expander IsExpanded="{Binding IsExpanded,Mode=TwoWay}" Expanded="Call_Expanded" HorizontalContentAlignment="Stretch">
-     <Expander.Header><StackPanel Margin="3,0,0,0"><DockPanel><TextBlock DockPanel.Dock="Right" Text="{Binding When}" Foreground="#728096" FontSize="12" Margin="12,0,0,0"/><TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxHeight="48"/></DockPanel>
-      <WrapPanel Margin="0,4,0,0"><TextBlock Text="{Binding State}" FontWeight="SemiBold" Margin="0,0,14,0"/><TextBlock Text="{Binding Duration}" Foreground="#65748A" Margin="0,0,14,0"/><TextBlock Text="{Binding Origin}" Foreground="#65748A" FontSize="12"/></WrapPanel>
-      <TextBlock Text="{Binding Summary}" Foreground="#52627A" Margin="0,5,0,0" TextTrimming="CharacterEllipsis" MaxHeight="50"/>
-     </StackPanel></Expander.Header>
-     <StackPanel Margin="15,12,0,0">
-      <TextBlock Text="{Binding HistoryWarning}" Foreground="#985500"/>
-      <TextBlock Text="{Binding Parameters}" FontFamily="Consolas" FontSize="12" Foreground="#52627A" Margin="0,4"/>
-      <TextBlock Text="{Binding Workdir}" Foreground="#65748A" FontSize="12" Margin="0,4"/>
-      <TextBox Visibility="{Binding HasCommand,Converter={StaticResource BoolVis}}" Text="{Binding Command,Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" FontFamily="Consolas" MaxHeight="145" VerticalScrollBarVisibility="Auto"/>
-      <WrapPanel><Button Content="查看审批并决定…" Click="Approve_Click" Visibility="{Binding NeedsApproval,Converter={StaticResource BoolVis}}" AutomationProperties.Name="ReviewApproval"/><Button Content="拒绝" Click="Reject_Click" Visibility="{Binding NeedsApproval,Converter={StaticResource BoolVis}}"/>
-       <Button Content="停止" Click="Stop_Click" Visibility="{Binding CanStop,Converter={StaticResource BoolVis}}" AutomationProperties.Name="StopExecution"/><Button Content="复制命令" Click="CopyCommand_Click"/><Button Content="刷新详情" Click="RefreshCall_Click"/><Button Content="复制重试指令" Click="RetryInstruction_Click" Visibility="{Binding CanRetry,Converter={StaticResource BoolVis}}"/>
-      </WrapPanel>
-      <TextBlock Text="原调用的最终副作用尚未确认。请核对文件、服务或设备的实际状态，确认后再发起新操作。" Visibility="{Binding NeedsVerification,Converter={StaticResource BoolVis}}" Foreground="#985500" Margin="0,7"/>
-      <TextBox Text="{Binding Output,Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" FontSize="13" MaxHeight="260" MinHeight="40" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" TextChanged="Output_TextChanged" ScrollViewer.ScrollChanged="Output_ScrollChanged"/>
-      <Expander Header="文件变更" Visibility="{Binding HasChanges,Converter={StaticResource BoolVis}}" Margin="0,5"><TextBox Text="{Binding Changes,Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="180" VerticalScrollBarVisibility="Auto"/></Expander>
-      <Expander Header="内部子调用" Expanded="Children_Expanded" Margin="0,5"><ItemsControl ItemsSource="{Binding Children}"><ItemsControl.ItemTemplate><DataTemplate><Border Background="#EFF3F8" Padding="9" Margin="1,4"><StackPanel><TextBlock Text="{Binding Title}" FontWeight="SemiBold"/><TextBlock Text="{Binding State}"/><TextBlock Text="{Binding Summary}"/><TextBox Text="{Binding Output,Mode=OneWay}" IsReadOnly="True" MaxHeight="130" VerticalScrollBarVisibility="Auto"/></StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></Expander>
-      <Expander Header="技术详情" Margin="0,5"><TextBox Text="{Binding Technical,Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" FontSize="12" MaxHeight="260" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/></Expander>
-     </StackPanel>
-    </Expander>
-   </Border>
-  </DataTemplate>
- </Window.Resources>
- <Grid Margin="18">
-  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <DockPanel Margin="0,0,0,10"><WrapPanel DockPanel.Dock="Right"><Button Content="权限设置" Click="Permissions_Click" AutomationProperties.AutomationId="ExecutionPermissions"/><Button Content="显示与保留" Click="Preferences_Click"/><Button Content="刷新" Click="Refresh_Click"/></WrapPanel>
-   <StackPanel><TextBlock Text="任务与执行" FontSize="23" FontWeight="Bold"/><TextBlock x:Name="OverviewText" Text="正在读取实际执行状态…" Foreground="#627188" Margin="0,4"/></StackPanel>
-  </DockPanel>
-  <Border Grid.Row="1" Background="#FFF5DC" Padding="10,6" Margin="0,0,0,9" x:Name="WarningPanel" Visibility="Collapsed"><TextBlock x:Name="WarningText" Foreground="#85550E" AutomationProperties.AutomationId="ExecutionWarning"/></Border>
-  <Grid Grid.Row="2">
-   <Grid.ColumnDefinitions><ColumnDefinition Width="290" MinWidth="230"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*" MinWidth="450"/></Grid.ColumnDefinitions>
-   <Border Background="White" BorderBrush="#DEE5EE" BorderThickness="1" CornerRadius="8" Padding="10">
-    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-     <WrapPanel>
-      <Button Content="◉ 对话" Tag="conversation" Click="Navigate_Click" AutomationProperties.AutomationId="ConversationsView"/>
-      <Button Content="▣ 任务" Tag="task" Click="Navigate_Click" AutomationProperties.AutomationId="TasksView"/>
-      <Button x:Name="AttentionButton" Content="! 待处理" Tag="attention" Click="Navigate_Click" AutomationProperties.AutomationId="AttentionView"/>
-      <Button Content="已归档" Tag="archived" Click="Navigate_Click"/><Button Content="回收站" Tag="trash" Click="Navigate_Click"/>
-     </WrapPanel>
-     <StackPanel Grid.Row="1" Margin="0,5">
-      <ComboBox x:Name="KindCombo" SelectionChanged="Filter_Changed" AutomationProperties.Name="管理对象类型"><ComboBoxItem Content="对话" Tag="conversation"/><ComboBoxItem Content="任务" Tag="task"/></ComboBox>
-      <TextBlock Text="搜索标题或目标" FontSize="12" Foreground="#697A91" Margin="4,3"/>
-      <TextBox x:Name="SearchBox" TextChanged="FilterText_Changed" ToolTip="搜索标题、目标或标签" AutomationProperties.Name="搜索任务或对话"/>
-      <Expander Header="工作区、标签与保存筛选" Margin="4,5" IsExpanded="False">
-       <StackPanel>
-        <ComboBox x:Name="WorkspaceCombo" SelectionChanged="Filter_Changed" DisplayMemberPath="Title" ToolTip="按工作区分类" AutomationProperties.Name="工作区筛选"/>
-        <TextBlock Text="标签分类" FontSize="12" Foreground="#697A91" Margin="4,3"/>
-        <TextBox x:Name="TagBox" TextChanged="FilterText_Changed" ToolTip="单个标签筛选" AutomationProperties.Name="标签筛选"/>
-        <WrapPanel><Button Content="保存筛选" Click="SaveFilter_Click"/><Button Content="载入筛选" Click="LoadFilter_Click"/></WrapPanel>
-       </StackPanel>
-      </Expander>
-     </StackPanel>
-     <WrapPanel Grid.Row="2"><Button Content="全选筛选结果" Click="SelectAll_Click"/><Button Content="批量操作…" Click="BulkMenu_Click"/></WrapPanel>
-     <ListBox x:Name="ObjectsList" Grid.Row="3" ItemsSource="{Binding Objects}" SelectionMode="Extended" SelectionChanged="Objects_SelectionChanged" PreviewMouseDown="Objects_RightClick" ContextMenu="{StaticResource ManageMenu}" BorderThickness="0" Margin="0,6"
-       ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" HorizontalContentAlignment="Stretch" AutomationProperties.AutomationId="ExecutionObjects">
-      <ListBox.ItemTemplate><DataTemplate><Border Padding="5,9"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-       <CheckBox IsChecked="{Binding IsSelected,RelativeSource={RelativeSource AncestorType=ListBoxItem},Mode=TwoWay}" Margin="0,5,8,0" VerticalAlignment="Top" AutomationProperties.Name="选择此对象"/>
-       <StackPanel Grid.Column="1"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxHeight="43"/><TextBlock Text="{Binding Detail}" FontSize="12" Foreground="#697A91" Margin="0,4,0,0"/><TextBlock Text="{Binding Tags}" FontSize="12" Foreground="#416EAB"/><TextBlock Text="{Binding ManagementDates}" FontSize="11" Foreground="#985500"/></StackPanel>
-       <Button Grid.Column="2" Content="⋯" Click="ObjectMore_Click" Padding="4,0" MinWidth="24" MinHeight="24" VerticalAlignment="Top" ToolTip="管理此对象"/>
-      </Grid></Border></DataTemplate></ListBox.ItemTemplate>
-     </ListBox>
-     <StackPanel Grid.Row="4"><Button Content="清除选择" Click="ClearSelection_Click"/><TextBlock x:Name="SelectionText" Foreground="#697A91" FontSize="12" Margin="3,5"/><Button x:Name="MoreObjectsButton" Content="加载更多对象" Click="MoreObjects_Click"/></StackPanel>
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AgentDock" Width="1280" Height="800" MinWidth="800" MinHeight="540"
+        FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="14"
+        Background="{DynamicResource AppBackground}" Foreground="{DynamicResource PrimaryText}"
+        Loaded="Window_Loaded" Closed="Window_Closed" SizeChanged="Window_SizeChanged" PreviewKeyDown="Window_KeyDown">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Themes/Tokens.xaml"/>
+        <ResourceDictionary Source="Themes/Light.xaml"/>
+      </ResourceDictionary.MergedDictionaries>
+      <BooleanToVisibilityConverter x:Key="BoolVisibility"/>
+      <Style x:Key="RowMore" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Opacity" Value="0"/><Setter Property="Width" Value="28"/><Setter Property="Padding" Value="0"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Style.Triggers>
+          <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True"><Setter Property="Opacity" Value="1"/></DataTrigger>
+          <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True"><Setter Property="Opacity" Value="1"/></DataTrigger>
+          <DataTrigger Binding="{Binding IsKeyboardFocusWithin, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True"><Setter Property="Opacity" Value="1"/></DataTrigger>
+        </Style.Triggers>
+      </Style>
+      <DataTemplate x:Key="CallRowTemplate">
+        <Grid Height="{StaticResource ExecutionRowHeight}" Margin="6,0">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/><ColumnDefinition Width="84"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <TextBlock Text="{Binding StatusGlyph}" ToolTip="{Binding State}" VerticalAlignment="Center" HorizontalAlignment="Center">
+            <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource SecondaryText}"/>
+              <Style.Triggers><DataTrigger Binding="{Binding Status}" Value="failed"><Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/></DataTrigger><DataTrigger Binding="{Binding NeedsApproval}" Value="True"><Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/></DataTrigger></Style.Triggers>
+            </Style></TextBlock.Style>
+          </TextBlock>
+          <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" VerticalAlignment="Center" Margin="7,0,14,0"/>
+          <TextBlock Grid.Column="2" Text="{Binding Duration}" Style="{StaticResource MutedText}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
+          <TextBlock Grid.Column="3" Width="78" Text="{Binding When}" Style="{StaticResource MutedText}" VerticalAlignment="Center" HorizontalAlignment="Right" TextAlignment="Right" Visibility="{Binding ShowTimestamps, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/>
+        </Grid>
+      </DataTemplate>
+    </ResourceDictionary>
+  </Window.Resources>
+  <Grid>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="240" MinWidth="200" MaxWidth="320"/><ColumnDefinition Width="1"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <Border Background="{DynamicResource SidebarBackground}" Padding="12,12,10,12">
+      <DockPanel>
+        <Grid DockPanel.Dock="Top" Margin="4,0,0,12">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="30"/></Grid.ColumnDefinitions>
+          <Grid>
+            <TextBox x:Name="SearchBox" TextChanged="Search_Changed" ToolTip="搜索工作区或对话" AutomationProperties.Name="搜索工作区或对话" Background="Transparent"/>
+            <TextBlock Text="搜索" Foreground="{DynamicResource SecondaryText}" Margin="9,0" VerticalAlignment="Center" IsHitTestVisible="False">
+              <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+            </TextBlock>
+          </Grid>
+          <Button Grid.Column="1" Content="···" Padding="0" Click="SidebarMenu_Click" ToolTip="对话管理" AutomationProperties.Name="对话管理"/>
+        </Grid>
+        <Button x:Name="MoreObjectsButton" DockPanel.Dock="Bottom" Content="更多对话" Click="MoreObjects_Click" Visibility="Collapsed"/>
+        <Grid>
+          <ListBox x:Name="ObjectsList" ItemsSource="{Binding Objects}" SelectionMode="Extended" SelectionChanged="Objects_Changed" PreviewMouseRightButtonDown="Objects_RightClick"
+                   VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.IsVirtualizingWhenGrouping="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True">
+            <ListBox.GroupStyle>
+              <GroupStyle>
+                <GroupStyle.ContainerStyle>
+                  <Style TargetType="GroupItem"><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="GroupItem">
+                    <Expander IsExpanded="True" Loaded="WorkspaceGroup_Loaded" Expanded="WorkspaceGroup_Expanded" Collapsed="WorkspaceGroup_Collapsed" Margin="0,0,0,8">
+                      <Expander.Template><ControlTemplate TargetType="Expander">
+                        <StackPanel>
+                          <ToggleButton IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Height="34">
+                            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
+                              <Border Background="Transparent" Padding="3,0,6,0"><Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBlock x:Name="Arrow" Text="▸" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="{Binding Name.Title}" Foreground="{DynamicResource PrimaryText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" Text="{Binding ItemCount}" Foreground="{DynamicResource SecondaryText}" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                              </Grid></Border>
+                              <ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Arrow" Property="Text" Value="▾"/></Trigger></ControlTemplate.Triggers>
+                            </ControlTemplate></ToggleButton.Template>
+                          </ToggleButton>
+                          <ContentPresenter x:Name="GroupItems" ContentSource="Content" Margin="16,0,0,0"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="False"><Setter TargetName="GroupItems" Property="Visibility" Value="Collapsed"/></Trigger></ControlTemplate.Triggers>
+                      </ControlTemplate></Expander.Template>
+                      <ItemsPresenter/>
+                    </Expander>
+                  </ControlTemplate></Setter.Value></Setter></Style>
+                </GroupStyle.ContainerStyle>
+              </GroupStyle>
+            </ListBox.GroupStyle>
+            <ListBox.ItemTemplate><DataTemplate>
+              <Grid Height="34" Margin="8,0,3,0">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="28"/></Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Title}" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+                <TextBlock Grid.Column="1" Text="{Binding PendingCount}" FontSize="12" Margin="6,0,2,0" VerticalAlignment="Center" Foreground="{DynamicResource DangerBrush}">
+                  <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding PendingCount}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                </TextBlock>
+                <Button Grid.Column="2" Content="···" Style="{StaticResource RowMore}" Click="ObjectMore_Click" ToolTip="管理此对话" AutomationProperties.Name="管理此对话"/>
+              </Grid>
+            </DataTemplate></ListBox.ItemTemplate>
+          </ListBox>
+          <TextBlock x:Name="SidebarEmpty" Text="暂无对话" Foreground="{DynamicResource SecondaryText}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+        </Grid>
+      </DockPanel>
+    </Border>
+    <Border Grid.Column="1" Background="{DynamicResource SeparatorBrush}"/>
+    <Grid Grid.Column="2" Background="{DynamicResource PanelBackground}">
+      <Grid.RowDefinitions><RowDefinition Height="56"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="44"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <Grid x:Name="ConversationHeader" Margin="20,0,16,0">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="60"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <TextBlock x:Name="ObjectTitle" Text="选择对话" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0"/>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="AttentionButton" Content="待处理" Visibility="Collapsed" Click="Attention_Click" FontSize="12"/>
+          <Button Content="权限" Click="Permissions_Click" FontSize="12"/>
+          <Button x:Name="ConnectionButton" Content="连接" Click="Connection_Click" Foreground="{DynamicResource SecondaryText}" FontSize="12"/>
+          <Button Content="主题" Click="Theme_Click" FontSize="12"/>
+          <Button Content="设置" Click="SettingsMenu_Click" FontSize="12"/>
+          <Button x:Name="StopConversationButton" Content="停止" Click="Terminate_Click" Style="{StaticResource DangerButton}" Visibility="Collapsed" Margin="8,0,0,0" FontSize="12"/>
+          <Button Content="···" Click="ConversationMenu_Click" Width="30" Padding="0" Margin="2,0,0,0" ToolTip="当前对话操作" AutomationProperties.Name="当前对话操作"/>
+        </StackPanel>
+      </Grid>
+      <Border x:Name="WarningPanel" Grid.Row="1" Visibility="Collapsed" Background="{DynamicResource SelectionBackground}" Margin="20,0,20,8" Padding="10,5" CornerRadius="5">
+        <DockPanel><Button DockPanel.Dock="Right" Content="关闭" FontSize="12" Click="DismissWarning_Click"/><TextBlock x:Name="WarningText" TextWrapping="Wrap" VerticalAlignment="Center"/></DockPanel>
+      </Border>
+      <Border x:Name="ConversationProgressCard" Grid.Row="2" Visibility="Collapsed" Margin="20,0,20,8">
+        <Grid Height="36">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="50"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <ComboBox x:Name="TaskChoiceCombo" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="TaskChoice_Changed" ToolTip="当前对话的关联任务" Margin="0,0,8,0"/>
+          <TextBlock x:Name="CurrentTaskStatus" Grid.Column="1" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="12"/>
+          <ProgressBar x:Name="CurrentTaskProgress" Grid.Column="2" Maximum="100" VerticalAlignment="Center" Margin="0,0,8,0"/>
+          <TextBlock x:Name="CurrentTaskNext" Grid.Column="3" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
+          <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center"><Button x:Name="FilterTaskButton" Content="筛选此任务" Click="FilterTask_Click" FontSize="12"/><Button Content="任务详情" Click="TaskDetails_Click" FontSize="12"/></StackPanel>
+        </Grid>
+      </Border>
+      <Grid Grid.Row="3" Margin="20,0,20,8">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <Grid Width="150"><TextBox x:Name="CallSearchBox" TextChanged="CallSearch_Changed" AutomationProperties.Name="搜索执行记录"/><TextBlock Text="搜索执行记录" Foreground="{DynamicResource SecondaryText}" Margin="9,0" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=CallSearchBox}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid>
+          <ComboBox x:Name="CallStatusCombo" Width="92" Margin="8,0,0,0" SelectionChanged="CallFilter_Changed" SelectedIndex="0"><ComboBoxItem Content="全部状态" Tag=""/><ComboBoxItem Content="运行中" Tag="running"/><ComboBoxItem Content="待审批" Tag="pending_approval"/><ComboBoxItem Content="失败" Tag="failed"/><ComboBoxItem Content="待核对" Tag="unknown"/></ComboBox>
+        </StackPanel>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="OlderCallsButton" Content="更早" Click="OlderCalls_Click" IsEnabled="False" FontSize="12"/>
+          <Button x:Name="FollowButton" Content="跟随" Click="Follow_Click" FontSize="12" ToolTip="跟随最新调用"/>
+          <Button Content="···" Width="30" Padding="0" Click="CallMenu_Click" ToolTip="记录管理" AutomationProperties.Name="记录管理"/>
+        </StackPanel>
+      </Grid>
+      <Grid Grid.Row="4" Margin="14,0,14,8">
+        <ListBox x:Name="CallsList" ItemsSource="{Binding Calls}" ItemTemplate="{StaticResource CallRowTemplate}" SelectionMode="Extended"
+                 SelectionChanged="Calls_Changed" PreviewMouseRightButtonDown="Calls_RightClick" PreviewMouseWheel="Calls_Wheel" ScrollViewer.ScrollChanged="Calls_ScrollChanged"
+                 VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True">
+          <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}"><Setter Property="Height" Value="{StaticResource ExecutionRowHeight}"/></Style></ListBox.ItemContainerStyle>
+        </ListBox>
+        <StackPanel x:Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"><TextBlock x:Name="EmptyText" Text="暂无执行记录" Foreground="{DynamicResource SecondaryText}"/><Button Content="刷新" Click="Refresh_Click" Margin="0,8,0,0"/></StackPanel>
+      </Grid>
+      <Border x:Name="DetailsPanel" Grid.Row="6" Height="270" Visibility="Collapsed" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,1,0,0" Padding="18,5,18,12">
+        <Border.Effect><DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.08"/></Border.Effect>
+        <DockPanel>
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4"><Button DockPanel.Dock="Right" Content="关闭" Click="CloseDetails_Click" FontSize="12"/><TextBlock x:Name="DetailsTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/></DockPanel>
+          <Grid>
+            <TabControl x:Name="CallDetailsTabs" SelectionChanged="DetailTab_Changed" Visibility="Collapsed">
+              <TabItem Header="命令与输出"><DockPanel>
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,3,0,5"><Button Content="复制命令" Click="CopyCommand_Click" FontSize="12"/><Button Content="复制输出" Click="CopyOutput_Click" FontSize="12"/><Button Content="停止调用" Click="StopCall_Click" IsEnabled="{Binding CanStop}" FontSize="12"/><Button Content="审批" Click="Approve_Click" Visibility="{Binding NeedsApproval, Converter={StaticResource BoolVisibility}}" FontSize="12"/><Button Content="拒绝" Click="Reject_Click" Visibility="{Binding NeedsApproval, Converter={StaticResource BoolVisibility}}" FontSize="12"/><Button Content="重试说明" Click="RetryInstruction_Click" IsEnabled="{Binding CanRetry}" FontSize="12"/></StackPanel>
+                <TextBox DockPanel.Dock="Top" Text="{Binding Command, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="64" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" BorderThickness="0" Padding="4,0"/>
+                <TextBox Text="{Binding Output, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" BorderThickness="0" Padding="4,6"/>
+              </DockPanel></TabItem>
+              <TabItem Header="来源"><TextBox x:Name="SourceDetailsText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" BorderThickness="0"/></TabItem>
+              <TabItem Header="子调用"><ListBox x:Name="ChildrenList" ItemsSource="{Binding Children}" ItemTemplate="{StaticResource CallRowTemplate}" SelectionChanged="ChildCall_Changed"/></TabItem>
+              <TabItem Header="技术"><TextBox Text="{Binding Technical, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" BorderThickness="0"/></TabItem>
+            </TabControl>
+            <DockPanel x:Name="TaskDetailsPanel" Visibility="Collapsed">
+              <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6"><ComboBox x:Name="BranchCombo" Width="170" DisplayMemberPath="Title" SelectedValuePath="Id" SelectionChanged="Branch_Changed"/><Button Content="从此分支继续" Click="ContinueBranch_Click" FontSize="12"/><Button Content="复制继续说明" Click="ContinueTask_Click" FontSize="12"/><Button Content="管理任务" Click="TaskMenu_Click" FontSize="12"/></StackPanel>
+              <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel><TextBlock x:Name="TaskGoalText" TextWrapping="Wrap" Margin="0,0,0,8"/><TextBlock x:Name="TaskStepsText" TextWrapping="Wrap" Margin="0,0,0,8"/><TextBlock x:Name="TaskAcceptanceText" TextWrapping="Wrap" Margin="0,0,0,8"/><TextBlock x:Name="MilestonesText" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}"/></StackPanel></ScrollViewer>
+            </DockPanel>
+            <TextBox x:Name="InfoDetailsText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" BorderThickness="0" Visibility="Collapsed"/>
+            <DockPanel x:Name="DataManagementPanel" Visibility="Collapsed">
+              <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6"><ComboBox x:Name="DataKindCombo" Width="130" SelectionChanged="DataFilter_Changed" SelectedIndex="0"><ComboBoxItem Content="历史任务" Tag="task"/><ComboBoxItem Content="未归属调用" Tag="unattributed"/><ComboBoxItem Content="全部调用" Tag="call"/></ComboBox><ComboBox x:Name="DataViewCombo" Width="100" Margin="8,0" SelectionChanged="DataFilter_Changed" SelectedIndex="0"><ComboBoxItem Content="当前" Tag="active"/><ComboBoxItem Content="已归档" Tag="archived"/><ComboBoxItem Content="已隔离" Tag="isolated"/><ComboBoxItem Content="回收站" Tag="trash"/></ComboBox><Button Content="管理所选" Click="ManageData_Click" FontSize="12"/><Button Content="导出" Click="ExportData_Click" FontSize="12"/><Button x:Name="MoreDataButton" Content="更多" Click="MoreData_Click" FontSize="12" Visibility="Collapsed"/></StackPanel>
+              <ListBox x:Name="ManagedObjectsList" SelectionMode="Extended" PreviewMouseRightButtonDown="Data_RightClick"><ListBox.ItemTemplate><DataTemplate><Grid Height="34" Margin="8,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="110"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="{Binding Detail}" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" HorizontalAlignment="Right"/></Grid></DataTemplate></ListBox.ItemTemplate></ListBox>
+            </DockPanel>
+          </Grid>
+        </DockPanel>
+      </Border>
     </Grid>
-   </Border>
-   <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" Background="Transparent"/>
-   <Border Grid.Column="2" Background="White" BorderBrush="#DEE5EE" BorderThickness="1" CornerRadius="8" Padding="16,12">
-    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-     <StackPanel><TextBlock x:Name="ObjectTitle" Text="选择一个对话或任务" FontSize="20" FontWeight="Bold"/><TextBlock x:Name="ObjectSubtitle" Text="未创建任务的调用也会在所属对话中显示。" Foreground="#697A91" Margin="0,6"/>
-      <WrapPanel><Button x:Name="SetCurrentTaskButton" Content="设为当前任务…" Click="SetCurrentTask_Click" Visibility="Collapsed"/><Button x:Name="LinkTaskButton" Content="关联任务" Click="LinkTask_Click" Visibility="Collapsed"/><Button x:Name="ContinueButton" Content="复制继续指令" Click="Continue_Click" Visibility="Collapsed"/><Button x:Name="CancelTaskButton" Content="取消任务" Click="CancelTask_Click" Visibility="Collapsed"/><Button Content="导出脱敏记录" Click="Export_Click"/></WrapPanel>
-     </StackPanel>
-     <Border Grid.Row="1" x:Name="ConversationProgressCard" Visibility="Collapsed" Margin="0,8" Padding="12,8" Background="#F0F5FC" CornerRadius="6">
-      <StackPanel><DockPanel><Button DockPanel.Dock="Right" Content="完整任务详情" Click="OpenCurrentTask_Click"/><TextBlock x:Name="CurrentTaskTitle" FontWeight="SemiBold" VerticalAlignment="Center"/></DockPanel>
-       <TextBlock x:Name="CurrentTaskStatus" Foreground="#52627A"/><ProgressBar x:Name="CurrentTaskProgress" Height="6" Maximum="100" Margin="0,7"/>
-       <TextBlock x:Name="CurrentTaskNext" FontSize="12" Foreground="#52627A"/>
-      </StackPanel>
-     </Border>
-     <Expander Grid.Row="1" x:Name="TaskProgressPanel" Header="任务步骤与验收" Visibility="Collapsed" IsExpanded="True" Margin="0,8">
-      <StackPanel><TextBlock x:Name="TaskGoalText" Margin="0,4"/><WrapPanel><ComboBox x:Name="BranchCombo" MinWidth="210" DisplayMemberPath="Title" SelectionChanged="Branch_Changed"/><Button Content="设为继续分支" Click="ContinueBranch_Click"/></WrapPanel>
-       <ProgressBar x:Name="TaskProgressBar" Height="6" Margin="4,8" Maximum="100"/><ScrollViewer MaxHeight="130" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="TaskStepsText"/></ScrollViewer><Expander Header="验收条件"><TextBlock x:Name="TaskAcceptanceText" Margin="5"/></Expander>
-      </StackPanel>
-     </Expander>
-     <StackPanel Grid.Row="2">
-      <Expander x:Name="MilestonesPanel" Header="任务进度里程碑" Visibility="Collapsed" Margin="0,4">
-       <Border Background="#F2F5F8" Padding="8"><ScrollViewer MaxHeight="100" VerticalScrollBarVisibility="Auto"><TextBlock x:Name="MilestonesText" FontSize="12"/></ScrollViewer></Border>
-      </Expander>
-      <DockPanel Margin="0,5"><TextBlock Text="执行记录" FontWeight="Bold" VerticalAlignment="Center"/><WrapPanel HorizontalAlignment="Right"><CheckBox x:Name="FollowLatestBox" Content="跟随最新" IsChecked="True" VerticalAlignment="Center" Margin="8,0"/><Button Content="更早的记录" Click="OlderCalls_Click"/><Button Content="返回最新" Click="Latest_Click"/></WrapPanel></DockPanel>
-      <TextBox x:Name="CallSearchBox" TextChanged="CallSearch_Changed" ToolTip="搜索当前范围内的动作、命令和结果" AutomationProperties.Name="搜索执行记录"/>
-     </StackPanel>
-     <ListBox Grid.Row="3" x:Name="CallsList" ItemsSource="{Binding Calls}" ItemTemplate="{StaticResource CallTemplate}" BorderThickness="0" HorizontalContentAlignment="Stretch" Background="Transparent"
-       ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.ScrollChanged="Calls_ScrollChanged" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.AutomationId="ExecutionCalls"/>
-     <TextBlock Grid.Row="4" x:Name="EmptyText" Foreground="#697A91" Margin="0,8" Text="选择左侧对象以查看执行记录。"/>
-    </Grid>
-   </Border>
   </Grid>
-  <DockPanel Grid.Row="3" Margin="2,10,2,0"><TextBlock x:Name="ConnectionText" Text="连接中…" Foreground="#627188"/><TextBlock DockPanel.Dock="Right" Text="关闭窗口只断开观察，不会停止后台命令。" Foreground="#728096" FontSize="12" HorizontalAlignment="Right"/></DockPanel>
- </Grid>
 </Window>

@@ -69,31 +69,34 @@ internal static partial class Program
         long firstScreen; int realizedObjects, realizedCalls;
         try
         {
-            PumpUntil(() => window.Objects.Count == 100 && window.Calls.Count == 100 && ((Button)window.FindName("MoreObjectsButton")).IsEnabled, TimeSpan.FromSeconds(15)); firstScreen = watch.ElapsedMilliseconds;
+            PumpUntil(() => window.Objects.Count == 200 && window.Calls.Count == 100 && ((Button)window.FindName("MoreObjectsButton")).IsEnabled, TimeSpan.FromSeconds(15)); firstScreen = watch.ElapsedMilliseconds;
             var objects = (ListBox)window.FindName("ObjectsList"); var calls = (ListBox)window.FindName("CallsList");
             objects.UpdateLayout(); calls.UpdateLayout();
             realizedObjects = Descendants(objects).OfType<ListBoxItem>().Count(); realizedCalls = Descendants(calls).OfType<ListBoxItem>().Count();
             Require(VirtualizingPanel.GetIsVirtualizing(objects) && VirtualizingPanel.GetIsVirtualizing(calls), "Large lists disabled virtualization.");
             Require(realizedObjects < 100 && realizedCalls < 100, "All loaded rows were materialized instead of virtualized.");
             ((Button)window.FindName("MoreObjectsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            PumpUntil(() => window.Objects.Count == 200, TimeSpan.FromSeconds(8));
-            var older = Descendants(window).OfType<Button>().Single(button => button.Content?.ToString() == "更早的记录"); older.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            PumpUntil(() => window.Objects.Count == 400, TimeSpan.FromSeconds(8));
+            var older = Descendants(window).OfType<Button>().Single(button => button.Content?.ToString() == "更早"); older.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             PumpUntil(() => window.Calls.Count == 200, TimeSpan.FromSeconds(8));
             Require(window.Calls.Select(call => call.Id).Distinct().Count() == 200, "Call pages duplicate or lose identities.");
             ((TextBox)window.FindName("CallSearchBox")).Text = "099999";
             PumpUntil(() => window.Calls.Count == 1 && window.Calls[0].Title.Contains("099999", StringComparison.Ordinal), TimeSpan.FromSeconds(8));
             ((TextBox)window.FindName("SearchBox")).Text = "1000";
             PumpUntil(() => window.Objects.Count == 1 && window.Objects[0].Title.Contains("1000", StringComparison.Ordinal), TimeSpan.FromSeconds(8));
-            var tasks = Descendants(window).OfType<Button>().Single(button => button.Tag?.ToString() == "task"); tasks.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            PumpUntil(() => window.Objects.Count == 1 && window.Objects[0].Kind == "task" && window.Objects[0].Title.Contains("1000", StringComparison.Ordinal), TimeSpan.FromSeconds(8));
-            ((TextBox)window.FindName("SearchBox")).Text = "";
-            PumpUntil(() => window.Objects.Count == 100 && window.Objects[0].Kind == "task" && ((Button)window.FindName("MoreObjectsButton")).IsEnabled, TimeSpan.FromSeconds(8));
-            ((Button)window.FindName("MoreObjectsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            PumpUntil(() => window.Objects.Count == 200 && window.Objects[0].Kind == "task", TimeSpan.FromSeconds(8));
+            objects.UnselectAll(); objects.SelectedIndex = 0;
+            Require(typeof(ExecutionWindow).GetField("_frozenSelection", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(window) is null, "Changing selection retained a stale batch-delete snapshot.");
+            var managerTask = (Task)InvokeExecution(window, "OpenDataManagerAsync", false)!;
+            PumpUntil(() => managerTask.IsCompleted, TimeSpan.FromSeconds(8)); managerTask.GetAwaiter().GetResult();
+            var managed = (ListBox)window.FindName("ManagedObjectsList");
+            Require(managed.Items.Count == 200, "Historical task management did not page independently from conversations.");
+            ((Button)window.FindName("MoreDataButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            PumpUntil(() => managed.Items.Count == 400, TimeSpan.FromSeconds(8));
+            Require(window.Objects.All(item => item.Kind == "conversation"), "Opening historical task management polluted conversation navigation.");
             Require(fixture.ControlCount == 0, "Large list navigation modified execution state.");
         }
         finally { window.Close(); }
         PumpUntil(() => fixture.ActiveStreams == 0, TimeSpan.FromSeconds(6));
-        return new { passed = true, conversations = 1000, tasks = 1000, calls = 100000, page_size = 100, loaded_second_pages = 200, first_screen_ms = firstScreen, realized_object_rows = realizedObjects, realized_call_rows = realizedCalls, scope = "Actual WPF window with paginated HTTP fixture; excludes real journal cold-query latency" };
+        return new { passed = true, conversations = 1000, tasks = 1000, calls = 100000, conversation_page_size = 200, call_page_size = 100, loaded_task_pages = 400, loaded_call_pages = 200, first_screen_ms = firstScreen, realized_object_rows = realizedObjects, realized_call_rows = realizedCalls, scope = "Actual WPF window with paginated HTTP fixture; excludes real journal cold-query latency" };
     }
 }

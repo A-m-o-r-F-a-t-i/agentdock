@@ -16,6 +16,12 @@ func (r *Runtime) ObserveInternal(ctx context.Context, name, title string, run f
 	if err != nil {
 		return nil, err
 	}
+	if err := r.checkConversationGate(ctx, binding.ConversationID); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	id, err := activity.NewExecutionID("call_")
 	if err != nil {
 		return nil, err

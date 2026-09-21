@@ -1,0 +1,110 @@
+{
+  "version": "1.1.3",
+  "channel": "local-candidate",
+  "source_base": "fce9104 (v1.1.2)",
+  "platform": "windows/amd64",
+  "go": "go1.26.5",
+  "dotnet_sdk": "8.0.425",
+  "go_full_regression": {
+    "packages_passed": 53,
+    "test_results_passed": 1640,
+    "skipped": 73,
+    "failures": []
+  },
+  "new_113_tests": [
+    "Test113ConversationTitlePriorities",
+    "Test113ConversationGateAndTombstoneSurviveReopen",
+    "Test113CallManagementStableHandleAndReplay",
+    "Test113ActiveRecordsAndFilteredUpdates",
+    "Test113LegacyCallCanBeManagedWithoutFabricatedTask",
+    "Test113HTTPConversationLifecycleAndSourceState",
+    "Test113HTTPStableCallManagement",
+    "Test113ClientConnectionEvidence",
+    "Test113ClientConnectionBounded",
+    "Test113ConversationTerminationBlocksAllNewExecutionAndKeepsHistory",
+    "Test113ConversationGatePersistsAcrossRuntimeRestart",
+    "Test113TerminatingOneConversationStopsAsyncCommandOnlyInThatScope",
+    "Test113TerminationApprovalRaceClosesAdmissionBeforeReturning",
+    "Test113AutomaticTaskNameAndManualOverride"
+  ],
+  "race": {
+    "packages_passed": 3,
+    "test_results_passed": 14,
+    "failures": []
+  },
+  "wpf": {
+    "passed": true,
+    "elapsed_ms": 10471,
+    "execution_large_list_fixture": {
+      "passed": true,
+      "conversations": 1000,
+      "tasks": 1000,
+      "calls": 100000,
+      "conversation_page_size": 200,
+      "call_page_size": 100,
+      "loaded_task_pages": 400,
+      "loaded_call_pages": 200,
+      "first_screen_ms": 345,
+      "realized_object_rows": 38,
+      "realized_call_rows": 18,
+      "scope": "Actual WPF window with paginated HTTP fixture; excludes real journal cold-query latency"
+    },
+    "execution_single_line_rows_and_no_task_calls": true,
+    "execution_right_click_targets_pointer": true,
+    "execution_branch_view_does_not_change_continuation": true,
+    "conversation_compact_task_progress_and_detail_next_action": true,
+    "no_task_hides_progress_only": true,
+    "task_milestones_are_separate": true,
+    "execution_projection_duplicate_replay_and_output_preferences": true,
+    "execution_scaled_rendering": [
+      "1280x800@100% light/dark",
+      "840x640@125%",
+      "1000x720@150%",
+      "1280x800@200%"
+    ],
+    "access_modes_12_cross_transitions_and_4_reapplies": true,
+    "access_draft_failure_and_refresh_protection": true,
+    "task_cancel_archive_and_reason_projection": true,
+    "live_session_stop_guard": true,
+    "anonymous_discovery_challenge_and_metadata_validation": true,
+    "timeline_deduplicates_and_merges_sessions": true,
+    "output_and_row_memory_bounded": true,
+    "fragmented_sse_and_large_ids": true,
+    "bounded_sse_lines": true,
+    "authenticated_loopback_client": true,
+    "redirect_refused": true,
+    "reconnect_last_event_id": true,
+    "cross_thread_events_refused": true,
+    "cancellation_releases_connection": true,
+    "window_close_cancels_observer": true,
+    "offscreen_dpi_scaled_rendering": [
+      "1180x800@100%",
+      "840x560@125%",
+      "1000x700@150%",
+      "1180x800@200%"
+    ],
+    "test_source": "isolated HTTP fixtures and WPF window; production tray and runtime unchanged",
+    "stale_batch_selection_invalidated": true
+  },
+  "layout": {
+    "passed": true,
+    "full_rows_at_1280x800": 16,
+    "call_height_dip": 36,
+    "themes": [
+      "light",
+      "dark",
+      "system"
+    ],
+    "details_default_closed": true,
+    "task_peers_in_sidebar": false,
+    "source_states": 5,
+    "scope": "real WPF window, isolated HTTP and rendering fixtures"
+  },
+  "boundaries": [
+    "No installation or upgrade over the running production instance",
+    "No GitHub push or Release publication",
+    "Large-list UI measurements use paginated HTTP fixtures, not production journal cold-query benchmarks",
+    "DPI cases use WPF scaled render targets; no physical monitor DPI switch",
+    "Conversation and task management deletion retains independently managed audit history; explicit call deletion has durable replay tombstones"
+  ]
+}

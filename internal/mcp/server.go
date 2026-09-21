@@ -198,6 +198,9 @@ func requestConversationContext(ctx context.Context, meta map[string]any) (conte
 	source := activity.SourceFromContext(ctx)
 	source.Provider = "openai"
 	source.HostConversationID = hostID
+	if title, ok := meta["agentdock/conversation-title"].(string); ok && len(title) <= 512 {
+		source.HostTitle = title
+	}
 	return activity.WithSource(ctx, source), nil
 }
 

@@ -1,19 +1,20 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using Button = System.Windows.Controls.Button;
-using CheckBox = System.Windows.Controls.CheckBox;
 using ComboBox = System.Windows.Controls.ComboBox;
 using ListBox = System.Windows.Controls.ListBox;
-using MenuItem = System.Windows.Controls.MenuItem;
-using MessageBox = System.Windows.MessageBox;
-using TextBox = System.Windows.Controls.TextBox;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace AgentDock.ControlPanel;
 
@@ -22,462 +23,450 @@ public partial class ExecutionWindow : Window
     private readonly RuntimeService _runtime;
     private readonly ActivityClient _client;
     private readonly CancellationTokenSource _lifetime = new();
-    private CancellationTokenSource? _selectionCancellation;
+    private CancellationTokenSource? _selectionCancellation, _streamCancellation;
     private Task? _streamTask;
     private readonly DispatcherTimer _filterTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
+    private readonly DispatcherTimer _callSearchTimer = new() { Interval = TimeSpan.FromMilliseconds(350) };
     private readonly DispatcherTimer _pulse = new() { Interval = TimeSpan.FromSeconds(1) };
-    private readonly Dictionary<string, ExecutionCallRow> _callsById = new(StringComparer.Ordinal);
-    private readonly Dictionary<string,string> _conversationTitles=new(StringComparer.Ordinal);
-    private readonly HashSet<string> _detailReads = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ExecutionCallRow> _callsById = [];
+    private readonly Dictionary<string, string> _workspaceNames = [];
+    private readonly Dictionary<string, string> _conversationTitles = [];
+    private readonly Dictionary<string, (double Offset, bool Follow)> _scrollStates = [];
+    private readonly HashSet<string> _detailReads = [];
     private ExecutionPreferences _preferences = new();
     private ExecutionObject? _selected;
-    private JsonElement _taskSnapshot;
-    private string _currentConversationTaskId = "";
-    private long _milestoneCursor;
-    private readonly List<string> _milestones = [];
-    private readonly DispatcherTimer _callSearchTimer = new() { Interval = TimeSpan.FromMilliseconds(350) };
-    private string _view = "conversation";
-    private string _kind = "conversation";
-    private string _branch = "";
-    private string[]? _frozenSelection;
+    private ExecutionCallRow? _detailCall;
+    private JsonElement _conversationSnapshot, _taskSnapshot;
+    private string _currentConversationTaskId = "", _selectedTaskId = "", _branch = "", _taskFilter = "";
+    private string _conversationView = "active", _callView = "active";
+    private int _objectOffset, _generation, _objectEpoch, _streamEpoch, _taskEpoch, _ticks;
+    private ulong _before, _cursor;
+    private bool _initialized, _updating, _tickRunning, _closed, _following = true, _preferencesWritable = true;
+    private bool _streamConnected;
+    private long _lastPending;
     private string[] _menuSelection = [];
-    private int _objectOffset;
-    private long _before;
-    private ulong _cursor;
-    private int _generation;
-    private int _streamEpoch;
-    private bool _initialized;
-    private bool _updating;
-    private bool _refreshing;
-    private bool _tickRunning;
-    private bool _closed;
-    private int _ticks;
-    private int _lastPending;
+    private string[]? _frozenSelection;
     public ObservableCollection<ExecutionObject> Objects { get; } = [];
     public ObservableCollection<ExecutionCallRow> Calls { get; } = [];
+    public static readonly DependencyProperty ShowTimestampsProperty = DependencyProperty.Register(nameof(ShowTimestamps), typeof(bool), typeof(ExecutionWindow), new PropertyMetadata(true));
+    public bool ShowTimestamps { get => (bool)GetValue(ShowTimestampsProperty); set => SetValue(ShowTimestampsProperty, value); }
+    private CancellationToken SelectionToken => _selectionCancellation?.Token ?? _lifetime.Token;
 
     public ExecutionWindow(RuntimeService runtime)
     {
         _runtime = runtime; _client = new ActivityClient(runtime);
         InitializeComponent(); DataContext = this;
-        _filterTimer.Tick += async (_, _) => { _filterTimer.Stop(); await GuardAsync(() => LoadObjectsAsync(false)); };
-        _pulse.Tick += async (_, _) => await TickAsync();
+        CollectionViewSource.GetDefaultView(Objects).GroupDescriptions.Add(new PropertyGroupDescription(nameof(ExecutionObject.WorkspaceKey)));
+        _filterTimer.Tick += async (_, _) => { _filterTimer.Stop(); await GuardAsync(() => LoadObjectsAsync()); };
         _callSearchTimer.Tick += async (_, _) => { _callSearchTimer.Stop(); await GuardAsync(() => LoadCallsAsync(false)); };
+        _pulse.Tick += async (_, _) => await TickAsync();
     }
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        await GuardAsync(async () =>
-        {
-            LoadPreferences(); FontSize = _preferences.FontSize;
-            _view = _preferences.LastView; _kind = _preferences.LastKind;
-            _updating = true; KindCombo.SelectedIndex = _kind == "task" ? 1 : 0; _updating = false;
-            await LoadWorkspaceChoicesAsync(); _initialized = true;
-            await RefreshOverviewAsync(); await LoadObjectsAsync(false); _pulse.Start();
-        });
+        LoadPreferences(); FontSize = _preferences.FontSize; ApplyTheme();
+        _conversationView = _preferences.LastView is "archived" or "trash" ? _preferences.LastView : "active";
+        SystemEvents.UserPreferenceChanged += SystemTheme_Changed;
+        await GuardAsync(async () => { await LoadWorkspacesAsync(); _initialized = true; await RefreshOverviewAsync(); await LoadObjectsAsync(); });
+        _initialized = true; _pulse.Start();
     }
-    private async Task GuardAsync(Func<Task> operation)
+    private async Task GuardAsync(Func<Task> action)
     {
-        if (_closed) return;
-        try { await operation(); }
+        try { await action(); }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or InvalidOperationException or UnauthorizedAccessException or ArgumentException)
-        { Warn(ex.Message); ConnectionText.Text = "请求未完成 · 以服务端记录为准"; }
+        { if (!_closed) Warn(ex.Message); }
     }
-    private void Warn(string message)
+    private void Warn(string text)
     {
-        if (_closed) return; WarningText.Text = message; WarningPanel.Visibility = Visibility.Visible;
+        WarningText.Text = text; WarningPanel.Visibility = string.IsNullOrWhiteSpace(text) ? Visibility.Collapsed : Visibility.Visible;
     }
-    private static string Encode(string value) => Uri.EscapeDataString(value);
-    private string ListQuery()
-    {
-        var view = _view is "archived" or "trash" ? _view : "active";
-        return $"view={view}&search={Encode(SearchBox.Text.Trim())}&tag={Encode(TagBox.Text.Trim())}&workspace_id={Encode((WorkspaceCombo.SelectedItem as ExecutionChoice)?.Id ?? "")}";
-    }
-    private string CallQuery() => CallScopeQuery() + "&search=" + Encode(CallSearchBox.Text.Trim());
+    private static string Escape(string value) => Uri.EscapeDataString(value);
+    private static string ComboValue(ComboBox combo) => (combo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
+    private string ListQuery(bool selection = false) => $"view={_conversationView}&search={Escape(SearchBox.Text.Trim())}&limit=200" + (selection ? "&selection=true" : "");
     private string CallScopeQuery()
     {
-        if (_view == "attention") return "status=attention&top_level=true";
-        if (_selected is null) return "top_level=true";
-        if (_selected.IsUnknown) return "unattributed=true&top_level=true";
-        if (_selected.Kind == "task") return $"task_id={Encode(_selected.Id)}&thread_id={Encode(_branch)}&top_level=true";
-        return $"conversation_id={Encode(_selected.Id)}&top_level=true";
+        var scope = _selected is null ? "unattributed=true" : _selected.IsUnknown ? "unattributed=true" : "conversation_id=" + Escape(_selected.Id);
+        if (_taskFilter.Length > 0) scope += "&task_id=" + Escape(_taskFilter);
+        return scope + "&top_level=true&view=" + _callView + "&status=" + Escape(ComboValue(CallStatusCombo)) + "&search=" + Escape(CallSearchBox.Text.Trim());
     }
-    private async Task LoadWorkspaceChoicesAsync()
+    private async Task LoadWorkspacesAsync()
     {
-        var current = (WorkspaceCombo.SelectedItem as ExecutionChoice)?.Id ?? "";
-        var response = await _client.ExecutionGetAsync("/internal/runtime/permissions/effective", _lifetime.Token);
-        var choices = new List<ExecutionChoice> { new("", "所有工作区") };
-        choices.AddRange(response.Array("workspaces").Select(item => new ExecutionChoice(item.Text("workspace_id"), item.Text("name") + " · " + item.Text("root"))));
-        _updating = true; WorkspaceCombo.ItemsSource = choices; WorkspaceCombo.SelectedItem = choices.FirstOrDefault(item => item.Id == current) ?? choices[0]; _updating = false;
+        var value = await _client.ExecutionGetAsync("/internal/runtime/permissions/effective", _lifetime.Token);
+        _workspaceNames.Clear();
+        foreach (var workspace in value.Array("workspaces")) _workspaceNames[workspace.Text("workspace_id")] = workspace.Text("name");
     }
     private async Task RefreshOverviewAsync()
     {
-        var overview = await _client.ExecutionGetAsync("/internal/runtime/execution", _lifetime.Token);
-        if (_closed) return;
-        var stats = overview.Field("statistics"); var pending = (int)stats.Number("pending");
-        OverviewText.Text = $"{stats.Number("running")} 运行中 · {pending} 待审批 · {stats.Number("unknown")} 结果未知 · 默认权限：{ExecutionJson.Mode(overview.Text("permission_mode"))}";
-        AttentionButton.Content = $"!  待处理 · {pending + stats.Number("failed") + stats.Number("unknown")}";
-        if (_preferences.Notifications && pending > _lastPending && _lastPending >= 0) ConnectionText.Text = "新增待审批请求 · 实际操作尚未执行";
+        var value = await _client.ExecutionGetAsync("/internal/runtime/execution", _lifetime.Token);
+        var pending = value.Field("statistics").Number("pending");
+        AttentionButton.Visibility = pending > 0 ? Visibility.Visible : Visibility.Collapsed;
+        AttentionButton.Content = "待处理 " + pending;
+        if (_initialized && _preferences.Notifications && pending > _lastPending && _lastPending > 0 && WarningPanel.Visibility != Visibility.Visible) Warn($"新增 {pending - _lastPending} 项待审批请求。");
         _lastPending = pending;
     }
-    private async Task LoadObjectsAsync(bool append)
+    private async Task LoadObjectsAsync(bool more = false)
     {
-        if (!_initialized || _refreshing) return;
-        if (_view == "attention")
-        {
-            _updating = true; Objects.Clear(); _selected = null; _frozenSelection = null; _updating = false;
-            ObjectTitle.Text = "待处理执行"; ObjectSubtitle.Text = "集中查看待审批、失败和结果未知的调用。";
-            TaskProgressPanel.Visibility = ConversationProgressCard.Visibility = SetCurrentTaskButton.Visibility = LinkTaskButton.Visibility = ContinueButton.Visibility = CancelTaskButton.Visibility = Visibility.Collapsed;
-            SelectionText.Text = "按实际调用状态汇总，不创建任务或对话。"; MoreObjectsButton.Visibility = Visibility.Collapsed;
-            await LoadCallsAsync(false); return;
-        }
-        _refreshing = true; MoreObjectsButton.IsEnabled = false;
+        var epoch = ++_objectEpoch; var query = ListQuery();
+        var value = await _client.ExecutionGetAsync("/internal/runtime/conversations?" + query + "&offset=" + (more ? _objectOffset : 0), _lifetime.Token);
+        if (_closed || epoch != _objectEpoch || query != ListQuery()) return;
+        var selection = _selected?.SelectionKey ?? _preferences.LastConversation;
+        var selectedKeys = ObjectsList.SelectedItems.Cast<ExecutionObject>().Select(item => item.SelectionKey).ToHashSet();
+        _updating = true;
         try
         {
-            var kind = _kind; var view = _view; var query = ListQuery(); var selectedId = _selected?.Id; var selectedUnknown = _selected?.IsUnknown ?? false;
-            var selectedIds = ObjectsList.SelectedItems.Cast<ExecutionObject>().Select(item => item.Id).ToHashSet();
-            var offset = append ? _objectOffset : 0;
-            var path = kind == "task" ? "/internal/runtime/execution/tasks" : "/internal/runtime/conversations";
-            var response = await _client.ExecutionGetAsync(path + "?" + query + "&offset=" + offset + "&limit=100", _lifetime.Token);
-            if (kind != _kind || view != _view || query != ListQuery() || _closed) return;
-            var key = kind == "task" ? "tasks" : "conversations";
-            _updating = true;
-            if (!append) Objects.Clear();
-            foreach (var item in response.Array(key))
             {
-                var model = ExecutionObject.From(item, kind);
-                if (!Objects.Any(existing => existing.Id == model.Id && existing.IsUnknown == model.IsUnknown)) Objects.Add(model);
+                if (!more) Objects.Clear();
+                foreach (var raw in value.Array("conversations"))
+                {
+                    var item = ExecutionObject.From(raw, "conversation");
+                    item.WorkspaceKey = new(item.WorkspaceId, _workspaceNames.GetValueOrDefault(item.WorkspaceId, item.IsUnknown ? "未归属记录" : "历史工作区"));
+                    if (Objects.Any(existing => existing.SelectionKey == item.SelectionKey)) continue;
+                    Objects.Add(item);
+                    if (item.Id.Length > 0) _conversationTitles[item.Id] = item.Title;
+                }
             }
-            if(kind=="conversation")foreach(var obj in Objects)if(obj.Id!="")_conversationTitles[obj.Id]=obj.Title;
-            _objectOffset = (int)response.Number("next_offset"); MoreObjectsButton.Visibility = response.Flag("has_more") ? Visibility.Visible : Visibility.Collapsed;
-            if (!append)
-            {
-                foreach (var item in Objects.Where(item => selectedIds.Contains(item.Id))) ObjectsList.SelectedItems.Add(item);
-                var target = Objects.FirstOrDefault(item => item.Id == selectedId && item.IsUnknown == selectedUnknown) ?? Objects.FirstOrDefault();
-                if (target is not null && ObjectsList.SelectedItems.Count == 0) ObjectsList.SelectedItem = target;
-                _selected = target;
-            }
-            _updating = false; UpdateSelectionText(response.Number("total"));
-            if (response.Array("warnings").Count > 0) Warn(string.Join("\n", response.Array("warnings").Select(item => item.GetString())));
-            if (!append && (_selected is null || _selected.Id != selectedId || _selected.IsUnknown != selectedUnknown || Calls.Count == 0)) await SelectObjectAsync(_selected);
-            else if (!append && _selected?.Kind == "task") await LoadTaskAsync(_selected, _generation);
-            else if (!append && _selected is not null) ObjectTitle.Text=_selected.Title;
+            _objectOffset = (int)value.Number("next_offset");
+            MoreObjectsButton.Visibility = value.Flag("has_more") ? Visibility.Visible : Visibility.Collapsed;
+            SidebarEmpty.Visibility = Objects.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            var current = Objects.FirstOrDefault(item => item.SelectionKey == selection) ?? Objects.FirstOrDefault();
+            ObjectsList.SelectedItem = current;
+            foreach (var item in Objects.Where(item => selectedKeys.Contains(item.SelectionKey))) if (!ObjectsList.SelectedItems.Contains(item)) ObjectsList.SelectedItems.Add(item);
         }
-        finally { _updating = false; _refreshing = false; MoreObjectsButton.IsEnabled = true; }
-    }
-    private void UpdateSelectionText(long? total = null)
-    {
-        var count = _frozenSelection?.Length ?? ObjectsList.SelectedItems.Count;
-        SelectionText.Text = $"已选择 {count} 项" + (total is null ? "" : $" · 筛选共 {total} 项");
-    }
-    private async void Objects_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_updating || !_initialized) return;
-        _frozenSelection = null; UpdateSelectionText();
-        if (ObjectsList.SelectedItem is ExecutionObject item && (item.Id != _selected?.Id || item.Kind != _selected.Kind || item.IsUnknown != _selected.IsUnknown)) await GuardAsync(() => SelectObjectAsync(item));
+        finally { _updating = false; }
+        var selected = ObjectsList.SelectedItem as ExecutionObject;
+        if (selected?.SelectionKey != _selected?.SelectionKey) await SelectObjectAsync(selected);
+        else if (selected is not null)
+        {
+            var previous = _conversationSnapshot;
+            _selected = selected; ObjectTitle.Text = selected.Title; ObjectTitle.ToolTip = selected.Title;
+            if (!selected.IsUnknown && !selected.IsOrphan)
+            {
+                _conversationSnapshot = selected.Snapshot;
+                var changedTasks = previous.Array("task_ids").Select(v => v.ToString()).SequenceEqual(_conversationSnapshot.Array("task_ids").Select(v => v.ToString())) == false;
+                var oldState = previous.Field("state"); var newState = _conversationSnapshot.Field("state");
+                if (changedTasks || oldState.Text("active_task_id") != newState.Text("active_task_id") || oldState.Text("active_task_thread_id") != newState.Text("active_task_thread_id"))
+                    await GuardAsync(() => LoadConversationTasksAsync(_generation));
+                if (previous.HasDate("terminated_at") != _conversationSnapshot.HasDate("terminated_at"))
+                {
+                    if (_conversationSnapshot.HasDate("terminated_at")) Warn("此对话已终止，后续执行已被拦截。历史记录仍可查看和管理。");
+                    else if (WarningText.Text.StartsWith("此对话已终止", StringComparison.Ordinal)) Warn("");
+                }
+            }
+            UpdateStopButton();
+        }
     }
     private async Task SelectObjectAsync(ExecutionObject? item)
     {
-        _selected = item; _branch = ""; _generation++;
-        _selectionCancellation?.Cancel(); _selectionCancellation?.Dispose(); _selectionCancellation = null;
-        Calls.Clear(); _callsById.Clear(); _detailReads.Clear(); _taskSnapshot = default;
-        _currentConversationTaskId = ""; _milestoneCursor = 0; _milestones.Clear(); MilestonesText.Text = "暂无任务进度里程碑。";
-        TaskProgressPanel.Visibility = ConversationProgressCard.Visibility = SetCurrentTaskButton.Visibility = LinkTaskButton.Visibility = ContinueButton.Visibility = CancelTaskButton.Visibility = Visibility.Collapsed;
-        if (item is null) { ObjectTitle.Text = "没有符合条件的对象"; ObjectSubtitle.Text = "调整筛选条件或在已连接的对话中执行工具。"; EmptyText.Text = "暂无执行记录。"; return; }
-        ObjectTitle.Text = item.Title; ObjectSubtitle.Text = item.Detail + (item.Tags == "" ? "" : " · " + item.Tags);
-        if (item.Kind == "task") { TaskProgressPanel.Visibility = ContinueButton.Visibility = CancelTaskButton.Visibility = Visibility.Visible; await LoadTaskAsync(item, _generation); }
-        else if (!item.IsUnknown)
+        if (_selected is not null) _scrollStates[_selected.SelectionKey] = (FindVisualChild<ScrollViewer>(CallsList)?.VerticalOffset ?? 0, _following);
+        _generation++; _taskEpoch++; _streamEpoch++;
+        _selectionCancellation?.Cancel(); _selectionCancellation?.Dispose();
+        _selectionCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+        _streamCancellation?.Cancel();
+        _selected = item; _taskFilter = ""; _selectedTaskId = ""; _currentConversationTaskId = ""; _branch = "";
+        _conversationSnapshot = _taskSnapshot = default;
+        CloseDetails(); Calls.Clear(); _callsById.Clear(); TaskChoiceCombo.ItemsSource = null;
+        ConversationProgressCard.Visibility = Visibility.Collapsed;
+        FilterTaskButton.Content = "筛选此任务"; Warn("");
+        ObjectTitle.Text = item?.Title ?? "选择对话"; ObjectTitle.ToolTip = item?.Title;
+        EmptyPanel.Visibility = Visibility.Visible; EmptyText.Text = item is null ? "暂无对话记录" : "正在读取执行记录";
+        UpdateStopButton();
+        if (item is null) return;
+        _preferences.LastConversation = item.SelectionKey;
+        _following = !_scrollStates.TryGetValue(item.SelectionKey, out var position) || position.Follow;
+        UpdateFollowButton();
+        var generation = _generation;
+        if (!item.IsUnknown && !item.IsOrphan)
         {
-            LinkTaskButton.Visibility = SetCurrentTaskButton.Visibility = item.Trashed ? Visibility.Collapsed : Visibility.Visible;
-            var generation = _generation;
-            var detail = await _client.ExecutionGetAsync("/internal/runtime/conversations/" + Encode(item.Id), _lifetime.Token);
+            var value = await _client.ExecutionGetAsync("/internal/runtime/conversations/" + Escape(item.Id), SelectionToken);
             if (generation != _generation) return;
-            var conversation = detail.Field("conversation");
-            await ShowConversationTaskAsync(conversation, generation);
-            ObjectSubtitle.Text = $"来源：{conversation.Text("source")} · {ExecutionJson.Mode(detail.Field("permission").Text("mode"))} · {conversation.Array("task_ids").Count} 个关联任务";
+            _conversationSnapshot = value.Field("conversation");
+            if (_conversationSnapshot.HasDate("terminated_at")) Warn("此对话已终止，后续执行已被拦截。历史记录仍可查看和管理。");
+            await GuardAsync(() => LoadConversationTasksAsync(generation));
         }
         await LoadCallsAsync(false);
-        await LoadMilestonesAsync();
-    }
-    private async Task LoadTaskAsync(ExecutionObject item, int generation)
-    {
-        var detail = await _client.ExecutionGetAsync("/internal/runtime/tasks/" + Encode(item.Id), _lifetime.Token);
-        if (generation != _generation || _selected?.Id != item.Id || _closed) return;
-        var task = detail.Field("task"); _taskSnapshot = task.Clone();
-        ObjectTitle.Text = task.Text("title"); ObjectSubtitle.Text = ExecutionJson.State(task.Text("status")) + " · " + (task.Text("blocker") is { Length: > 0 } blocker ? blocker : task.Text("summary"));
-        TaskGoalText.Text = task.Text("goal");
-        var branches = await _client.ExecutionGetAsync("/internal/runtime/tasks/" + Encode(item.Id) + "/threads", _lifetime.Token);
         if (generation != _generation) return;
-        var choices = new List<ExecutionChoice> { new("", "所有任务分支 · 仅切换查看") };
-        choices.AddRange(branches.Array("threads").Select(branch => new ExecutionChoice(branch.Text("id"), branch.Text("title") + " · " + ExecutionJson.State(branch.Text("status")))));
-        _updating = true; BranchCombo.ItemsSource = choices; BranchCombo.SelectedItem = choices.FirstOrDefault(choice => choice.Id == _branch) ?? choices[0]; _updating = false;
-        if (_branch=="") ShowTaskSteps(task);
-        else { var branch=await _client.ExecutionGetAsync("/internal/runtime/tasks/"+Encode(item.Id)+"/threads/"+Encode(_branch),_lifetime.Token);if(generation!=_generation)return;ShowTaskSteps(branch.Field("thread")); }
-        TaskAcceptanceText.Text = string.Join(Environment.NewLine, task.Array("conditions").Select(condition => "· " + condition.Text("text") + "  " + condition.Text("status")));
-        if (TaskAcceptanceText.Text.Length==0) TaskAcceptanceText.Text="任务尚未声明验收条件。";
-        if (task.Field("final_review").ValueKind == JsonValueKind.Object) TaskAcceptanceText.Text += "\n\n最终复核：" + task.Field("final_review").Text("status") + "\n" + task.Field("final_review").Text("summary");
+        if (!_following && _scrollStates.TryGetValue(item.SelectionKey, out position))
+            await Dispatcher.InvokeAsync(() => FindVisualChild<ScrollViewer>(CallsList)?.ScrollToVerticalOffset(position.Offset), DispatcherPriority.Loaded);
+        UpdateStopButton();
     }
-    private async Task ShowConversationTaskAsync(JsonElement conversation, int generation)
+    private async Task LoadConversationTasksAsync(int generation)
     {
-        if (generation != _generation || _selected?.Kind != "conversation" || _closed) return;
-        var state = conversation.Field("state"); var id = state.Text("active_task_id");
-        if (id != _currentConversationTaskId) { _milestoneCursor = 0; _milestones.Clear(); MilestonesText.Text = "暂无任务进度里程碑。"; }
-        _currentConversationTaskId = id;
-        if (id.Length == 0) { ConversationProgressCard.Visibility = Visibility.Collapsed; return; }
-        var detail = await _client.ExecutionGetAsync("/internal/runtime/tasks/" + Encode(id), _lifetime.Token);
-        if (generation != _generation || _selected?.Kind != "conversation") return;
-        var task = detail.Field("task");
-        var threadId = state.Text("active_task_thread_id");
-        var thread = task.Field("active_thread");
-        if (threadId.Length != 0)
+        var state = _conversationSnapshot.Field("state");
+        _currentConversationTaskId = state.Text("active_task_id");
+        var ids = _conversationSnapshot.Array("task_ids").Where(value => value.ValueKind == JsonValueKind.String).Select(value => value.GetString()!).ToList();
+        if (_currentConversationTaskId.Length > 0) { ids.Remove(_currentConversationTaskId); ids.Insert(0, _currentConversationTaskId); }
+        var choices = new List<ExecutionChoice>();
+        foreach (var id in ids.Take(50))
         {
-            var branch = await _client.ExecutionGetAsync("/internal/runtime/tasks/" + Encode(id) + "/threads/" + Encode(threadId), _lifetime.Token);
-            if (generation != _generation) return; thread = branch.Field("thread");
+            try
+            {
+                var result = await _client.ExecutionGetAsync("/internal/runtime/tasks/" + Escape(id), SelectionToken);
+                var task = result.Field("task"); if (task.ValueKind == JsonValueKind.Undefined) task = result;
+                choices.Add(new(id, task.Text("title", "历史任务")));
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Gone) { }
         }
-        var steps = thread.Array("steps"); if (steps.Count == 0) steps = task.Array("steps");
-        var complete = steps.Count(step => step.Text("status") == "completed");
-        var currentId = thread.Text("current_step_id");
+        if (generation != _generation) return;
+        _updating = true;
+        try { TaskChoiceCombo.ItemsSource = choices; TaskChoiceCombo.SelectedValue = choices.FirstOrDefault()?.Id; }
+        finally { _updating = false; }
+        ConversationProgressCard.Visibility = choices.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        _selectedTaskId = choices.FirstOrDefault()?.Id ?? "";
+        if (_selectedTaskId.Length > 0) await LoadTaskAsync(_selectedTaskId, "", false);
+    }
+    private async Task LoadTaskAsync(string id, string branch, bool details)
+    {
+        var generation = _generation; var epoch = ++_taskEpoch;
+        var raw = await _client.ExecutionGetAsync("/internal/runtime/tasks/" + Escape(id), SelectionToken);
+        var task = raw.Field("task"); if (task.ValueKind == JsonValueKind.Undefined) task = raw;
+        JsonElement threadList;
+        try { threadList = await _client.ExecutionGetAsync("/internal/runtime/tasks/" + Escape(id) + "/threads", SelectionToken); }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound) { threadList = default; }
+        var threads = threadList.Array("threads");
+        var active = branch.Length > 0 ? branch : id == _currentConversationTaskId ? _conversationSnapshot.Field("state").Text("active_task_thread_id", "main") : task.Text("active_thread_id", "main");
+        if (active.Length == 0) active = "main";
+        JsonElement threadRaw;
+        try { threadRaw = await _client.ExecutionGetAsync("/internal/runtime/tasks/" + Escape(id) + "/threads/" + Escape(active), SelectionToken); }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound) { threadRaw = default; }
+        var thread = threadRaw.Field("thread");
+        if (generation != _generation || epoch != _taskEpoch) return;
+        _taskSnapshot = task;
+        var steps = thread.Field("steps").ValueKind == JsonValueKind.Array ? thread.Array("steps") : task.Array("steps");
+        var done = steps.Count(step => step.Text("status") == "completed");
+        var currentId = thread.Text("current_step_id", task.Text("current_step_id"));
         var current = steps.FirstOrDefault(step => step.Text("id") == currentId).Text("title");
-        CurrentTaskTitle.Text = task.Text("title");
-        CurrentTaskStatus.Text = $"{ExecutionJson.State(task.Text("status"))} · {complete}/{steps.Count} 步骤 · 分支 {threadId}";
-        CurrentTaskProgress.Value = steps.Count == 0 ? 0 : complete * 100d / steps.Count;
-        CurrentTaskNext.Text = "当前步骤：" + (current.Length == 0 ? "未指定" : current) + "\n下一动作：" + (thread.Text("next_action") is { Length: > 0 } next ? next : "尚未记录");
-        ConversationProgressCard.Visibility = Visibility.Visible;
-    }
-    private async Task LoadMilestonesAsync()
-    {
-        var id = _selected?.Kind == "task" ? _selected.Id : _currentConversationTaskId;
-        if (string.IsNullOrEmpty(id)) { MilestonesPanel.Visibility = Visibility.Collapsed; return; }
-        var generation = _generation;
-        var page = await _client.ExecutionGetAsync("/internal/runtime/tasks/" + Encode(id) + "/activity?milestones=true&limit=100&after=" + _milestoneCursor, _selectionCancellation?.Token ?? _lifetime.Token);
-        if (generation != _generation) return;
-        foreach (var entry in page.Array("events"))
+        if (!details)
         {
-            var time = DateTimeOffset.TryParse(entry.Text("created_at"), out var at) ? at.LocalDateTime.ToString("HH:mm:ss") : "";
-            _milestones.Add(time + "  " + ExecutionJson.State(entry.Text("status")) + "  " + entry.Text("summary") + "  [" + entry.Text("kind") + "]");
+            CurrentTaskStatus.Text = steps.Length == 0 ? "进度未记录" : $"{done}/{steps.Length}";
+            CurrentTaskProgress.Visibility = steps.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            CurrentTaskProgress.Value = steps.Length == 0 ? 0 : done * 100.0 / steps.Length;
+            CurrentTaskNext.Text = current; CurrentTaskNext.ToolTip = current;
         }
-        _milestoneCursor = page.Number("next_seq");
-        if (_milestones.Count > 100) _milestones.RemoveRange(0, _milestones.Count - 100);
-        MilestonesText.Text = _milestones.Count == 0 ? "暂无任务进度里程碑。" : string.Join(Environment.NewLine, _milestones);
-        MilestonesPanel.Visibility = Visibility.Visible;
-        if (page.Flag("gap")) Warn("任务里程碑历史存在保留缺口。");
-    }
-    private void CallSearch_Changed(object sender, TextChangedEventArgs e)
-    { if (!_initialized || _updating) return; _callSearchTimer.Stop(); _callSearchTimer.Start(); }
-
-    private void ShowTaskSteps(JsonElement task)
-    {
-        var steps = task.Array("steps"); var complete = steps.Count(step => step.Text("status") == "completed");
-        TaskProgressBar.Value = steps.Count == 0 ? 0 : complete * 100d / steps.Count;
-        TaskStepsText.Text = steps.Count == 0 ? "尚未设置任务步骤。调用数量不会自动改变任务进度。" : string.Join(Environment.NewLine, steps.Select(step => $"{(step.Text("status") == "completed" ? "✓" : "·")} {step.Text("title")}   {ExecutionJson.State(step.Text("status"))}"));
+        if (details || TaskDetailsPanel.Visibility == Visibility.Visible)
+        {
+            _branch = active;
+            _updating = true;
+            try
+            {
+                BranchCombo.ItemsSource = threads.Select(value => new ExecutionChoice(value.Text("id", "main"), value.Text("title", value.Text("id", "main")))).ToArray();
+                BranchCombo.SelectedValue = active;
+            }
+            finally { _updating = false; }
+            var next = thread.Text("next_action", task.Text("next_action"));
+            TaskGoalText.Text = task.Text("goal") + (next.Length > 0 ? "\n下一动作：" + next : "");
+            TaskStepsText.Text = steps.Length == 0 ? "进度未记录" : string.Join("\n", steps.Select(step => ExecutionJson.State(step.Text("status")) + "  " + step.Text("title")));
+            var conditions = task.Array("conditions"); if (conditions.Length == 0) conditions = task.Array("completion_conditions");
+            TaskAcceptanceText.Text = "验收条件\n" + (conditions.Length == 0 ? "未记录" : string.Join("\n", conditions.Select(condition => condition.ValueKind == JsonValueKind.String ? condition.GetString() : condition.Text("text", condition.Pretty()))));
+            var milestones = await _client.ExecutionGetAsync("/internal/runtime/tasks/" + Escape(id) + "/activity?milestones=true&limit=100&after=0", SelectionToken);
+            if (generation != _generation || epoch != _taskEpoch) return;
+            MilestonesText.Text = string.Join("\n", milestones.Array("events").Select(value => value.Text("summary")));
+        }
     }
     private async Task LoadCallsAsync(bool older)
     {
-        if (_selected is null && _view != "attention") return;
-        var generation = _generation; var query = CallQuery();
-        if (!older)
-        {
-            _streamEpoch++;
-            _selectionCancellation?.Cancel(); _selectionCancellation?.Dispose();
-            _selectionCancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
-        }
-        var token = _selectionCancellation?.Token ?? _lifetime.Token;
-        var response = await _client.ExecutionGetAsync("/internal/runtime/calls?" + query + "&limit=100" + (older && _before > 0 ? "&before=" + _before : ""), token);
-        if (generation != _generation || query != CallQuery()) return;
+        if (_selected is null) return;
+        var query = CallScopeQuery(); var generation = _generation;
+        var epoch = older ? _streamEpoch : ++_streamEpoch;
+        if (!older) _streamCancellation?.Cancel();
+        var value = await _client.ExecutionGetAsync("/internal/runtime/calls?" + query + "&limit=100" + (older && _before > 0 ? "&before=" + _before : ""), SelectionToken);
+        if (generation != _generation || epoch != _streamEpoch || query != CallScopeQuery()) return;
         if (!older) { Calls.Clear(); _callsById.Clear(); }
-        foreach (var value in response.Array("calls").Reverse()) UpsertCall(value);
-        _before = response.Number("next_before");
-        if (response.Flag("gap")) Warn("保留的执行历史存在缺口或已发生轮换。当前列表不代表完整历史；技术详情保留可确认的记录。");
-        EmptyText.Text = Calls.Count == 0 ? "暂无符合条件的调用。" : response.Flag("has_more") ? "向前加载可查看更早记录。" : "已显示当前筛选条件下的保留记录。";
+        foreach (var call in value.Array("calls").Reverse()) UpsertCall(call);
+        _before = (ulong)value.Number("next_before");
+        OlderCallsButton.IsEnabled = value.Flag("has_more");
+        if (value.Flag("gap")) Warn("部分历史记录已过保留期限，当前显示现有记录。");
+        UpdateEmpty();
         if (!older)
         {
-            _cursor = (ulong)Math.Max(0, response.Number("latest_seq"));
-            var epoch=_streamEpoch;
-            _streamTask = _client.ObserveExecutionsAsync(_view == "attention" ? "top_level=true" : query, _cursor, message => ReceiveStreamAsync(message, generation,epoch), token);
-            if (FollowLatestBox.IsChecked == true && Calls.Count > 0) CallsList.ScrollIntoView(Calls[^1]);
+            _cursor = (ulong)value.Number("latest_seq");
+            _streamCancellation?.Dispose(); _streamCancellation = CancellationTokenSource.CreateLinkedTokenSource(SelectionToken);
+            _streamTask = _client.ObserveExecutionsAsync(query, _cursor, message => Dispatcher.InvokeAsync(() => ApplyStreamAsync(message, generation, epoch)).Task.Unwrap(), _streamCancellation.Token);
         }
+        if (_following && Calls.Count > 0) await Dispatcher.InvokeAsync(() => CallsList.ScrollIntoView(Calls[^1]), DispatcherPriority.Loaded);
+    }
+    private bool MatchesScope(ExecutionCallRow row)
+    {
+        if (_selected is null || _selected.IsUnknown && row.ConversationId.Length > 0 || !_selected.IsUnknown && row.ConversationId != _selected.Id) return false;
+        if (_taskFilter.Length > 0 && row.TaskId != _taskFilter) return false;
+        return true;
     }
     private void UpsertCall(JsonElement value)
     {
-        var id = value.Text("call_id"); if (id == "" || value.Text("parent_call_id") != "") return;
-        if (_callsById.TryGetValue(id, out var row)) { row.Apply(value); return; }
-        row = new ExecutionCallRow(value); _callsById[id] = row;
-        var index = 0; while (index < Calls.Count && Calls[index].CreatedSeq < row.CreatedSeq) index++;
-        Calls.Insert(index, row);
-        if (Calls.Count > 1000 && FollowLatestBox.IsChecked == true) { _callsById.Remove(Calls[0].Id); Calls.RemoveAt(0); }
-    }
-    private async Task ReceiveStreamAsync(ExecutionStreamMessage message, int generation,int epoch)
-    {
-        if (_closed || _lifetime.IsCancellationRequested) return;
-        await Dispatcher.InvokeAsync(() =>
+        var incoming = new ExecutionCallRow(value);
+        if (!MatchesScope(incoming)) return;
+        var status = ComboValue(CallStatusCombo);
+        if (!incoming.VisibleIn(_callView) || status.Length > 0 && incoming.Status != status)
         {
-            if (_closed || generation != _generation || epoch!=_streamEpoch) return;
-            _cursor = message.Seq;
-            switch (message.Kind)
-            {
-                case "call":
-                    if (_view!="attention" || message.Value.Text("status") is "pending_approval" or "failed" or "unknown") UpsertCall(message.Value);
-                    if (_view == "attention" && message.Value.Text("status") is not ("pending_approval" or "failed" or "unknown") && _callsById.Remove(message.Value.Text("call_id"), out var finished)) Calls.Remove(finished);
-                    if (FollowLatestBox.IsChecked == true && Calls.Count > 0) CallsList.ScrollIntoView(Calls[^1]);
-                    EmptyText.Text = Calls.Count == 0 ? "暂无待处理执行。" : "按同一 call_id 实时更新，不重复插入开始、输出和结束事件。";
-                    break;
-                case "connected": ConnectionText.Text = "实时连接 · 按调用序号恢复"; break;
-                case "disconnected": ConnectionText.Text = "连接已断开 · 正在重连，不会重新执行命令"; break;
-                case "gap": Warn("执行历史存在缺口或已轮换。部分早期事件不在保留范围，不能视为完整记录。"); break;
-                case "reset": Warn("服务的日志游标已变化，请刷新核对当前执行状态。不会自动重试任何操作。"); break;
-                case "warning": Warn(message.Value.Text("reason")); break;
-            }
-        });
-    }
-    private async Task LoadSourceTitlesAsync()
-    {
-        if(_selected?.Kind!="task")return;
-        var generation=_generation;
-        foreach(var id in Calls.Where(row=>row.ConversationId!="").Select(row=>row.ConversationId).Distinct().Where(id=>!_conversationTitles.ContainsKey(id)).Take(4).ToArray())
-        {
-            try{var detail=await _client.ExecutionGetAsync("/internal/runtime/conversations/"+Encode(id),_selectionCancellation?.Token??_lifetime.Token);_conversationTitles[id]=detail.Field("conversation").Text("title");}
-            catch(HttpRequestException){_conversationTitles[id]="历史对话（管理对象已清理）";}
-            if(generation!=_generation)return;
+            if (_callsById.Remove(incoming.Id, out var removed)) { Calls.Remove(removed); if (_detailCall?.Id == removed.Id) CloseDetails(); }
+            return;
         }
-        foreach(var row in Calls)if(_conversationTitles.TryGetValue(row.ConversationId,out var title))row.SourceTitle=title;
-    }
-    private async Task TickAsync()
-    {
-        if (_tickRunning || _closed) return; _tickRunning = true;
-        try
+        if (_callsById.TryGetValue(incoming.Id, out var existing)) existing.Apply(value);
+        else
         {
-            await GuardAsync(async () =>
-            {
-                await RefreshOverviewAsync();
-                await LoadSourceTitlesAsync();
-                foreach (var row in Calls.Where(item => item.IsExpanded && (item.CanStop || !item.DetailLoaded)).Take(8).ToArray()) await LoadCallDetailAsync(row);
-                _ticks++;
-                if (_ticks % 5 == 0)
-                {
-                    if (_selected?.Kind == "task") await LoadTaskAsync(_selected, _generation);
-                    else if (_selected is { Kind: "conversation", IsUnknown: false } selected)
-                    {
-                        var generation = _generation;
-                        var detail = await _client.ExecutionGetAsync("/internal/runtime/conversations/" + Encode(selected.Id), _lifetime.Token);
-                        if (generation == _generation) await ShowConversationTaskAsync(detail.Field("conversation"), generation);
-                    }
-                    await LoadMilestonesAsync();
-                }
-                // Refresh sidebar counts without moving a viewed object or a frozen batch selection.
-                if (_ticks % 8 == 0 && _frozenSelection is null && ObjectsList.SelectedItems.Count <= 1 && _view != "attention") await LoadObjectsAsync(false);
-            });
+            _callsById[incoming.Id] = incoming;
+            var index = Calls.Count; while (index > 0 && Calls[index - 1].CreatedSeq > incoming.CreatedSeq) index--;
+            Calls.Insert(index, incoming);
+            if (_conversationTitles.TryGetValue(incoming.ConversationId, out var title)) incoming.SourceTitle = title;
         }
-        finally { _tickRunning = false; }
+        var limit = _following ? 1000 : 10000;
+        while (Calls.Count > limit) { var removed = _following ? Calls[0] : Calls[^1]; Calls.Remove(removed); _callsById.Remove(removed.Id); }
+        UpdateStopButton();
+    }
+    private async Task ApplyStreamAsync(ExecutionStreamMessage message, int generation, int epoch)
+    {
+        if (_closed || generation != _generation || epoch != _streamEpoch) return;
+        if (message.Kind == "connected") { _streamConnected = true; ConnectionButton.ToolTip = "本地执行流已连接"; }
+        else if (message.Kind == "disconnected") { _streamConnected = false; ConnectionButton.ToolTip = "本地执行流重连中：" + message.Message; }
+        else if (message.Kind == "call")
+        {
+            _cursor = Math.Max(_cursor, message.Seq); UpsertCall(message.Value); UpdateEmpty();
+            if (_following && Calls.Count > 0) CallsList.ScrollIntoView(Calls[^1]);
+        }
+        else if (message.Kind is "gap" or "warning") Warn(message.Message.Length > 0 ? message.Message : "部分历史记录已不可用。");
+        else if (message.Kind == "reset") await GuardAsync(() => LoadCallsAsync(false));
     }
     private async Task LoadCallDetailAsync(ExecutionCallRow row)
     {
         if (!_detailReads.Add(row.Id)) return;
-        var generation = _generation;
         try
         {
-            var detail = await _client.ExecutionGetAsync("/internal/runtime/calls/" + Encode(row.Id), _selectionCancellation?.Token ?? _lifetime.Token);
-            if (generation == _generation) row.ApplyDetail(detail);
+            var value = await _client.ExecutionGetAsync("/internal/runtime/calls/" + Escape(row.Id), SelectionToken);
+            if (!_closed && _detailCall?.Id == row.Id) row.ApplyDetail(value);
         }
         finally { _detailReads.Remove(row.Id); }
     }
-    private async void Call_Expanded(object sender, RoutedEventArgs e)
-    { if (ReferenceEquals(sender, e.OriginalSource) && sender is FrameworkElement { DataContext: ExecutionCallRow row }) await GuardAsync(() => LoadCallDetailAsync(row)); }
-    private async void RefreshCall_Click(object sender, RoutedEventArgs e)
-    { if (sender is FrameworkElement { DataContext: ExecutionCallRow row }) await GuardAsync(() => LoadCallDetailAsync(row)); }
-    private async void Children_Expanded(object sender, RoutedEventArgs e)
+    private async Task LoadSourceAsync(ExecutionCallRow row)
     {
-        if (!ReferenceEquals(sender, e.OriginalSource) || sender is not FrameworkElement { DataContext: ExecutionCallRow row }) return;
-        await GuardAsync(async () =>
+        if (row.ConversationId.Length == 0) { row.SetSource("", "unavailable"); SourceDetailsText.Text = "未归属：记录没有可验证的来源对话。调用 ID 可用于导出、隔离、归档与删除。"; return; }
+        row.SetSource("", "loading");
+        try
         {
-            var detail = await _client.ExecutionGetAsync("/internal/runtime/calls?parent_call_id=" + Encode(row.Id) + "&include_output=true&limit=100", _selectionCancellation?.Token ?? _lifetime.Token);
-            row.Children.Clear(); foreach (var item in detail.Array("calls").Reverse()) { var child = new ExecutionCallRow(item); child.ApplyDetail(item); row.Children.Add(child); }
+            var value = await _client.ExecutionGetAsync("/internal/runtime/conversations/" + Escape(row.ConversationId), SelectionToken);
+            row.SetSource(value.Field("conversation").Text("title"), "resolved");
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Gone) { row.SetSource("", "deleted"); }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound) { row.SetSource("", "unavailable"); }
+        catch (OperationCanceledException) { row.SetSource("", "unavailable"); }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException) { row.SetSource("", "error"); }
+        if (_detailCall?.Id != row.Id) return;
+        var source = row.SourceState == "resolved" && row.ConversationId == _selected?.Id ? "来源已解析" : row.Origin;
+        SourceDetailsText.Text = source + (row.Workdir.Length > 0 ? "\n工作目录：" + row.Workdir : "") + (row.Rule.Length > 0 ? "\n权限：" + row.Rule : "") + (row.HasChanges ? "\n\n文件变更\n" + row.Changes : "") + (row.HistoryWarning.Length > 0 ? "\n" + row.HistoryWarning : "");
+    }
+    private async Task TickAsync()
+    {
+        if (_closed || !_initialized || _tickRunning) return;
+        _tickRunning = true;
+        try
+        {
+            _ticks++;
+            if (_ticks % 3 == 0) await GuardAsync(RefreshOverviewAsync);
+            if (_detailCall is { } row && CallDetailsTabs.Visibility == Visibility.Visible && row.CanStop) await GuardAsync(() => LoadCallDetailAsync(row));
+            if (_ticks % 5 == 0 && _selectedTaskId.Length > 0 && TaskDetailsPanel.Visibility != Visibility.Visible) await GuardAsync(() => LoadTaskAsync(_selectedTaskId, "", false));
+            if (_ticks % 10 == 0 && _objectOffset <= 200 && ObjectsList.SelectedItems.Count <= 1 && _frozenSelection is null) await GuardAsync(() => LoadObjectsAsync());
+            UpdateStopButton();
+        }
+        finally { _tickRunning = false; }
+    }
+    private void UpdateStopButton()
+    {
+        var terminated = _conversationSnapshot.HasDate("terminated_at") || _selected?.Terminated == true;
+        StopConversationButton.Visibility = _selected is { IsUnknown:false, IsOrphan:false } && !terminated && (Calls.Any(row => row.CanStop) || _selected.RunningCount > 0 || _selected.PendingCount > 0) ? Visibility.Visible : Visibility.Collapsed;
+    }
+    private void UpdateEmpty() { EmptyPanel.Visibility = Calls.Count == 0 ? Visibility.Visible : Visibility.Collapsed; EmptyText.Text = "暂无符合条件的执行记录"; }
+    private void UpdateFollowButton() { FollowButton.Content = _following ? "跟随" : "继续跟随"; FollowButton.SetResourceReference(Button.BackgroundProperty, _following ? "SelectionBackground" : "PanelBackground"); }
+    private void OpenDetails(string title, FrameworkElement pane)
+    {
+        DetailsPanel.Height = Math.Clamp(ActualHeight * 0.36, 180, 300);
+        DetailsPanel.Visibility = Visibility.Visible; DetailsTitle.Text = title;
+        foreach (var element in new FrameworkElement[] { CallDetailsTabs, TaskDetailsPanel, InfoDetailsText, DataManagementPanel }) element.Visibility = element == pane ? Visibility.Visible : Visibility.Collapsed;
+    }
+    private void CloseDetails() { DetailsPanel.Visibility = Visibility.Collapsed; _detailCall = null; foreach (var pane in new FrameworkElement[] { CallDetailsTabs, TaskDetailsPanel, InfoDetailsText, DataManagementPanel }) pane.Visibility = Visibility.Collapsed; }
+    private void ShowInfo(string title, string text) { InfoDetailsText.Text = text; OpenDetails(title, InfoDetailsText); }
+    private async void Objects_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_updating || !_initialized) return;
+        _frozenSelection = null;
+        if (ObjectsList.SelectedItem is ExecutionObject item && item.SelectionKey != _selected?.SelectionKey) await GuardAsync(() => SelectObjectAsync(item));
+    }
+    private async void Calls_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (e.Source != CallsList || CallsList.SelectedItem is not ExecutionCallRow row) return;
+        _detailCall = row; CallDetailsTabs.DataContext = row; CallDetailsTabs.SelectedIndex = 0;
+        OpenDetails(row.Title, CallDetailsTabs); await GuardAsync(() => LoadCallDetailAsync(row));
+    }
+    private async void ChildCall_Changed(object sender, SelectionChangedEventArgs e) { if (ChildrenList.SelectedItem is ExecutionCallRow row) { _detailCall = row; CallDetailsTabs.DataContext = row; CallDetailsTabs.SelectedIndex = 0; DetailsTitle.Text = row.Title; await GuardAsync(() => LoadCallDetailAsync(row)); } }
+    private async void DetailTab_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (e.Source != CallDetailsTabs || _detailCall is not { } row) return;
+        if (CallDetailsTabs.SelectedIndex == 1) await GuardAsync(() => LoadSourceAsync(row));
+        if (CallDetailsTabs.SelectedIndex == 2) await GuardAsync(async () =>
+        {
+            var value = await _client.ExecutionGetAsync("/internal/runtime/calls?parent_call_id=" + Escape(row.Id) + "&view=all&limit=200", SelectionToken);
+            if (_detailCall?.Id != row.Id) return;
+            row.Children.Clear(); foreach (var child in value.Array("calls").Reverse()) row.Children.Add(new(child));
         });
     }
-    private async void Navigate_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not FrameworkElement { Tag: string view }) return;
-        _view = view; if (view is "task" or "conversation") _kind = view;
-        _updating = true; KindCombo.SelectedIndex = _kind == "task" ? 1 : 0; _updating = false;
-        _frozenSelection = null; _selected = null; _generation++; _selectionCancellation?.Cancel();
-        await GuardAsync(() => LoadObjectsAsync(false));
-    }
-    private void Filter_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (!_initialized || _updating) return;
-        if (ReferenceEquals(sender, KindCombo)) { _kind = KindCombo.SelectedIndex == 1 ? "task" : "conversation"; if (_view is "conversation" or "task") _view = _kind; }
-        QueueFilter();
-    }
-    private void FilterText_Changed(object sender, TextChangedEventArgs e) { if (_initialized && !_updating) QueueFilter(); }
-    private void QueueFilter() { _frozenSelection = null; _filterTimer.Stop(); _filterTimer.Start(); }
+    private async void TaskChoice_Changed(object sender, SelectionChangedEventArgs e) { if (_updating || !_initialized || TaskChoiceCombo.SelectedItem is not ExecutionChoice choice) return; _selectedTaskId = choice.Id; await GuardAsync(() => LoadTaskAsync(choice.Id, "", false)); }
+    private async void Branch_Changed(object sender, SelectionChangedEventArgs e) { if (!_updating && _initialized && BranchCombo.SelectedItem is ExecutionChoice branch && _selectedTaskId.Length > 0) await GuardAsync(() => LoadTaskAsync(_selectedTaskId, branch.Id, true)); }
+    private async void TaskDetails_Click(object sender, RoutedEventArgs e) { if (_selectedTaskId.Length == 0) return; OpenDetails((TaskChoiceCombo.SelectedItem as ExecutionChoice)?.Title ?? "任务详情", TaskDetailsPanel); await GuardAsync(() => LoadTaskAsync(_selectedTaskId, "", true)); }
+    private async void FilterTask_Click(object sender, RoutedEventArgs e) { _taskFilter = _taskFilter == _selectedTaskId ? "" : _selectedTaskId; FilterTaskButton.Content = _taskFilter.Length == 0 ? "筛选此任务" : "显示全部"; await GuardAsync(() => LoadCallsAsync(false)); }
+    private void Search_Changed(object sender, TextChangedEventArgs e) { if (!_initialized) return; _filterTimer.Stop(); _filterTimer.Start(); }
+    private void CallSearch_Changed(object sender, TextChangedEventArgs e) { if (!_initialized) return; _callSearchTimer.Stop(); _callSearchTimer.Start(); }
+    private async void CallFilter_Changed(object sender, SelectionChangedEventArgs e) { if (_initialized) await GuardAsync(() => LoadCallsAsync(false)); }
     private async void MoreObjects_Click(object sender, RoutedEventArgs e) => await GuardAsync(() => LoadObjectsAsync(true));
-    private async void Refresh_Click(object sender, RoutedEventArgs e) => await GuardAsync(async () => { WarningPanel.Visibility = Visibility.Collapsed; await LoadWorkspaceChoicesAsync(); await RefreshOverviewAsync(); await LoadObjectsAsync(false); await LoadCallsAsync(false); });
-    private async void OlderCalls_Click(object sender, RoutedEventArgs e) { FollowLatestBox.IsChecked = false; await GuardAsync(() => LoadCallsAsync(true)); }
-    private async void Latest_Click(object sender, RoutedEventArgs e) { FollowLatestBox.IsChecked = true; await GuardAsync(() => LoadCallsAsync(false)); }
-    private async void Branch_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        if (_updating || _selected?.Kind != "task" || BranchCombo.SelectedItem is not ExecutionChoice choice) return;
-        _branch = choice.Id;
-        await GuardAsync(async () =>
-        {
-            if (_branch == "") ShowTaskSteps(_taskSnapshot);
-            else { var result = await _client.ExecutionGetAsync("/internal/runtime/tasks/" + Encode(_selected.Id) + "/threads/" + Encode(_branch), _lifetime.Token); ShowTaskSteps(result.Field("thread")); }
-            await LoadCallsAsync(false);
-        });
-    }
-    private async void ContinueBranch_Click(object sender, RoutedEventArgs e)
-    {
-        if (_selected?.Kind != "task" || _branch == "") { Warn("选择一个具体任务分支后，才能设为继续分支。查看所有分支不改变默认恢复点。"); return; }
-        await GuardAsync(async () => { await _client.ControlAsync(new { action = "thread_switch", task_id = _selected.Id, thread_id = _branch }, _lifetime.Token); await LoadTaskAsync(_selected, _generation); });
-    }
-    private void Calls_ScrollChanged(object sender, ScrollChangedEventArgs e)
-    {
-        if (e.OriginalSource is not ScrollViewer scroll || !ReferenceEquals(FindAncestor<ListBox>(scroll), CallsList)) return;
-        if (e.VerticalChange < 0 && scroll.ScrollableHeight - scroll.VerticalOffset > 30) FollowLatestBox.IsChecked = false;
-    }
-    private void Output_ScrollChanged(object sender, ScrollChangedEventArgs e)
-    {
-        if (sender is TextBox { DataContext: ExecutionCallRow row } box && e.VerticalChange != 0) row.FollowOutput = box.ExtentHeight - box.ViewportHeight - box.VerticalOffset < 12;
-    }
-    private void Output_TextChanged(object sender, TextChangedEventArgs e)
-    { if (sender is TextBox { DataContext: ExecutionCallRow { FollowOutput: true } } box) box.ScrollToEnd(); }
-    private static T? FindAncestor<T>(DependencyObject? current) where T : DependencyObject
-    { while (current is not null) { if (current is T match) return match; current = VisualTreeHelper.GetParent(current); } return null; }
-    private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-    {
-        if (e.Key == Key.F5) { Refresh_Click(sender, e); e.Handled = true; }
-        else if (e.Key == Key.Escape && _frozenSelection is not null) { ClearSelection_Click(sender, e); e.Handled = true; }
-        else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.F) { SearchBox.Focus(); SearchBox.SelectAll(); e.Handled = true; }
-    }
-    private void Window_Closed(object? sender, EventArgs e)
-    {
-        _closed = true; _pulse.Stop(); _filterTimer.Stop(); _callSearchTimer.Stop(); _selectionCancellation?.Cancel(); _lifetime.Cancel();
-        SavePreferences(); _client.Dispose(); _selectionCancellation?.Dispose(); _lifetime.Dispose();
-        // No stop request is sent: closing a view must not affect actual execution.
-    }
-    private string PreferencesPath => Path.Combine(_runtime.RuntimeRoot, "execution-center-settings.json");
+    private async void OlderCalls_Click(object sender, RoutedEventArgs e) { _following = false; UpdateFollowButton(); await GuardAsync(() => LoadCallsAsync(true)); }
+    private void Follow_Click(object sender, RoutedEventArgs e) { _following = !_following; UpdateFollowButton(); if (_following && Calls.Count > 0) CallsList.ScrollIntoView(Calls[^1]); }
+    private void Calls_Wheel(object sender, MouseWheelEventArgs e) { if (e.Delta > 0) { _following = false; UpdateFollowButton(); } }
+    private void Calls_ScrollChanged(object sender, ScrollChangedEventArgs e) { if (e.VerticalChange < 0 && e.ExtentHeightChange == 0) { _following = false; UpdateFollowButton(); } }
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await GuardAsync(async () => { await LoadWorkspacesAsync(); await LoadObjectsAsync(); await LoadCallsAsync(false); await RefreshOverviewAsync(); });
+    private void CloseDetails_Click(object sender, RoutedEventArgs e) => CloseDetails();
+    private void DismissWarning_Click(object sender, RoutedEventArgs e) => Warn("");
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e) { ShowTimestamps = ActualWidth >= 1050; if (DetailsPanel is not null && DetailsPanel.Visibility == Visibility.Visible) DetailsPanel.Height = Math.Clamp(ActualHeight * 0.36, 180, 300); }
+    private void WorkspaceGroup_Loaded(object sender, RoutedEventArgs e) { if (sender is Expander expander && expander.DataContext is CollectionViewGroup { Name: WorkspaceGroupKey key }) expander.IsExpanded = !_preferences.CollapsedWorkspaces.Contains(key.Id); }
+    private void WorkspaceGroup_Expanded(object sender, RoutedEventArgs e) { if (_initialized && sender is Expander { IsLoaded:true, DataContext: CollectionViewGroup { Name:WorkspaceGroupKey key } }) _preferences.CollapsedWorkspaces.Remove(key.Id); }
+    private void WorkspaceGroup_Collapsed(object sender, RoutedEventArgs e) { if (_initialized && sender is Expander { IsLoaded:true, DataContext: CollectionViewGroup { Name:WorkspaceGroupKey key } }) _preferences.CollapsedWorkspaces.Add(key.Id); }
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    { for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++) { var child = VisualTreeHelper.GetChild(parent, i); if (child is T match) return match; var nested = FindVisualChild<T>(child); if (nested is not null) return nested; } return null; }
+    private static T? Ancestor<T>(DependencyObject? item) where T : DependencyObject { while (item is not null) { if (item is T found) return found; item = item is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(item) : LogicalTreeHelper.GetParent(item); } return null; }
     private void LoadPreferences()
     {
         try
         {
-            if (File.Exists(PreferencesPath) && new FileInfo(PreferencesPath).Length <= 65536)
-            {
-                var stored = JsonSerializer.Deserialize<ExecutionPreferences>(File.ReadAllText(PreferencesPath));
-                if (stored?.SchemaVersion == 1) _preferences = stored;
-            }
+            var path = Path.Combine(_runtime.RuntimeRoot, "execution-center-settings.json"); if (!File.Exists(path)) return;
+            if (new FileInfo(path).Length > 131072) throw new IOException("显示设置超过大小限制，原文件已保留。");
+            _preferences = JsonSerializer.Deserialize<ExecutionPreferences>(File.ReadAllText(path), ActivityClient.JsonOptions) ?? new();
+            _preferences.FontSize = Math.Clamp(_preferences.FontSize, 12, 20); _preferences.RetentionDays = Math.Clamp(_preferences.RetentionDays, 1, 3650);
+            _preferences.CollapsedWorkspaces ??= []; _preferences.SavedFilters ??= [];
+            if (_preferences.Theme is not ("system" or "light" or "dark")) _preferences.Theme = "system";
         }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { Warn("界面偏好无法读取，已使用默认布局。" + ex.Message); }
-        _preferences.FontSize = Math.Clamp(_preferences.FontSize, 12, 20); _preferences.RetentionDays = Math.Clamp(_preferences.RetentionDays, 1, 3650);
-        if (_preferences.LastView is not ("task" or "conversation" or "archived" or "trash" or "attention")) _preferences.LastView = "conversation";
-        if (_preferences.LastKind is not ("task" or "conversation")) _preferences.LastKind = "conversation";
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { _preferencesWritable = false; _preferences = new(); Warn("显示设置未加载，原文件已保留：" + ex.Message); }
     }
     private void SavePreferences()
     {
-        try
+        if (!_preferencesWritable) return;
+        var path = Path.Combine(_runtime.RuntimeRoot, "execution-center-settings.json"); var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try { _preferences.SchemaVersion = 2; _preferences.LastView = _conversationView; _preferences.LastKind = "conversation"; Directory.CreateDirectory(_runtime.RuntimeRoot); File.WriteAllText(temporary, JsonSerializer.Serialize(_preferences, ActivityClient.JsonOptions)); File.Move(temporary, path, true); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { if (!_closed) Warn("显示设置未保存：" + ex.Message); }
+        finally { try { if (File.Exists(temporary)) File.Delete(temporary); } catch (IOException) { } }
+    }
+    internal void ApplyTheme(string? selection = null)
+    {
+        if (selection is not null) _preferences.Theme = selection;
+        var dark = _preferences.Theme == "dark";
+        if (_preferences.Theme == "system")
         {
-            _preferences.LastView = _view; _preferences.LastKind = _kind; _preferences.FontSize = FontSize;
-            Directory.CreateDirectory(_runtime.RuntimeRoot); var temp = PreferencesPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            File.WriteAllText(temp, JsonSerializer.Serialize(_preferences)); File.Move(temp, PreferencesPath, true);
+            try { using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"); dark = key?.GetValue("AppsUseLightTheme") is int value && value == 0; }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException) { dark = false; }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { System.Diagnostics.Debug.WriteLine(ex.Message); }
+        Resources.MergedDictionaries[1] = new ResourceDictionary { Source = new Uri("/agentdock-tray;component/Themes/" + (dark ? "Dark" : "Light") + ".xaml", UriKind.Relative) };
+    }
+    private void SystemTheme_Changed(object sender, UserPreferenceChangedEventArgs e) { if (_preferences.Theme == "system" && !_closed) Dispatcher.BeginInvoke(() => ApplyTheme()); }
+    private void Window_Closed(object? sender, EventArgs e)
+    {
+        if (_closed) return; _closed = true; SavePreferences();
+        SystemEvents.UserPreferenceChanged -= SystemTheme_Changed;
+        _filterTimer.Stop(); _callSearchTimer.Stop(); _pulse.Stop(); _lifetime.Cancel(); _selectionCancellation?.Cancel(); _streamCancellation?.Cancel();
+        _client.Dispose(); _selectionCancellation?.Dispose(); _streamCancellation?.Dispose(); _lifetime.Dispose();
+        // Closing an observer window never stops tasks or command processes.
     }
 }

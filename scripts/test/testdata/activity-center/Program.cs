@@ -29,10 +29,10 @@ internal static partial class Program
             {
                 passed = true, elapsed_ms = started.ElapsedMilliseconds,
                 execution_large_list_fixture = executionScale,
-                execution_cards_and_no_task_calls = true, execution_right_click_targets_pointer = true,
-                execution_branch_view_does_not_change_continuation = true, conversation_current_task_card_and_next_action = true, no_task_hides_progress_only = true, task_milestones_are_separate = true,
+                execution_single_line_rows_and_no_task_calls = true, execution_right_click_targets_pointer = true,
+                execution_branch_view_does_not_change_continuation = true, conversation_compact_task_progress_and_detail_next_action = true, no_task_hides_progress_only = true, task_milestones_are_separate = true,
                 execution_projection_duplicate_replay_and_output_preferences = true,
-                execution_scaled_rendering = new[] { "1220x840@100%", "840x640@125%", "1000x720@150%", "1220x840@200%" },
+                execution_scaled_rendering = new[] { "1280x800@100% light/dark", "840x640@125%", "1000x720@150%", "1280x800@200%" },
                 access_modes_12_cross_transitions_and_4_reapplies = true, access_draft_failure_and_refresh_protection = true,
                 task_cancel_archive_and_reason_projection = true, live_session_stop_guard = true,
                 anonymous_discovery_challenge_and_metadata_validation = true,

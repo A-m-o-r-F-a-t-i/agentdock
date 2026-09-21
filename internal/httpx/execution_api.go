@@ -65,6 +65,10 @@ func executionError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 		code = "STALE_PERMISSION"
 	}
+	if errors.Is(err, activity.ErrConversationDeleted) {
+		status = http.StatusGone
+		code = "SOURCE_DELETED"
+	}
 	var toolErr *app.ToolError
 	if errors.As(err, &toolErr) {
 		writeRuntimeAPIHandlerError(w, err)
@@ -108,7 +112,7 @@ func executionPaging(r *http.Request) (offset, limit int, err error) {
 }
 func callQuery(r *http.Request) (query activity.CallQuery, err error) {
 	values := r.URL.Query()
-	query = activity.CallQuery{ConversationID: values.Get("conversation_id"), TaskID: values.Get("task_id"), ThreadID: values.Get("thread_id"), ParentCallID: values.Get("parent_call_id"), Status: values.Get("status"), Search: values.Get("search")}
+	query = activity.CallQuery{View: values.Get("view"), ConversationID: values.Get("conversation_id"), TaskID: values.Get("task_id"), ThreadID: values.Get("thread_id"), ParentCallID: values.Get("parent_call_id"), Status: values.Get("status"), Search: values.Get("search")}
 	query.Limit, err = activityLimit(r, 200)
 	if err != nil {
 		return
@@ -161,6 +165,21 @@ func (h *activityHTTP) serveExecution(w http.ResponseWriter, r *http.Request) {
 			return false
 		}
 		return true
+	}
+	if len(parts) == 2 && parts[0] == "execution" && parts[1] == "connection" {
+		if !require("GET") {
+			return
+		}
+		observer, ok := h.runtime.(interface {
+			RuntimeClientConnection(context.Context) (app.Result, error)
+		})
+		if !ok {
+			writeRuntimeAPIError(w, 503, "CONNECTION_UNAVAILABLE", "client observation unavailable")
+			return
+		}
+		result, err := observer.RuntimeClientConnection(ctx)
+		finish(result, err)
+		return
 	}
 	if len(parts) == 1 && parts[0] == "execution" {
 		if !require("GET") {
@@ -242,6 +261,25 @@ func (h *activityHTTP) serveExecution(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			result, err := runtime.RuntimeConversation(ctx, id)
+			finish(result, err)
+			return
+		}
+		if len(parts) == 3 && (parts[2] == "terminate" || parts[2] == "resume") {
+			if !require("POST") {
+				return
+			}
+			var request app.ConversationLifecycleRequest
+			if !decodeExecutionBody(w, r, &request) {
+				return
+			}
+			controller, ok := h.runtime.(interface {
+				RuntimeConversationLifecycle(context.Context, string, string, app.ConversationLifecycleRequest) (app.Result, error)
+			})
+			if !ok {
+				writeRuntimeAPIError(w, 503, "LIFECYCLE_UNAVAILABLE", "conversation lifecycle is unavailable")
+				return
+			}
+			result, err := controller.RuntimeConversationLifecycle(ctx, id, parts[2], request)
 			finish(result, err)
 			return
 		}
@@ -335,6 +373,25 @@ func (h *activityHTTP) serveExecution(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if parts[0] == "calls" {
+		if len(parts) == 2 && parts[1] == "batch" {
+			if !require("POST") {
+				return
+			}
+			var request app.BatchRequest
+			if !decodeExecutionBody(w, r, &request) {
+				return
+			}
+			manager, ok := h.runtime.(interface {
+				RuntimeCallManagementBatch(context.Context, app.BatchRequest) (app.BatchResult, error)
+			})
+			if !ok {
+				writeRuntimeAPIError(w, 503, "MANAGEMENT_UNAVAILABLE", "call management is unavailable")
+				return
+			}
+			result, err := manager.RuntimeCallManagementBatch(ctx, request)
+			finish(result, err)
+			return
+		}
 		if len(parts) == 1 || len(parts) == 2 && (parts[1] == "stream" || parts[1] == "export") {
 			if !require("GET") {
 				return

@@ -60,7 +60,13 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 		return nil, r.executionError(failure, state)
 	}
 	if resolveErr != nil {
+		if errors.Is(resolveErr, activity.ErrConversationDeleted) {
+			return fail(toolError("CONVERSATION_TERMINATED", activity.ConversationTerminatedMessage, "permission"))
+		}
 		return fail(toolError("CONVERSATION_BINDING_ERROR", resolveErr.Error(), "validation"))
+	}
+	if err = r.checkConversationGate(ctx, snapshot.ConversationID); err != nil {
+		return fail(err)
 	}
 	if _, supplied := original["conversation_id"]; supplied {
 		return fail(toolError("INVALID_ARGUMENT", "conversation_id is transport-owned and is not a tool argument", "validation"))
@@ -113,6 +119,7 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 	if err = r.conversations.Link(ctx, state.binding.ConversationID, state.binding.TaskID, state.binding.WorkspaceID); err != nil {
 		return fail(err)
 	}
+	r.updateConversationName(ctx, state.binding.ConversationID, spec.Name, args)
 	description := r.describeExecution(spec.Name, args, state)
 	if err = r.appendExecution(activity.Event{Binding: state.binding, Kind: "call.bound", ToolName: spec.Name, Title: description, ParameterSummary: r.executionParameters(args), DisplayCommand: r.executionRedactor(args).Text(stringArg(args, "cmd"), 4096), Summary: description}); err != nil {
 		return fail(err)
@@ -334,6 +341,9 @@ func (r *Runtime) executionFacts(name string, args map[string]any, state executi
 	return f
 }
 func (r *Runtime) executionAdmissionLocked(ctx context.Context, binding activity.Binding, name, action, exclude string) error {
+	if err := r.checkConversationGate(ctx, binding.ConversationID); err != nil {
+		return err
+	}
 	r.lifecycleMu.RLock()
 	closing := r.closing
 	r.lifecycleMu.RUnlock()
@@ -461,6 +471,7 @@ func (r *Runtime) executePrepared(ctx context.Context, p *preparedExecution) (re
 	}
 	if err == nil && !resultReportsFailure(result) {
 		r.commitConversationState(ctx, p, result)
+		r.updateConversationName(ctx, state.binding.ConversationID, p.spec.Name, p.args)
 	}
 	if p.spec.Name == "session_observe" && (stringArg(p.args, "action") == "list" || stringArg(p.args, "action") == "") {
 		result = r.filterSessionList(ctx, result, p.state.binding)

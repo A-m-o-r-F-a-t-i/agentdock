@@ -37,6 +37,7 @@ type Source struct {
 	Provider           string
 	Namespace          string
 	HostConversationID string
+	HostTitle          string // Optional adapter-owned title; never a tool argument.
 	ConnectionID       string
 	// Set only by an adapter that guarantees one conversation per connection.
 	ConnectionIsConversation bool
@@ -85,6 +86,9 @@ type Conversation struct {
 	Management
 	ID           string            `json:"conversation_id"`
 	Title        string            `json:"title"`
+	TitleSource  string            `json:"title_source,omitempty"`
+	TerminatedAt *time.Time        `json:"terminated_at,omitempty"`
+	DeletedAt    *time.Time        `json:"deleted_at,omitempty"`
 	Source       string            `json:"source"`
 	Attribution  string            `json:"attribution"`
 	State        ConversationState `json:"state"`
@@ -223,10 +227,18 @@ func (r *ConversationRegistry) Resolve(ctx context.Context) (Conversation, error
 		if id, found := state.sources[hostKey]; found {
 			record := state.Items[id]
 			resolved = cloneConversation(record.Conversation)
+			if record.DeletedAt != nil {
+				return false, ErrConversationDeleted
+			}
 			if record.TrashedAt != nil {
 				return false, ErrConversationTrashed
 			}
-			return false, nil
+			dirty := applyAutomaticTitle(&record.Conversation, source.HostTitle, "host")
+			if dirty {
+				state.Items[id] = record
+				resolved = cloneConversation(record.Conversation)
+			}
+			return dirty, nil
 		}
 		id, err := NewExecutionID("conv_")
 		if err != nil {
@@ -234,9 +246,10 @@ func (r *ConversationRegistry) Resolve(ctx context.Context) (Conversation, error
 		}
 		now := time.Now().UTC()
 		record := conversationRecord{OwnerKey: owner, SourceKey: hostKey, Conversation: Conversation{
-			ID: id, Title: "新对话", Source: source.Namespace, Attribution: quality, CreatedAt: now, UpdatedAt: now,
+			ID: id, Title: "对话 · " + now.Local().Format("01-02 15:04"), TitleSource: "fallback", Source: source.Namespace, Attribution: quality, CreatedAt: now, UpdatedAt: now,
 			State: ConversationState{BindingRevision: 1, UpdatedAt: now},
 		}}
+		applyAutomaticTitle(&record.Conversation, source.HostTitle, "host")
 		state.Items[id] = record
 		resolved = cloneConversation(record.Conversation)
 		return true, nil
@@ -276,6 +289,9 @@ func (r *ConversationRegistry) Get(ctx context.Context, id string) (Conversation
 		if !found {
 			return false, ErrConversationNotFound
 		}
+		if record.DeletedAt != nil {
+			return false, ErrConversationNotFound
+		}
 		item = cloneConversation(record.Conversation)
 		return false, nil
 	})
@@ -288,6 +304,9 @@ func (r *ConversationRegistry) List(ctx context.Context) ([]Conversation, error)
 	items := []Conversation{}
 	err := r.state(ctx, func(state *conversationState) (bool, error) {
 		for _, record := range state.Items {
+			if record.DeletedAt != nil {
+				continue
+			}
 			items = append(items, cloneConversation(record.Conversation))
 		}
 		return false, nil
@@ -418,11 +437,21 @@ func (r *ConversationRegistry) Manage(ctx context.Context, id string, change Met
 				return false, errors.New("move the conversation to the recycle bin before permanent removal")
 			}
 			item = cloneConversation(record.Conversation)
-			delete(state.Items, id)
+			now := time.Now().UTC()
+			record.DeletedAt, record.TerminatedAt = &now, &now
+			record.TaskIDs, record.WorkspaceIDs = nil, nil
+			record.State = ConversationState{BindingRevision: record.State.BindingRevision + 1, UpdatedAt: now}
+			state.Items[id] = record // Durable source tombstone prevents reconnect/replay resurrection.
 			return true, nil
 		}
 		if err := ApplyManagement(&record.Management, &record.Title, change, time.Now().UTC()); err != nil {
 			return false, err
+		}
+		if record.DeletedAt != nil {
+			return false, ErrConversationNotFound
+		}
+		if change.Action == "rename" {
+			record.TitleSource = "manual"
 		}
 		record.UpdatedAt = time.Now().UTC()
 		state.Items[id] = record

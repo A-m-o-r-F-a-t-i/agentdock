@@ -88,8 +88,22 @@ func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQ
 	if err != nil {
 		return page, err
 	}
+	workspaceNames := map[string]string{}
+	workspaces, _, err := r.workspaceRegistry.List(ctx)
+	if err != nil {
+		return page, err
+	}
+	for _, workspace := range workspaces {
+		workspaceNames[workspace.ID] = workspace.Name
+	}
 	candidates := []ConversationItem{}
 	for _, item := range items {
+		if item.Title == "" || item.Title == "新对话" || item.TitleSource == "fallback" && strings.HasPrefix(item.Title, "对话 · ") {
+			r.updateConversationName(ctx, item.ID, "", nil)
+			if named, err := r.conversations.Get(ctx, item.ID); err == nil {
+				item = named
+			}
+		}
 		switch query.View {
 		case "trash":
 			if item.TrashedAt == nil {
@@ -105,7 +119,11 @@ func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQ
 				continue
 			}
 		}
-		if query.Search != "" && !strings.Contains(strings.ToLower(item.Title+" "+item.Source+" "+strings.Join(item.Tags, " ")), strings.ToLower(query.Search)) {
+		workspaceText := ""
+		for _, id := range item.WorkspaceIDs {
+			workspaceText += " " + workspaceNames[id]
+		}
+		if query.Search != "" && !strings.Contains(strings.ToLower(item.Title+" "+item.Source+" "+strings.Join(item.Tags, " ")+workspaceText), strings.ToLower(query.Search)) {
 			continue
 		}
 		if query.Tag != "" {
@@ -170,9 +188,16 @@ func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQ
 func (r *Runtime) RuntimeConversation(ctx context.Context, id string) (Result, error) {
 	item, err := r.conversations.Get(ctx, id)
 	if err != nil {
+		if errors.Is(err, activity.ErrConversationNotFound) {
+			if deleted, lookupErr := r.conversations.IsDeleted(ctx, id); lookupErr != nil {
+				return nil, lookupErr
+			} else if deleted {
+				return nil, activity.ErrConversationDeleted
+			}
+		}
 		return nil, err
 	}
-	effective, err := r.permissions.Effective(ctx, activity.Binding{ConversationID: id})
+	effective, err := r.permissions.Effective(ctx, activity.Binding{ConversationID: id, WorkspaceID: item.State.WorkspaceID})
 	if err != nil {
 		return nil, err
 	}
@@ -390,6 +415,13 @@ func (r *Runtime) localManagementFinish(binding activity.Binding, tool, status, 
 	_ = r.appendExecution(activity.Event{Binding: binding, Kind: "call.completed", ToolName: tool, Status: status, Summary: r.executionRedactor(nil).Text(summary, 4096)})
 }
 func (r *Runtime) RuntimePermissions(ctx context.Context, binding activity.Binding) (Result, error) {
+	if binding.ConversationID != "" && binding.WorkspaceID == "" {
+		item, err := r.conversations.Get(ctx, binding.ConversationID)
+		if err != nil {
+			return nil, err
+		}
+		binding.WorkspaceID = item.State.WorkspaceID
+	}
 	policy, err := r.permissions.Get(ctx)
 	if err != nil {
 		return nil, err
@@ -402,7 +434,7 @@ func (r *Runtime) RuntimePermissions(ctx context.Context, binding activity.Bindi
 	if err != nil {
 		return nil, err
 	}
-	return Result{"policy": policy, "effective": effective, "workspaces": workspaces, "os_privileges_unchanged": true}, nil
+	return Result{"policy": policy, "effective": effective, "workspaces": workspaces, "conversation_id": binding.ConversationID, "workspace_id": binding.WorkspaceID, "os_privileges_unchanged": true}, nil
 }
 func (r *Runtime) RuntimePermissionsUpdate(ctx context.Context, change permission.Change) (Result, error) {
 	r.executionMu.Lock()

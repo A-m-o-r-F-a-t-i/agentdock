@@ -913,12 +913,12 @@
   <data name="AccessApplyFailedDraftKept" xml:space="preserve"><value>应用失败，已保留输入草稿；当前生效模式以运行状态为准。</value></data>
   <data name="EnableAndCheck" xml:space="preserve"><value>启用并检查</value></data>
   <data name="SaveAndApply" xml:space="preserve"><value>保存并应用</value></data>
-  <data name="ServerChecksAuthorizationRequired" xml:space="preserve"><value>服务端检查通过，仍需客户端授权及工具扫描</value></data>
+  <data name="ServerChecksAuthorizationRequired" xml:space="preserve"><value>服务端检查通过</value></data>
   <data name="PublicCheckStage" xml:space="preserve"><value>{0} · {1} · HTTP {2} · {3:HH:mm:ss}</value></data>
   <data name="PublicNetwork" xml:space="preserve"><value>公网网络</value></data>
   <data name="PublicDiscovery" xml:space="preserve"><value>认证发现</value></data>
   <data name="PublicCheckError" xml:space="preserve"><value>{0} · {1} · {2} · {3:HH:mm:ss}</value></data>
   <data name="PublicMetadataMismatch" xml:space="preserve"><value>元数据与当前 Origin 不一致</value></data>
-  <data name="PublicDiscoveryAuthorizationRequired" xml:space="preserve"><value>网络与认证发现检查通过，仍需完成客户端授权和工具扫描。</value></data>
+  <data name="PublicDiscoveryAuthorizationRequired" xml:space="preserve"><value>公网可达，认证发现通过</value></data>
   <data name="PublicOAuthCapabilitiesMissing" xml:space="preserve"><value>OAuth 元数据缺少授权码、S256 或刷新能力声明。</value></data>
 </root>

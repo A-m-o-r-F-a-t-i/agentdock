@@ -108,7 +108,7 @@ internal static partial class Program
             response.Content=new StringContent(JsonSerializer.Serialize(body),Encoding.UTF8,"application/json");return response;
         }));
         var passed=await RuntimeService.CheckPublicDiscoveryAsync(client,origin,CancellationToken.None);
-        Require(passed.Success && passed.Message.Contains("仍需"),"Server checks claimed completed client authorization or failed discovery.");
+        Require(passed.Success && passed.Message.Contains("认证发现") && !passed.Message.Contains("仍需") && !passed.Message.Contains("客户端已连接"),"Anonymous discovery must report reachability without claiming or downgrading client authorization.");
         foreach(var failure in new[]{"network","redirect","wrong-origin"})
         {
             mode=failure;var result=await RuntimeService.CheckPublicDiscoveryAsync(client,origin,CancellationToken.None);

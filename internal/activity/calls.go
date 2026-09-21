@@ -22,6 +22,7 @@ type FileChange struct {
 	StatsKnown bool   `json:"stats_known"`
 }
 type ExecutionCall struct {
+	CallManagement
 	OwnerPID      int    `json:"owner_pid,omitempty"`
 	OwnerInstance string `json:"owner_instance,omitempty"`
 	Binding
@@ -66,6 +67,7 @@ type ExecutionCall struct {
 	Legacy            bool         `json:"legacy,omitempty"`
 }
 type CallQuery struct {
+	View              string
 	ConversationID    string
 	TaskID            string
 	ThreadID          string
@@ -375,6 +377,9 @@ func (s *Store) projectionLocked(ctx context.Context) (*callProjection, error) {
 	}
 	if s.projection != nil && s.projection.seq == state.Seq {
 		s.projection.prune(state.PrunedThrough)
+		if err := s.applyCallManagementLocked(s.projection); err != nil {
+			return nil, err
+		}
 		return s.projection, nil
 	}
 	projection := newCallProjection()
@@ -404,6 +409,9 @@ func (s *Store) projectionLocked(ctx context.Context) (*callProjection, error) {
 		projection.warning("The journal reserved sequence numbers without a corresponding retained event.")
 	}
 	projection.seq = state.Seq
+	if err := s.applyCallManagementLocked(projection); err != nil {
+		return nil, err
+	}
 	s.projection = projection
 	return projection, nil
 }
@@ -439,12 +447,15 @@ func (s *Store) Call(ctx context.Context, id string) (ExecutionCall, error) {
 		return ExecutionCall{}, err
 	}
 	call, found := projection.calls[id]
-	if !found {
+	if !found || call.DeletedAt != nil {
 		return ExecutionCall{}, ErrCallNotFound
 	}
 	return cloneCall(call, true), nil
 }
 func callMatches(call *ExecutionCall, query CallQuery) bool {
+	if !query.Updates && !callManagementMatches(call.CallManagement, query.View) {
+		return false
+	}
 	if call.Visibility == "diagnostic" && !query.IncludeDiagnostic {
 		return false
 	}
@@ -458,7 +469,7 @@ func callMatches(call *ExecutionCall, query CallQuery) bool {
 		if call.Status != "pending_approval" && call.Status != "failed" && call.Status != "unknown" {
 			return false
 		}
-	} else if query.Status != "" && call.Status != query.Status {
+	} else if !query.Updates && query.Status != "" && call.Status != query.Status {
 		return false
 	}
 	if query.Before > 0 && call.CreatedSeq >= query.Before || query.Updates && call.UpdatedSeq <= query.After {
@@ -476,6 +487,9 @@ func (s *Store) Calls(ctx context.Context, query CallQuery) (CallPage, error) {
 	}
 	if query.Limit <= 0 || query.Limit > MaxCallPage {
 		query.Limit = 100
+	}
+	if query.View != "" && query.View != "active" && query.View != "all" && query.View != "archived" && query.View != "isolated" && query.View != "trash" {
+		return page, errors.New("invalid call view")
 	}
 	if len(query.Search) > 512 {
 		return page, errors.New("search exceeds 512 bytes")
@@ -573,7 +587,7 @@ func (s *Store) CallStatistics(ctx context.Context) (CallStats, map[string]CallS
 		return total, byConversation, err
 	}
 	for _, call := range projection.calls {
-		if call.Visibility == "diagnostic" {
+		if call.Visibility == "diagnostic" || !callManagementMatches(call.CallManagement, "active") {
 			continue
 		}
 		addCallStats(&total, call)

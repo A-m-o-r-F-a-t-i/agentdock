@@ -37,6 +37,7 @@ import (
 type Result = toolcore.Result
 
 type Runtime struct {
+	connections              clientConnections
 	executionMaintenanceDone chan struct{}
 	executionInstance        string
 	conversations            *activity.ConversationRegistry
