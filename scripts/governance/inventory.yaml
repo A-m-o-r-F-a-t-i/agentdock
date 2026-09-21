@@ -6,6 +6,20 @@
 review_threshold_lines: 300
 
 scripts:
+  - path: scripts/test/test-execution-upgrade.py
+    class: test
+    owner: runtime
+    public_contract: false
+    deletable: false
+    notes: 通过独立端口和用户目录运行真实新旧Core，验证任务标识、审批、终止恢复、删除标记和重启，不安装生产服务。
+
+  - path: scripts/test/test-execution-list-performance.py
+    class: test
+    owner: runtime
+    public_contract: false
+    deletable: false
+    notes: 使用合成磁盘对话数据实测Core列表、分页和搜索，以及旧占位名称的首次批量迁移。
+
   - path: scripts/test/test-windows-execution-compatibility.ps1
     class: test
     owner: runtime
@@ -308,6 +322,7 @@ scripts:
     owner: installer
     public_contract: false
     deletable: false
+    oversize_justification: 原生Inno隔离矩阵集中管理不同AppId、中文目录、故障注入、回滚、保留数据与空目录安装、卸载及生产启动项保护，需要同一清理作用域。
     notes: 使用独立 AppID、目录和端口验证真实 Inno 升级、故障恢复、卸载与窗口事件。
 
   - path: scripts/test/test-windows-inventory-performance.ps1

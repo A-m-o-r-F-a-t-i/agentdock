@@ -96,13 +96,14 @@ func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQ
 	for _, workspace := range workspaces {
 		workspaceNames[workspace.ID] = workspace.Name
 	}
+	items, err = r.nameConversationSnapshot(ctx, items, workspaceNames)
+	if err != nil {
+		return page, err
+	}
 	candidates := []ConversationItem{}
 	for _, item := range items {
-		if item.Title == "" || item.Title == "新对话" || item.TitleSource == "fallback" && strings.HasPrefix(item.Title, "对话 · ") {
-			r.updateConversationName(ctx, item.ID, "", nil)
-			if named, err := r.conversations.Get(ctx, item.ID); err == nil {
-				item = named
-			}
+		if err := ctx.Err(); err != nil {
+			return page, err
 		}
 		switch query.View {
 		case "trash":

@@ -133,8 +133,14 @@ func sourceDigest(parts ...string) string {
 	return hex.EncodeToString(sum[:])
 }
 func (r *ConversationRegistry) state(ctx context.Context, change func(*conversationState) (bool, error)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	release, err := filelock.Acquire(ctx, filepath.Join(r.root, ".conversations.lock"))
 	if err != nil {
 		return err
@@ -195,6 +201,9 @@ func (r *ConversationRegistry) state(ctx context.Context, change func(*conversat
 	}
 	if len(data) > 16<<20 {
 		return errors.New("conversation registry capacity reached")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return atomicfile.Write(path, append(data, '\n'), 0600)
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/uvwt/agentdock/internal/activity"
 )
@@ -158,9 +157,5 @@ func (r *Runtime) updateConversationName(ctx context.Context, id, tool string, a
 			workspace = record.Name
 		}
 	}
-	created := item.CreatedAt
-	if created.IsZero() {
-		created = time.Now()
-	}
-	_ = r.conversations.AutoName(ctx, id, workspace+" · "+created.Local().Format("01-02 15:04"), "fallback")
+	_ = r.conversations.AutoName(ctx, id, conversationFallbackTitle(item, workspace), "fallback")
 }

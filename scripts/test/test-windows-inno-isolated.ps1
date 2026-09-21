@@ -32,6 +32,7 @@ $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $results = [Collections.Generic.List[object]]::new()
 $faults = [Collections.Generic.List[object]]::new()
 $failure = $null
+$oldVersion = ''
 $preservedData = @{}
 $legacyActivity = ''
 $initialEnvironment = @{}
@@ -259,6 +260,17 @@ try {
         Invoke-Setup $setupPath 'inno-fresh'
         Assert-Preservation 'committed' $ExpectedVersion @{}
         Invoke-IsolatedProcess (Join-Path $runtimeRoot 'unins000.exe') @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') 'inno-fresh-uninstall' 0 $true
+        # Preserve the old-data fixtures while testing a genuinely empty home
+        # and installation directory at the same isolated paths.
+        Move-Item -LiteralPath $testHome -Destination (Join-Path $root 'preserved-user-data')
+        Move-Item -LiteralPath $runtimeRoot -Destination (Join-Path $root 'preserved-installation')
+        New-Item -ItemType Directory -Path $testHome -Force | Out-Null
+        Invoke-Setup $setupPath 'inno-clean-profile-install'
+        Assert-Health $ExpectedVersion
+        $cleanPointer = Get-Content (Join-Path $runtimeRoot 'active-version.json') -Raw | ConvertFrom-Json
+        if ($cleanPointer.state -ne 'committed') { throw 'Clean profile install did not commit.' }
+        if ([IO.File]::ReadAllText((Join-Path $workspace 'project-sentinel.txt')) -ne 'preserve-project-source') { throw 'Clean profile install changed project source.' }
+        Invoke-IsolatedProcess (Join-Path $runtimeRoot 'unins000.exe') @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART') 'inno-clean-profile-uninstall' 0 $true
     }
     $leftovers = @(Get-ScheduledTask | Where-Object { $_.TaskName -like 'AgentDock Setup Native *' -and $_.TaskName -notin $beforeTasks })
     if ($leftovers.Count) { throw 'Temporary native tasks remain after the Inno matrix.' }
@@ -279,11 +291,13 @@ finally {
     Get-ChildItem Env:AGENTDOCK_* | ForEach-Object { [Environment]::SetEnvironmentVariable($_.Name,$null,'Process') }
     foreach ($key in $initialEnvironment.Keys) { [Environment]::SetEnvironmentVariable($key,$initialEnvironment[$key],'Process') }
     [ordered]@{
-        passed = ($null -eq $failure); version = $ExpectedVersion; runtime_root = $runtimeRoot; port = $port
+        passed = ($null -eq $failure); version = $ExpectedVersion; baseline_version = $oldVersion; runtime_root = $runtimeRoot; port = $port
         app_id = $id; production_state_unchanged = ((Get-ProductionStartupFingerprint) -eq $productionStartupBefore -and (-not $productionPointerHash -or (Get-FileHash $productionPointer).Hash -eq $productionPointerHash)); payload_sha256 = (Get-FileHash $Archive).Hash.ToLowerInvariant()
         baseline_sha256 = (Get-FileHash $BaselineArchive).Hash.ToLowerInvariant(); cases = $results.ToArray()
         preserved_user_fixtures = @('legacy Task','legacy Activity','permission policy bytes','project source file','user Skill','user Plugin','MCP companion state','Workspace policy')
-        legacy_permission_enforcement = 'not asserted: 1.1.1 has no 1.1.2 approval engine'
+        legacy_permission_enforcement = 'policy-byte preservation only; request enforcement is verified separately by the Core data-upgrade test'
+        setup_identity = 'isolated AppId, startup names, shortcut and install-root fallback; production payload binaries unchanged'
+        fresh_install_scope = $(if ($IncludeFreshInstall) { 'retained user data reinstall and empty user-data/installation directory' } else { 'not requested' })
         observer_self_test = 'passed'; error = $(if ($null -eq $failure) { '' } else { $failure.Exception.Message })
     } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $root 'result.json') -Encoding utf8NoBOM
 }
