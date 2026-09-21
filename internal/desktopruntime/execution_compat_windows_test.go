@@ -40,3 +40,23 @@ func TestManagedRuntimePolicyCompatibility(t *testing.T) {
 		t.Fatal("capability output was not bounded")
 	}
 }
+
+func TestLegacyExecutionPolicyCapabilityIsBoundToReleaseCommit(t *testing.T) {
+	if got := resolvedExecutionPolicyVersion(executionCapability{
+		Version: "1.1.2",
+		Commit:  legacyExecutionPolicyCommit,
+	}); got != executioncompat.PolicyVersion {
+		t.Fatalf("known 1.1.2 release capability = %d", got)
+	}
+	if got := resolvedExecutionPolicyVersion(executionCapability{
+		Version: "1.1.2",
+		Commit:  "different",
+	}); got != 0 {
+		t.Fatalf("unknown 1.1.2 build capability = %d", got)
+	}
+	if got := resolvedExecutionPolicyVersion(executionCapability{
+		ExecutionPolicyVersion: executioncompat.PolicyVersion,
+	}); got != executioncompat.PolicyVersion {
+		t.Fatalf("explicit capability = %d", got)
+	}
+}

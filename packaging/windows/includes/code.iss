@@ -2,18 +2,16 @@
 var
   UpgradeModePage: TInputOptionWizardPage;
   StartupPage: TInputOptionWizardPage;
-  ConnectionPage: TInputOptionWizardPage;
-  FixedTunnelPage: TInputQueryWizardPage;
   DesktopShortcutCheckBox: TNewCheckBox;
   PurgeState: Boolean;
   UninstallCleanupExecuted: Boolean;
   ResultFilePath: String;
-  TemporaryTokenFilePath: String;
   ExistingInstallDetected: Boolean;
   ExistingInstallVersion: String;
   ExistingInstallSource: String;
-  ExistingTunnelTokenUsable: Boolean;
   ResolvedInstallRoot: String;
+  RequestedTunnelMode: String;
+  RequestedServerURL: String;
   InstallProgressPage: TOutputProgressWizardPage;
   InstallWarningCode: String;
   InstallWarningMessage: String;
@@ -23,18 +21,6 @@ var
 function GetLocalizedMessage(Key: String): String;
 begin
   Result := CustomMessage(Key);
-end;
-
-function ReadTrimmedTextFile(Path: String): String;
-var
-  Content: AnsiString;
-begin
-  Result := '';
-  if FileExists(Path) then
-  begin
-    if LoadStringFromFile(Path, Content) then
-      Result := Trim(String(Content));
-  end;
 end;
 
 function ResolveInstallRoot(): String;
@@ -172,45 +158,10 @@ begin
   Result := Pos('"privilege_mode":"elevated"', Normalized) > 0;
 end;
 
-function ProtectedTextCanBeRead(Path: String; Entropy: String): Boolean;
-var
-  ExitCode: Integer;
-  Parameters: String;
-  ScriptPath: String;
-begin
-  Result := False;
-  if not FileExists(Path) then
-    Exit;
-
-  ExtractTemporaryFile('probe-protected-text.ps1');
-  ScriptPath := ExpandConstant('{tmp}\probe-protected-text.ps1');
-  Parameters :=
-    '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + ScriptPath + '"' +
-    ' -Path "' + Path + '"' +
-    ' -Entropy "' + Entropy + '"';
-  if not NativeSetupCommand(
-    NativePowerShellPath(),
-    Parameters,
-    30,
-    True,
-    ExitCode) then
-  begin
-    Log('AgentDock could not start the DPAPI credential probe.');
-    Exit;
-  end;
-
-  Result := ExitCode = 0;
-  if not Result then
-    Log('AgentDock saved Cloudflare Tunnel Token is missing or unreadable for the current user.');
-end;
-
 procedure LoadExistingSettings();
 var
-  Mode: String;
-  URL: String;
   RunKey: String;
 begin
-  ExistingTunnelTokenUsable := False;
   if not ExistingInstallDetected then
     Exit;
 
@@ -220,23 +171,6 @@ begin
     RegValueExists(HKCU, RunKey, 'AgentDockTray') or
     LegacyAgentDockScheduledTaskExists();
   StartupPage.Values[1] := RuntimeUsesElevatedCore() or LegacyAgentDockScheduledTaskExists();
-
-  Mode := Lowercase(ReadTrimmedTextFile(AddBackslash(ExistingInstallRoot()) + 'cloudflared-mode.txt'));
-  if Mode = 'quick' then
-    ConnectionPage.SelectedValueIndex := 1
-  else if Mode = 'named' then
-  begin
-    ConnectionPage.SelectedValueIndex := 2;
-    ExistingTunnelTokenUsable := ProtectedTextCanBeRead(
-      AddBackslash(ExistingInstallRoot()) + 'cloudflared-token.dpapi',
-      'agentdock.cloudflare.tunnel.v1');
-  end
-  else
-    ConnectionPage.SelectedValueIndex := 0;
-
-  URL := ReadTrimmedTextFile(AddBackslash(ExistingInstallRoot()) + 'server-url.txt');
-  if URL <> '' then
-    FixedTunnelPage.Values[0] := URL;
 end;
 
 procedure ApplyExistingInstallPresentation();
@@ -284,22 +218,27 @@ end;
 
 function SelectedTunnelMode(): String;
 begin
-  case ConnectionPage.SelectedValueIndex of
-    1: Result := 'quick';
-    2: Result := 'named';
+  if RequestedTunnelMode = 'quick' then
+    Result := 'quick'
+  else if RequestedTunnelMode = 'named' then
+    Result := 'named'
+  else if (RequestedTunnelMode = 'local') or (RequestedTunnelMode = 'none') then
+    Result := 'none'
   else
-    Result := 'none';
-  end;
+    Result := 'auto';
 end;
 
 procedure InitializeWizard();
 var
-  ModeParam: String;
   AutoStartParam: String;
 begin
   Log('AgentDock active language: ' + ActiveLanguage());
   ResolvedInstallRoot := ResolveInstallRoot();
   ExistingInstallDetected := DetectExistingInstallation();
+  RequestedTunnelMode := Lowercase(Trim(ExpandConstant('{param:MODE|}')));
+  if RequestedTunnelMode = '' then
+    RequestedTunnelMode := 'auto';
+  RequestedServerURL := Trim(ExpandConstant('{param:SERVERURL|}'));
 
   UpgradeModePage := CreateInputOptionPage(
     wpSelectDir,
@@ -326,37 +265,7 @@ begin
   StartupPage.Values[0] := True;
   StartupPage.Values[1] := False;
 
-  ConnectionPage := CreateInputOptionPage(
-    StartupPage.ID,
-    GetLocalizedMessage('ConnectionPageCaption'),
-    GetLocalizedMessage('ConnectionPageDescription'),
-    GetLocalizedMessage('ConnectionPageSubCaption'),
-    True,
-    False
-  );
-  ConnectionPage.Add(GetLocalizedMessage('LocalMode'));
-  ConnectionPage.Add(GetLocalizedMessage('QuickMode'));
-  ConnectionPage.Add(GetLocalizedMessage('NamedMode'));
-  ConnectionPage.SelectedValueIndex := 0;
-
-  FixedTunnelPage := CreateInputQueryPage(
-    ConnectionPage.ID,
-    GetLocalizedMessage('FixedPageCaption'),
-    GetLocalizedMessage('FixedPageDescription'),
-    GetLocalizedMessage('FixedPageSubCaption')
-  );
-  FixedTunnelPage.Add(GetLocalizedMessage('ServerURLLabel'), False);
-  FixedTunnelPage.Add(GetLocalizedMessage('TunnelTokenLabel'), True);
-
   LoadExistingSettings();
-
-  ModeParam := Lowercase(ExpandConstant('{param:MODE|}'));
-  if ModeParam = 'quick' then
-    ConnectionPage.SelectedValueIndex := 1
-  else if ModeParam = 'named' then
-    ConnectionPage.SelectedValueIndex := 2
-  else if ModeParam = 'local' then
-    ConnectionPage.SelectedValueIndex := 0;
 
   AutoStartParam := Lowercase(ExpandConstant('{param:AUTOSTART|}'));
   if (AutoStartParam = '0') or (AutoStartParam = 'false') then
@@ -369,9 +278,6 @@ begin
     StartupPage.Values[1] := False
   else if (AutoStartParam = '1') or (AutoStartParam = 'true') or (AutoStartParam = 'elevated') then
     StartupPage.Values[1] := True;
-
-  if ExpandConstant('{param:SERVERURL|}') <> '' then
-    FixedTunnelPage.Values[0] := ExpandConstant('{param:SERVERURL|}');
 
   ApplyExistingInstallPresentation();
 
@@ -397,10 +303,7 @@ begin
   PreserveExisting := ExistingInstallDetected and (UpgradeModePage.SelectedValueIndex = 0);
   Result :=
     ((PageID = UpgradeModePage.ID) and (not ExistingInstallDetected)) or
-    (PreserveExisting and
-      ((PageID = StartupPage.ID) or (PageID = ConnectionPage.ID) or
-       ((PageID = FixedTunnelPage.ID) and ExistingTunnelTokenUsable))) or
-    ((PageID = FixedTunnelPage.ID) and (SelectedTunnelMode() <> 'named'));
+    (PreserveExisting and (PageID = StartupPage.ID));
 end;
 
 function ApplyDesktopControlPanelShortcut(CreateRequested: Boolean): Boolean;
@@ -432,7 +335,6 @@ end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
-  URL: String;
   DirectoryError: String;
   SelectedRoot: String;
 begin
@@ -466,44 +368,11 @@ begin
       ExistingInstallDetected := DetectExistingInstallation();
       StartupPage.Values[0] := True;
       StartupPage.Values[1] := False;
-      ConnectionPage.SelectedValueIndex := 0;
-      FixedTunnelPage.Values[0] := '';
-      FixedTunnelPage.Values[1] := '';
       LoadExistingSettings();
     end;
   end;
   if (CurPageID = StartupPage.ID) and StartupPage.Values[1] then
     StartupPage.Values[0] := True;
-  if (CurPageID = ConnectionPage.ID) and (SelectedTunnelMode() <> 'none') then
-    StartupPage.Values[0] := True;
-  if CurPageID = FixedTunnelPage.ID then
-  begin
-    URL := Trim(FixedTunnelPage.Values[0]);
-    if (Pos('https://', Lowercase(URL)) <> 1) or (Pos('"', URL) > 0) then
-    begin
-      SuppressibleMsgBox(GetLocalizedMessage('InvalidServerURL'), mbError, MB_OK, IDOK);
-      Result := False;
-      Exit;
-    end;
-    if (Trim(FixedTunnelPage.Values[1]) = '') and
-      (ExpandConstant('{param:TUNNELTOKENFILE|}') = '') then
-    begin
-      ExistingTunnelTokenUsable := ProtectedTextCanBeRead(
-        AddBackslash(ExistingInstallRoot()) + 'cloudflared-token.dpapi',
-        'agentdock.cloudflare.tunnel.v1');
-      if not ExistingTunnelTokenUsable then
-      begin
-        if WizardSilent then
-        begin
-          Log('AgentDock silent Setup will report the missing or unreadable Tunnel Token through the installer result.');
-          Exit;
-        end;
-        SuppressibleMsgBox(GetLocalizedMessage('TokenRequired'), mbError, MB_OK, IDOK);
-        Result := False;
-        Exit;
-      end;
-    end;
-  end;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -514,7 +383,6 @@ var
   OfflineChecksumPath: String;
   OfflineCloudflaredPath: String;
   TokenFilePath: String;
-  SilentTokenFile: String;
   Parameters: String;
   TunnelMode: String;
   PrivilegeMode: String;
@@ -528,11 +396,18 @@ var
   ErrorLine: String;
   ErrorColumn: String;
   ErrorStack: String;
-  DeleteTokenFile: Boolean;
 begin
   Result := ValidateSelectedInstallDirectory();
   if Result <> '' then
     Exit;
+  TunnelMode := SelectedTunnelMode();
+  if (TunnelMode = 'named') and (RequestedServerURL <> '') and
+    ((Pos('https://', Lowercase(RequestedServerURL)) <> 1) or
+     (Pos('"', RequestedServerURL) > 0)) then
+  begin
+    Result := GetLocalizedMessage('InvalidServerURL');
+    Exit;
+  end;
   InstallProgressPage.Show;
   try
     InstallProgressPage.SetText(GetLocalizedMessage('OfflineProgressPreparing'), '');
@@ -550,12 +425,10 @@ begin
     OfflineCloudflaredPath := ExpandConstant('{tmp}\cloudflared.exe');
     ResultFilePath := ExpandConstant('{tmp}\agentdock-install-result.ini');
     DeleteFile(ResultFilePath);
-    TunnelMode := SelectedTunnelMode();
     if StartupPage.Values[1] then
       PrivilegeMode := 'elevated'
     else
       PrivilegeMode := 'standard';
-    DeleteTokenFile := False;
 
     InstallProgressPage.SetProgress(2, 4);
     Parameters :=
@@ -575,30 +448,16 @@ begin
     if Trim(ExpandConstant('{param:PORT|}')) <> '' then
       Parameters := Parameters + ' -Port ' + QuoteArgument(Trim(ExpandConstant('{param:PORT|}')));
 
-    if StartupPage.Values[0] or (TunnelMode <> 'none') then
+    if StartupPage.Values[0] or (TunnelMode = 'quick') or (TunnelMode = 'named') then
       Parameters := Parameters + ' -RegisterStartup';
 
     if TunnelMode = 'named' then
     begin
-      Parameters := Parameters + ' -ServerUrl ' + QuoteArgument(Trim(FixedTunnelPage.Values[0]));
-      SilentTokenFile := ExpandConstant('{param:TUNNELTOKENFILE|}');
-      if SilentTokenFile <> '' then
-        TokenFilePath := SilentTokenFile
-      else if Trim(FixedTunnelPage.Values[1]) <> '' then
-      begin
-        TokenFilePath := ExpandConstant('{tmp}\agentdock-tunnel-token.txt');
-        TemporaryTokenFilePath := TokenFilePath;
-        DeleteTokenFile := True;
-        if not SaveStringToFile(TokenFilePath, Trim(FixedTunnelPage.Values[1]), False) then
-        begin
-          Result := GetLocalizedMessage('TokenFileFailed');
-          Exit;
-        end;
-      end;
+      if RequestedServerURL <> '' then
+        Parameters := Parameters + ' -ServerUrl ' + QuoteArgument(RequestedServerURL);
+      TokenFilePath := ExpandConstant('{param:TUNNELTOKENFILE|}');
       if TokenFilePath <> '' then
         Parameters := Parameters + ' -TunnelTokenFile ' + QuoteArgument(TokenFilePath);
-      if DeleteTokenFile then
-        Parameters := Parameters + ' -DeleteTunnelTokenFile';
     end;
 
     InstallProgressPage.SetText(GetLocalizedMessage('OfflineProgressApplying'), '');
@@ -721,6 +580,13 @@ begin
   Log('AgentDock: managed cleanup completed successfully.');
 end;
 
+function PersistentSetupLogRoot(): String;
+begin
+  Result := Trim(ResolvedInstallRoot);
+  if Result = '' then
+    Result := ExpandConstant('{localappdata}\AgentDock');
+end;
+
 // Inno 保留 TEMP 原生日志；这里额外复制到固定目录，方便用户长期查找和反馈安装问题。
 procedure PersistSetupLog();
 var
@@ -732,7 +598,7 @@ begin
   if (SourceLog = '') or (not FileExists(SourceLog)) then
     Exit;
 
-  LogDirectory := AddBackslash(ExpandConstant('{app}')) + 'logs\installer';
+  LogDirectory := AddBackslash(PersistentSetupLogRoot()) + 'logs\installer';
   if not ForceDirectories(LogDirectory) then
   begin
     Log('AgentDock: could not create persistent installer log directory: ' + LogDirectory);
@@ -751,6 +617,4 @@ begin
   PersistSetupLog();
   if ResultFilePath <> '' then
     DeleteFile(ResultFilePath);
-  if TemporaryTokenFilePath <> '' then
-    DeleteFile(TemporaryTokenFilePath);
 end;

@@ -169,7 +169,7 @@ try {
     # A different Windows profile would have its own LOCALAPPDATA fallback.
     # Redirect only that test-build fallback; never read/write production root.
     $code = $code.Replace("ExpandConstant('{localappdata}\AgentDock')", "'" + $runtimeRoot.Replace("'", "''") + "'")
-    $code = Replace-Once $code "    if StartupPage.Values[0] or (TunnelMode <> 'none') then" ("    Parameters := Parameters + ' -StartupValueName " + $names[0] + ' -TrayStartupValueName ' + $names[1] + ' -CloudflaredStartupValueName ' + $names[2] + "';`r`n    if StartupPage.Values[0] or (TunnelMode <> 'none') then")
+    $code = Replace-Once $code "    if StartupPage.Values[0] or (TunnelMode = 'quick') or (TunnelMode = 'named') then" ("    Parameters := Parameters + ' -StartupValueName " + $names[0] + ' -TrayStartupValueName ' + $names[1] + ' -CloudflaredStartupValueName ' + $names[2] + "';`r`n    if StartupPage.Values[0] or (TunnelMode = 'quick') or (TunnelMode = 'named') then")
     # Never create or remove the real desktop shortcut in the test build.
     $code = Replace-Once $code "ShortcutPath := AddBackslash(ExpandConstant('{userdesktop}')) +" "ShortcutPath := AddBackslash(ExpandConstant('{app}')) +"
     Set-TestText $codePath $code

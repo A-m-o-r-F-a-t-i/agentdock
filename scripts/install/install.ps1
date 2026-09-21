@@ -917,7 +917,7 @@ function Wait-AgentDockHealth {
     param([int] $HealthPort)
 
     $healthUrl = "http://127.0.0.1:$HealthPort/healthz"
-    $deadline = [DateTime]::UtcNow.AddSeconds(45)
+    $deadline = [DateTime]::UtcNow.AddSeconds(120)
     do {
         Start-Sleep -Milliseconds 500
         try {

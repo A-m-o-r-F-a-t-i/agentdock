@@ -19,6 +19,14 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+const legacyExecutionPolicyCommit = "c7b3613ed92f"
+
+type executionCapability struct {
+	Version                string `json:"version"`
+	Commit                 string `json:"commit"`
+	ExecutionPolicyVersion int    `json:"execution_policy_version"`
+}
+
 // CheckExecutionCompatibility is used before a managed runtime is activated or
 // restarted. A legacy version string alone is never treated as policy support.
 func CheckExecutionCompatibility(ctx context.Context, runtimeRoot, targetCore string) error {
@@ -48,14 +56,23 @@ func CheckExecutionCompatibility(ctx context.Context, runtimeRoot, targetCore st
 		if output.overflow {
 			return 0, errors.New("target capability response exceeds 64 KiB")
 		}
-		var info struct {
-			ExecutionPolicyVersion int `json:"execution_policy_version"`
-		}
+		var info executionCapability
 		if err := json.Unmarshal(output.buffer.Bytes(), &info); err != nil {
 			return 0, fmt.Errorf("invalid target capability response: %w", err)
 		}
-		return info.ExecutionPolicyVersion, nil
+		return resolvedExecutionPolicyVersion(info), nil
 	})
+}
+
+func resolvedExecutionPolicyVersion(info executionCapability) int {
+	if info.ExecutionPolicyVersion > 0 {
+		return info.ExecutionPolicyVersion
+	}
+	if strings.TrimSpace(info.Version) == "1.1.2" &&
+		strings.EqualFold(strings.TrimSpace(info.Commit), legacyExecutionPolicyCommit) {
+		return executioncompat.PolicyVersion
+	}
+	return 0
 }
 
 func checkExecutionCompatibility(home string, probe func() (int, error)) error {

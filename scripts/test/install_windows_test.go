@@ -135,12 +135,17 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"'--payload-dir', $extractDir",
 		"$stableFilesMayBeReplaced = $true",
 		"http://127.0.0.1:$HealthPort/healthz",
+		"[DateTime]::UtcNow.AddSeconds(120)",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("install.ps1 missing %q", want)
 		}
 	}
-	for _, forbidden := range []string{"[string] $RuntimeVersion", "version = $RuntimeVersion"} {
+	for _, forbidden := range []string{
+		"[string] $RuntimeVersion",
+		"version = $RuntimeVersion",
+		"[DateTime]::UtcNow.AddSeconds(45)",
+	} {
 		if strings.Contains(script, forbidden) {
 			t.Fatalf("install.ps1 must not persist the AgentDock version in runtime.json: %q", forbidden)
 		}
@@ -602,10 +607,10 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 		"LegacyAgentDockScheduledTaskExists",
 		"/Query /TN \"\\AgentDock\"",
 		"AgentDock legacy scheduled task detected.",
-		"cloudflared-token.dpapi",
+		"RequestedTunnelMode",
+		"RequestedServerURL",
 		"-TunnelMode ",
 		"-TunnelTokenFile ",
-		"-DeleteTunnelTokenFile",
 		"-InstallChannel setup",
 		"-CorePrivilegeMode ",
 		"ElevatedCoreOption",
@@ -624,7 +629,8 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 		"SignedUninstaller=yes",
 		"PersistSetupLog",
 		"ExpandConstant('{log}')",
-		"AddBackslash(ExpandConstant('{app}')) + 'logs\\installer'",
+		"PersistentSetupLogRoot",
+		"AddBackslash(PersistentSetupLogRoot()) + 'logs\\installer'",
 		"GetDateTimeString('yyyymmdd-hhnnss-zzz'",
 		"CopyFile(SourceLog, PersistentLog, True)",
 		"original log remains at: ",
@@ -671,6 +677,12 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 		"GetIniString('AgentDock', 'BearerToken'",
 		"GetIniString('AgentDock', 'OAuthPassword'",
 		"完成后会自动打开控制面板",
+		"ConnectionPage",
+		"FixedTunnelPage",
+		"CreateInputQueryPage(",
+		"ProtectedTextCanBeRead",
+		"ExistingTunnelTokenUsable",
+		"AddBackslash(ExpandConstant('{app}')) + 'logs\\installer'",
 	} {
 		if strings.Contains(setup, forbidden) {
 			t.Fatalf("Setup completion page must not expose connection details or credentials: %q", forbidden)
@@ -688,40 +700,41 @@ func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testin
 	}
 }
 
-func TestWindowsSetupRepromptsUnreadableNamedTunnelToken(t *testing.T) {
+func TestWindowsSetupDefersPublicAccessConfiguration(t *testing.T) {
 	codeData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "includes", "code.iss"))
 	if err != nil {
 		t.Fatalf("read code.iss: %v", err)
-	}
-	setupData, err := os.ReadFile(filepath.Join("..", "..", "packaging", "windows", "AgentDock.iss"))
-	if err != nil {
-		t.Fatalf("read AgentDock.iss: %v", err)
 	}
 	installData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "install.ps1"))
 	if err != nil {
 		t.Fatalf("read install.ps1: %v", err)
 	}
-	probeData, err := os.ReadFile(filepath.Join("..", "..", "scripts", "install", "probe-protected-text.ps1"))
-	if err != nil {
-		t.Fatalf("read probe-protected-text.ps1: %v", err)
-	}
 
-	setup := string(setupData) + "\n" + string(codeData)
+	setup := string(codeData)
 	for _, want := range []string{
-		"probe-protected-text.ps1",
-		"ProtectedTextCanBeRead",
-		"ExistingTunnelTokenUsable",
-		"agentdock.cloudflare.tunnel.v1",
+		"RequestedTunnelMode := Lowercase(Trim(ExpandConstant('{param:MODE|}')))",
+		"RequestedTunnelMode := 'auto'",
+		"RequestedServerURL := Trim(ExpandConstant('{param:SERVERURL|}'))",
+		"TokenFilePath := ExpandConstant('{param:TUNNELTOKENFILE|}')",
+		"' -TunnelMode ' + TunnelMode",
+		"' -TunnelTokenFile ' + QuoteArgument(TokenFilePath)",
 		"TokenRecoveryRequired",
-		"WizardSilent",
-		"silent Setup will report the missing or unreadable Tunnel Token through the installer result",
 	} {
 		if !strings.Contains(setup, want) {
-			t.Fatalf("Windows Setup missing tunnel credential recovery contract %q", want)
+			t.Fatalf("Windows Setup missing non-interactive public-access contract %q", want)
 		}
 	}
-	if strings.Contains(setup, "not FileExists(AddBackslash(ExistingInstallRoot()) + 'cloudflared-token.dpapi')") {
-		t.Fatal("Windows Setup must validate the saved Tunnel Token instead of trusting file existence")
+	for _, forbidden := range []string{
+		"ConnectionPage",
+		"FixedTunnelPage",
+		"CreateInputQueryPage(",
+		"ProtectedTextCanBeRead",
+		"ExistingTunnelTokenUsable",
+		"SaveStringToFile(TokenFilePath",
+	} {
+		if strings.Contains(setup, forbidden) {
+			t.Fatalf("Windows Setup must leave public-access configuration to the control panel: %q", forbidden)
+		}
 	}
 
 	install := string(installData)
@@ -744,18 +757,6 @@ func TestWindowsSetupRepromptsUnreadableNamedTunnelToken(t *testing.T) {
 	}
 	if !strings.Contains(install, "$installErrorCode = 'tunnel-token-required'") {
 		t.Fatal("install.ps1 must report the tunnel-token-required structured error")
-	}
-
-	probe := string(probeData)
-	for _, want := range []string{
-		"ProtectedData]::Unprotect",
-		"DataProtectionScope]::CurrentUser",
-		"exit 0",
-		"exit 3",
-	} {
-		if !strings.Contains(probe, want) {
-			t.Fatalf("probe-protected-text.ps1 missing %q", want)
-		}
 	}
 }
 
@@ -1061,6 +1062,10 @@ func TestWindowsSetupIncludesSimplifiedChineseBaseMessages(t *testing.T) {
 	language := string(data)
 	for _, want := range []string{
 		"LanguageID=$0804",
+		"SetupAppTitle=安装\r\n",
+		"SetupWindowTitle=安装 - %1",
+		"ExitSetupTitle=退出安装程序",
+		"ExitSetupMessage=安装尚未完成。现在退出将不会安装程序。",
 		"ButtonNext=下一步",
 		"ButtonCancel=取消",
 		"WelcomeLabel1=欢迎使用",
@@ -1070,6 +1075,9 @@ func TestWindowsSetupIncludesSimplifiedChineseBaseMessages(t *testing.T) {
 		if !strings.Contains(language, want) {
 			t.Fatalf("ChineseSimplified.isl missing %q", want)
 		}
+	}
+	if strings.Contains(language, "SetupAppTitle=安装 - %1") {
+		t.Fatal("SetupAppTitle must not expose the literal %1 placeholder")
 	}
 }
 func TestWindowsSigningPinsConfiguredSelfSignedCertificate(t *testing.T) {

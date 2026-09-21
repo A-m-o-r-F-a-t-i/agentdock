@@ -13,7 +13,7 @@ CopyrightFontSize=8
 RightToLeft=no
 
 [Messages]
-SetupAppTitle=安装 - %1
+SetupAppTitle=安装
 SetupWindowTitle=安装 - %1
 UninstallAppTitle=卸载 %1
 UninstallAppFullTitle=%1 卸载
@@ -21,6 +21,8 @@ InformationTitle=信息
 ConfirmTitle=确认
 ErrorTitle=错误
 SetupAborted=安装未完成。请修正问题后重新运行安装程序。
+ExitSetupTitle=退出安装程序
+ExitSetupMessage=安装尚未完成。现在退出将不会安装程序。%n%n您可以稍后重新运行安装程序以完成安装。%n%n是否退出安装程序？
 ButtonBack=< 上一步(&B)
 ButtonNext=下一步(&N) >
 ButtonInstall=安装(&I)
