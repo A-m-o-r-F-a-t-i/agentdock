@@ -1,9 +1,9 @@
-name: Release
+name: Cross-platform Signed Release
 
+# This workflow requires platform signing and registry credentials. The normal
+# Windows x64 release path is owned by windows-package.yml so a version tag does
+# not start two competing publication workflows.
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       tag:

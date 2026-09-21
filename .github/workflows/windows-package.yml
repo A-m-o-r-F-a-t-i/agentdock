@@ -1,0 +1,338 @@
+name: Windows Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build; use main for a candidate or an existing vX.Y.Z tag for publication'
+        required: true
+        default: main
+        type: string
+      publish:
+        description: 'Publish the verified package to the existing version tag'
+        required: true
+        default: false
+        type: boolean
+      tag:
+        description: 'Existing vX.Y.Z tag; required only when publish is enabled'
+        required: false
+        default: ''
+        type: string
+      prerelease:
+        description: 'Publish as a prerelease; version-tag pushes default to prerelease'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-package-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
+    name: Build verified unsigned Windows x64 package
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CGO_ENABLED: '0'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      DOTNET_NOLOGO: '1'
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      commit: ${{ steps.metadata.outputs.commit }}
+      channel: ${{ steps.metadata.outputs.channel }}
+      publish: ${{ steps.metadata.outputs.publish }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      artifact_name: ${{ steps.metadata.outputs.artifact_name }}
+    steps:
+      - name: Checkout requested source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Resolve immutable build metadata
+        id: metadata
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_TAG: ${{ github.ref_name }}
+          MANUAL_PUBLISH: ${{ inputs.publish }}
+          MANUAL_PRERELEASE: ${{ inputs.prerelease }}
+          MANUAL_TAG: ${{ inputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (& go run ./tools/release version).Trim()
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+$') {
+            throw 'Could not resolve a semantic AgentDock version.'
+          }
+          $commit = (& git rev-parse HEAD).Trim().ToLowerInvariant()
+          if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') {
+            throw 'Could not resolve the source commit.'
+          }
+          $changes = @(& git status --porcelain)
+          if ($LASTEXITCODE -ne 0 -or $changes.Count -ne 0) {
+            throw 'GitHub release builds require a clean checkout.'
+          }
+
+          $publish = $false
+          $prerelease = $true
+          $tag = ''
+          if ($env:EVENT_NAME -eq 'push') {
+            if ($env:GITHUB_REF -notlike 'refs/tags/v*') {
+              throw 'Automatic publication is only supported for v* tags.'
+            }
+            $publish = $true
+            $tag = $env:EVENT_TAG.Trim()
+          } else {
+            $publish = $env:MANUAL_PUBLISH -eq 'true'
+            $prerelease = $env:MANUAL_PRERELEASE -eq 'true'
+            $tag = $env:MANUAL_TAG.Trim()
+            if ($publish -and [string]::IsNullOrWhiteSpace($tag)) {
+              throw 'Manual publication requires the tag input.'
+            }
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($tag)) {
+            & go run ./tools/release verify-version $tag
+            if ($LASTEXITCODE -ne 0) {
+              throw "Tag $tag does not match AgentDock $version."
+            }
+            $tagCommit = (& git rev-list -n 1 $tag 2>$null).Trim().ToLowerInvariant()
+            if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $commit) {
+              throw "Tag $tag must already exist and point to $commit."
+            }
+          }
+
+          $channel = if ($publish) { 'release' } else { 'candidate-not-released' }
+          $artifactName = "agentdock-windows-$version-$env:GITHUB_RUN_ID"
+          "version=$version" | Out-File $env:GITHUB_OUTPUT -Encoding ascii -Append
+          "commit=$commit" | Out-File $env:GITHUB_OUTPUT -Encoding ascii -Append
+          "channel=$channel" | Out-File $env:GITHUB_OUTPUT -Encoding ascii -Append
+          "publish=$($publish.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_OUTPUT -Encoding ascii -Append
+          "prerelease=$($prerelease.ToString().ToLowerInvariant())" | Out-File $env:GITHUB_OUTPUT -Encoding ascii -Append
+          "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Encoding ascii -Append
+          "artifact_name=$artifactName" | Out-File $env:GITHUB_OUTPUT -Encoding ascii -Append
+
+      - name: Backend regression
+        run: |
+          $ErrorActionPreference = 'Stop'
+          go test -p 2 ./... -count=1 -timeout=8m
+          if ($LASTEXITCODE -ne 0) { throw 'Go tests failed.' }
+
+      - name: Static analysis
+        run: |
+          $ErrorActionPreference = 'Stop'
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Go vet failed.' }
+
+      - name: Windows installer contracts
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\test\test-install-windows.ps1
+
+      - name: Build Windows x64 ZIP and offline Setup
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $parameters = @{
+            Architectures = @('amd64')
+            OutputDirectory = (Join-Path $PWD 'dist\windows-package')
+          }
+          if ('${{ steps.metadata.outputs.channel }}' -eq 'candidate-not-released') {
+            $parameters.Candidate = $true
+          }
+          & .\packaging\windows\build-windows-release.ps1 @parameters
+
+      - name: Verify package metadata and checksums
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $outputRoot = Join-Path $PWD 'dist\windows-package'
+          $verification = & .\scripts\test\verify-windows-release-assets.ps1 `
+            -ReleaseDirectory (Join-Path $outputRoot 'release') `
+            -BuildReport (Join-Path $outputRoot 'build-report.json') `
+            -ExpectedVersion '${{ steps.metadata.outputs.version }}' `
+            -ExpectedCommit '${{ steps.metadata.outputs.commit }}' `
+            -ExpectedChannel '${{ steps.metadata.outputs.channel }}' `
+            -ExpectedAuthenticode unsigned
+          [IO.File]::WriteAllText(
+            (Join-Path $outputRoot 'verification.json'),
+            (($verification | Out-String).Trim() + "`n"),
+            [Text.UTF8Encoding]::new($false)
+          )
+          git diff --exit-code
+          if ($LASTEXITCODE -ne 0) { throw 'Build modified tracked source.' }
+
+      - name: Upload verified Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.metadata.outputs.artifact_name }}
+          path: |
+            dist/windows-package/release/*
+            dist/windows-package/build-report.json
+            dist/windows-package/verification.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Write build summary
+        run: |
+          @"
+          ## Windows package
+
+          - Version: `${{ steps.metadata.outputs.version }}`
+          - Commit: `${{ steps.metadata.outputs.commit }}`
+          - Channel: `${{ steps.metadata.outputs.channel }}`
+          - Artifact: `${{ steps.metadata.outputs.artifact_name }}`
+          - Publish requested: `${{ steps.metadata.outputs.publish }}`
+          "@ | Add-Content $env:GITHUB_STEP_SUMMARY
+
+  publish:
+    if: needs.build.outputs.publish == 'true'
+    needs: build
+    name: Publish verified Windows x64 Release
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.build.outputs.commit }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download verified package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: dist/windows-package
+
+      - name: Verify downloaded package again
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\test\verify-windows-release-assets.ps1 `
+            -ReleaseDirectory .\dist\windows-package\release `
+            -BuildReport .\dist\windows-package\build-report.json `
+            -ExpectedVersion '${{ needs.build.outputs.version }}' `
+            -ExpectedCommit '${{ needs.build.outputs.commit }}' `
+            -ExpectedChannel release `
+            -ExpectedAuthenticode unsigned | Out-Null
+
+      - name: Create or update GitHub Release after verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.build.outputs.commit }}
+          RELEASE_PRERELEASE: ${{ needs.build.outputs.prerelease }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $tag = $env:RELEASE_TAG
+          $version = $env:RELEASE_VERSION
+          $releaseRoot = (Resolve-Path .\dist\windows-package\release).Path
+          $tagCommit = (& git rev-list -n 1 $tag).Trim().ToLowerInvariant()
+          if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $env:RELEASE_COMMIT) {
+            throw "Tag $tag no longer points to the verified commit."
+          }
+
+          $exactNotes = Join-Path $PWD "docs\releases\$tag.md"
+          if (Test-Path -LiteralPath $exactNotes -PathType Leaf) {
+            $notes = (Resolve-Path -LiteralPath $exactNotes).Path
+          } else {
+            $matches = @(Get-ChildItem .\docs\releases -File -Filter "$tag-*.md")
+            if ($matches.Count -ne 1) {
+              throw "Publication requires exactly one detailed release note: docs/releases/$tag.md or docs/releases/$tag-*.md."
+            }
+            $notes = $matches[0].FullName
+          }
+
+          $title = "AgentDock $version for Windows x64"
+          & gh release view $tag --repo $env:GITHUB_REPOSITORY --json url *> $null
+          if ($LASTEXITCODE -ne 0) {
+            & gh release create $tag `
+              --repo $env:GITHUB_REPOSITORY `
+              --verify-tag `
+              --draft `
+              --title $title `
+              --notes-file $notes
+            if ($LASTEXITCODE -ne 0) { throw 'Draft release creation failed.' }
+          }
+
+          $assets = @(Get-ChildItem $releaseRoot -File | Sort-Object Name)
+          if ($assets.Count -ne 6) {
+            throw "Expected six Windows release assets, found $($assets.Count)."
+          }
+          & gh release upload $tag @($assets.FullName) `
+            --repo $env:GITHUB_REPOSITORY `
+            --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Release asset upload failed.' }
+
+          $remote = & gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets,isDraft,isPrerelease,url | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read the uploaded Release.' }
+          foreach ($asset in $assets) {
+            $remoteAsset = @($remote.assets | Where-Object name -EQ $asset.Name)
+            if ($remoteAsset.Count -ne 1) {
+              throw "Remote asset is missing or duplicated: $($asset.Name)"
+            }
+            if ([long]$remoteAsset[0].size -ne [long]$asset.Length) {
+              throw "Remote asset size mismatch: $($asset.Name)"
+            }
+            $digest = 'sha256:' + (Get-FileHash $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ([string]$remoteAsset[0].digest -ne $digest) {
+              throw "Remote asset digest mismatch: $($asset.Name)"
+            }
+          }
+
+          $editArguments = @(
+            'release', 'edit', $tag,
+            '--repo', $env:GITHUB_REPOSITORY,
+            '--title', $title,
+            '--notes-file', $notes,
+            '--draft=false'
+          )
+          if ($env:RELEASE_PRERELEASE -eq 'true') {
+            $editArguments += '--prerelease=true'
+          } else {
+            $editArguments += @('--prerelease=false', '--latest')
+          }
+          & gh @editArguments
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
+
+          $final = & gh release view $tag --repo $env:GITHUB_REPOSITORY --json isDraft,isPrerelease,url | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $final.isDraft) {
+            throw 'Release remained in draft state.'
+          }
+          if ([bool]$final.isPrerelease -ne ($env:RELEASE_PRERELEASE -eq 'true')) {
+            throw 'Release prerelease state does not match the requested state.'
+          }
+          "## Published Release`n`n$($final.url)" | Add-Content $env:GITHUB_STEP_SUMMARY

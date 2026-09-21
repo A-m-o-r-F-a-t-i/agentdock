@@ -26,7 +26,7 @@ func TestWorkflowsUseCurrentActionMajors(t *testing.T) {
 		"uses: github/codeql-action/analyze@":   "uses: github/codeql-action/analyze@v4",
 	}
 	foundManagedAction := false
-	for _, name := range []string{"ci.yml", "codeql.yml", "release.yml", "windows-installer.yml"} {
+	for _, name := range []string{"ci.yml", "codeql.yml", "release.yml", "windows-installer.yml", "windows-package.yml"} {
 		workflow := readWorkflow(t, name)
 		for _, line := range strings.Split(workflow, "\n") {
 			trimmed := strings.TrimSpace(line)
@@ -121,6 +121,34 @@ func TestWindowsReleaseKeepsBoundedCompleteValidation(t *testing.T) {
 		if !strings.Contains(workflow, want) {
 			t.Fatalf("Windows release must retain complete bounded validation: missing %q", want)
 		}
+	}
+}
+
+func TestWindowsPackageOwnsAutomaticVersionTagRelease(t *testing.T) {
+	workflow := readWorkflow(t, "windows-package.yml")
+	for _, want := range []string{
+		"push:\n    tags:\n      - 'v*'",
+		"workflow_dispatch:",
+		"name: Build verified unsigned Windows x64 package",
+		"Architectures = @('amd64')",
+		"build-windows-release.ps1",
+		"verify-windows-release-assets.ps1",
+		"actions/upload-artifact@v4",
+		"actions/download-artifact@v4",
+		"gh release create",
+		"gh release upload",
+		"--clobber",
+		"docs/releases/$tag.md",
+		"ExpectedChannel release",
+	} {
+		if !strings.Contains(workflow, want) {
+			t.Fatalf("Windows package workflow is missing %q", want)
+		}
+	}
+
+	crossPlatform := readWorkflow(t, "release.yml")
+	if strings.Contains(crossPlatform, "push:\n    tags:") {
+		t.Fatal("cross-platform signed release must remain manual; windows-package.yml owns automatic version tags")
 	}
 }
 
