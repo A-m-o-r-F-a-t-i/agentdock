@@ -130,6 +130,13 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"Resolving pending AgentDock generation transaction before Setup continues",
 		"$recoveryOutput = @(& $destinationBinary version --json 2>&1)",
 		"Setup will not modify an unresolved generation",
+		"requires_adapter_rollback_confirmation",
+		"Confirming the healthy restored AgentDock runtime before Setup retries the upgrade",
+		"--transaction-id $failedTransactionId",
+		"--require-health 2>&1",
+		"stale-rollback-recovery-unsafe",
+		"stale-rollback-recovery-failed",
+		"Previous failed rollback was verified and closed; Setup can retry the upgrade",
 		"AgentDock payload preflight failed with exit code",
 		"Release archive does not contain an Installer Engine capable AgentDock binary.",
 		"'--payload-dir', $extractDir",
@@ -182,6 +189,15 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 	}
 	if !strings.Contains(script, "install inspect --state-root $runtimeDir") {
 		t.Fatal("Setup must read the generation pointer state through the Installer Engine inspect, not by parsing active-version.json")
+	}
+	rollbackRecoveryGate := strings.Index(script, "if ([bool] $installInspection.requires_adapter_rollback_confirmation)")
+	rollbackRecoveryAbandon := strings.Index(script, "$adapterRecoveryOutput = @(& $sourceBinary install abandon")
+	rollbackRecoveryReinspect := strings.Index(script, "AgentDock install inspect failed after confirming the previous restored runtime")
+	if rollbackRecoveryGate < 0 || rollbackRecoveryAbandon < rollbackRecoveryGate || rollbackRecoveryReinspect < rollbackRecoveryAbandon {
+		t.Fatal("Setup must detect, health-confirm and re-inspect a durable external adapter rollback failure")
+	}
+	if stopCall < 0 || rollbackRecoveryReinspect > stopCall {
+		t.Fatal("durable rollback confirmation must complete before Setup stops or mutates the current runtime")
 	}
 	if !strings.Contains(script, "install prepare-windows-legacy") {
 		t.Fatal("pre-generation Windows installs must seed a committed legacy source before the current Engine publishes target files")

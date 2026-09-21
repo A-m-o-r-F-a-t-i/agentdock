@@ -1512,6 +1512,67 @@ try {
     if ($pointerState -eq 'invalid') {
         throw 'active-version.json has an unsupported schema.'
     }
+
+    # A previous Setup can finish restoring Engine-owned files yet fail while
+    # restarting the source runtime or restoring another Windows adapter. The
+    # Engine deliberately persists external_rollback_failed so a later install
+    # cannot silently trust partially restored Task/Registry/service state.
+    # When the recorded source generation is still the committed pointer and
+    # its exact version is already healthy, Setup can safely perform the same
+    # explicit confirmation an operator would otherwise run by hand.
+    if ([bool] $installInspection.requires_adapter_rollback_confirmation) {
+        $failedTransactionId = [string] $installInspection.transaction_id
+        $failedSourceVersion = [string] $installInspection.source_version
+        $pointerActiveVersion = [string] $installInspection.pointer_active_version
+        $sourceMatchesPointer =
+            -not [string]::IsNullOrWhiteSpace($failedSourceVersion) -and
+            -not [string]::IsNullOrWhiteSpace($pointerActiveVersion) -and
+            [string]::Equals(
+                $failedSourceVersion.TrimStart('v'),
+                $pointerActiveVersion.TrimStart('v'),
+                [StringComparison]::OrdinalIgnoreCase
+            )
+        if ([string]::IsNullOrWhiteSpace($failedTransactionId) -or
+            $pointerState -ne 'committed' -or
+            -not $sourceMatchesPointer) {
+            $installErrorCode = 'stale-rollback-recovery-unsafe'
+            throw 'AgentDock found an incomplete OS adapter rollback, but the committed runtime does not match its recorded source version. Setup left the transaction untouched.'
+        }
+
+        Write-Host 'Confirming the healthy restored AgentDock runtime before Setup retries the upgrade...'
+        $adapterRecoveryOutput = @(& $sourceBinary install abandon `
+            --install-root $runtimeDir `
+            --runtime-root $runtimeDir `
+            --transaction-id $failedTransactionId `
+            --require-health 2>&1)
+        $adapterRecoveryExitCode = $LASTEXITCODE
+        if ($adapterRecoveryExitCode -ne 0) {
+            $installErrorCode = 'stale-rollback-recovery-failed'
+            $adapterRecoveryText = (($adapterRecoveryOutput | Out-String).Trim())
+            throw "AgentDock could not confirm the previous restored runtime (exit $adapterRecoveryExitCode). $adapterRecoveryText"
+        }
+
+        $reinspectJson = (& $sourceBinary install inspect --state-root $runtimeDir 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0) {
+            $installErrorCode = 'stale-rollback-recovery-failed'
+            throw 'AgentDock install inspect failed after confirming the previous restored runtime.'
+        }
+        try {
+            $installInspection = $reinspectJson | ConvertFrom-Json
+        } catch {
+            $installErrorCode = 'stale-rollback-recovery-failed'
+            throw "AgentDock install inspect returned invalid JSON after rollback confirmation: $($_.Exception.Message)"
+        }
+        $pointerState = [string] $installInspection.pointer_state
+        if ([string] $installInspection.state -ne 'rolled_back' -or
+            [bool] $installInspection.requires_adapter_rollback_confirmation -or
+            $pointerState -ne 'committed') {
+            $installErrorCode = 'stale-rollback-recovery-failed'
+            throw 'AgentDock did not converge the previous failed rollback to a healthy rolled_back state. Setup left the runtime unchanged.'
+        }
+        Write-Host 'Previous failed rollback was verified and closed; Setup can retry the upgrade.'
+    }
+
     if ($pointerState -ne 'missing' -and $pointerState -ne 'committed') {
         # Setup must never repair or replace a generation while an update trial is unresolved.
         # Running the stable CUI entry is also the crash-recovery trigger: a live Arbiter leaves

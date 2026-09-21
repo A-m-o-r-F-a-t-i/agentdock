@@ -18,16 +18,25 @@ type Inspection struct {
 	HasTransaction  bool   `json:"has_transaction"`
 	HasResult       bool   `json:"has_result"`
 	State           string `json:"state,omitempty"`
+	Phase           string `json:"phase,omitempty"`
 	TransactionID   string `json:"transaction_id,omitempty"`
 	Action          string `json:"action,omitempty"`
+	SourceVersion   string `json:"source_version,omitempty"`
 	Version         string `json:"version,omitempty"`
 	ActiveVersion   string `json:"active_version,omitempty"`
+	FailureCode     string `json:"failure_code,omitempty"`
+	FailureMessage  string `json:"failure_message,omitempty"`
 	LocalMCPURL     string `json:"local_mcp_url,omitempty"`
 	PublicURL       string `json:"public_url,omitempty"`
 	Healthy         bool   `json:"healthy"`
 	ManifestPath    string `json:"manifest_path,omitempty"`
 	HasUnixManifest bool   `json:"has_unix_manifest"`
 	HasWinManifest  bool   `json:"has_windows_manifest"`
+	// Setup may only clear a failed OS-adapter rollback after the recorded
+	// source generation is still committed and its health/version probe passes.
+	// Keep the compatibility decision in Go instead of duplicating failure-code
+	// and legacy-message parsing in PowerShell.
+	RequiresAdapterRollbackConfirmation bool `json:"requires_adapter_rollback_confirmation"`
 	// Windows generation pointer 与 self-update 事务的权威评估。
 	// Setup/卸载脚本必须消费这些结构化结论，不得自行解析 active-version.json
 	// 或 update/transaction.json 再解释状态。pointer 缺失时是 missing，
@@ -44,17 +53,31 @@ func Inspect(stateRoot string) (Inspection, error) {
 		return Inspection{}, err
 	}
 	inspection := Inspection{StateRoot: store.Root()}
-	if _, err := os.Stat(store.TransactionPath()); err == nil {
+	transaction, transactionErr := store.ReadTransaction()
+	if transactionErr == nil {
 		inspection.HasTransaction = true
+		inspection.SourceVersion = transaction.SourceVersion
+		inspection.RequiresAdapterRollbackConfirmation = isExternalRollbackFailure(transaction)
+		if transaction.Failure != nil {
+			inspection.FailureCode = transaction.Failure.Code
+			inspection.FailureMessage = transaction.Failure.Message
+		}
+	} else if !os.IsNotExist(transactionErr) {
+		return Inspection{}, transactionErr
 	}
 	result, err := store.ReadAuthoritativeResult()
 	if err == nil {
 		inspection.HasResult = true
 		inspection.State = string(result.State)
+		inspection.Phase = string(result.Phase)
 		inspection.TransactionID = result.TransactionID
 		inspection.Action = string(result.Action)
 		inspection.Version = result.Version
 		inspection.ActiveVersion = result.ActiveVersion
+		if result.Failure != nil {
+			inspection.FailureCode = result.Failure.Code
+			inspection.FailureMessage = result.Failure.Message
+		}
 		inspection.LocalMCPURL = result.LocalMCPURL
 		inspection.PublicURL = result.PublicURL
 		inspection.Healthy = result.Healthy

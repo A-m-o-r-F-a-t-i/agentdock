@@ -164,3 +164,89 @@ func TestInspectReportsPointerAndPendingUpdateTransaction(t *testing.T) {
 		t.Fatalf("invalid pointer_state=%q, want invalid", invalid.PointerState)
 	}
 }
+
+func TestInspectReportsAdapterRollbackConfirmationRequirement(t *testing.T) {
+	root := t.TempDir()
+	store, err := NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	txID := "fedcba9876543210fedcba9876543210"
+	failure := &updateengine.Failure{
+		Code:    FailureExternalRollbackFailed,
+		Message: "OS adapter rollback failed after the source runtime was restored",
+		At:      now,
+	}
+	completedAt := now.Add(time.Second)
+	transaction := Transaction{
+		SchemaVersion:   SchemaVersion,
+		TransactionID:   txID,
+		Platform:        "windows",
+		Action:          ActionInstall,
+		SourceVersion:   "v1.1.2",
+		TargetVersion:   "v1.1.3",
+		ActiveVersion:   "v1.1.2",
+		FallbackVersion: "v1.1.0",
+		State:           updateengine.StateFailed,
+		Phase:           PhaseRollback,
+		InstallRoot:     root,
+		RuntimeRoot:     root,
+		StartedAt:       now,
+		UpdatedAt:       completedAt,
+		CompletedAt:     &completedAt,
+		Failure:         failure,
+	}
+	if err := store.WriteTransaction(transaction); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.WriteResult(Result{
+		SchemaVersion:   SchemaVersion,
+		TransactionID:   txID,
+		Platform:        "windows",
+		Action:          ActionInstall,
+		State:           updateengine.StateFailed,
+		Phase:           PhaseRollback,
+		Version:         "v1.1.3",
+		ActiveVersion:   "v1.1.2",
+		FallbackVersion: "v1.1.0",
+		Healthy:         false,
+		Failure:         failure,
+		StartedAt:       now,
+		CompletedAt:     completedAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	updateStore, err := updateengine.NewStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := updateStore.WriteActive(updateengine.ActiveVersion{
+		SchemaVersion:   updateengine.SchemaVersion,
+		ActiveVersion:   "v1.1.2",
+		FallbackVersion: "v1.1.0",
+		State:           updateengine.StateCommitted,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	inspection, err := Inspect(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !inspection.RequiresAdapterRollbackConfirmation {
+		t.Fatalf("external adapter rollback failure was not surfaced: %#v", inspection)
+	}
+	if inspection.State != string(updateengine.StateFailed) || inspection.Phase != string(PhaseRollback) {
+		t.Fatalf("failed rollback state was not surfaced: %#v", inspection)
+	}
+	if inspection.TransactionID != txID || inspection.SourceVersion != "v1.1.2" {
+		t.Fatalf("rollback transaction identity was not surfaced: %#v", inspection)
+	}
+	if inspection.FailureCode != FailureExternalRollbackFailed || inspection.FailureMessage != failure.Message {
+		t.Fatalf("rollback failure details were not surfaced: %#v", inspection)
+	}
+	if inspection.PointerState != string(updateengine.StateCommitted) || inspection.PointerActiveVersion != "v1.1.2" {
+		t.Fatalf("committed source pointer was not surfaced: %#v", inspection)
+	}
+}

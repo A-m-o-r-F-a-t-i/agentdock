@@ -120,6 +120,61 @@ function Assert-Preservation([string] $State, [string] $Version, [hashtable] $Ha
     Assert-UserFixture
 }
 
+function Set-StaleAdapterRollbackFixture([string] $SourceVersion, [string] $TargetVersion) {
+    $transactionId = [Guid]::NewGuid().ToString('N')
+    $timestamp = [DateTime]::UtcNow.ToString('o')
+    $source = 'v' + $SourceVersion.TrimStart('v')
+    $target = 'v' + $TargetVersion.TrimStart('v')
+    $failure = [ordered]@{
+        code = 'external_rollback_failed'
+        message = 'injected OS adapter rollback failure after restoring the source runtime'
+        at = $timestamp
+    }
+    $transaction = [ordered]@{
+        schema_version = 1
+        transaction_id = $transactionId
+        platform = 'windows'
+        action = 'install'
+        source_version = $source
+        target_version = $target
+        active_version = $source
+        fallback_version = $source
+        state = 'failed'
+        phase = 'rollback'
+        install_root = $runtimeRoot
+        runtime_root = $runtimeRoot
+        agentdock_home = $testHome
+        agentdock_default_dir = $workspace
+        started_at = $timestamp
+        updated_at = $timestamp
+        completed_at = $timestamp
+        failure = $failure
+    }
+    $result = [ordered]@{
+        schema_version = 1
+        transaction_id = $transactionId
+        platform = 'windows'
+        action = 'install'
+        state = 'failed'
+        phase = 'rollback'
+        version = $target
+        active_version = $source
+        fallback_version = $source
+        healthy = $false
+        failure = $failure
+        started_at = $timestamp
+        completed_at = $timestamp
+    }
+    $installStateRoot = Join-Path $runtimeRoot 'install'
+    $resultsRoot = Join-Path $installStateRoot 'results'
+    New-Item -ItemType Directory -Path $resultsRoot -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $installStateRoot 'transaction.json'), ($transaction | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $installStateRoot 'result.json'), ($result | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText((Join-Path $resultsRoot ($transactionId + '.json')), ($result | ConvertTo-Json -Depth 8), [Text.UTF8Encoding]::new($false))
+    Assert-Health $SourceVersion
+    return $transactionId
+}
+
 function Assert-UserFixture {
     foreach ($name in $preservedData.Keys) {
         if ([IO.File]::ReadAllText((Join-Path $testHome $name)) -ne $preservedData[$name]) { throw "Upgrade changed user fixture: $name" }
@@ -240,8 +295,13 @@ try {
     }
     Invoke-Setup $faultSetup 'inno-upgrade-rollback' $true
     Assert-Preservation 'rolled_back' $oldVersion $hashes
-    Invoke-Setup $setupPath 'inno-upgrade'
+    $staleRollbackTransaction = Set-StaleAdapterRollbackFixture -SourceVersion $oldVersion -TargetVersion $ExpectedVersion
+    Invoke-Setup $setupPath 'inno-stale-external-rollback-recovery'
     Assert-Preservation 'committed' $ExpectedVersion $hashes
+    $recoveredTransaction = Get-Content (Join-Path $runtimeRoot "install\results\$staleRollbackTransaction.json") -Raw | ConvertFrom-Json
+    if ($recoveredTransaction.state -ne 'rolled_back' -or $recoveredTransaction.failure.code -ne 'abandoned') {
+        throw 'Setup did not preserve the recovered stale rollback receipt.'
+    }
     $policyName = 'execution\permissions\policy.json'
     $preservedData[$policyName] = $newPolicyFixture
     $policyPath = Join-Path $testHome $policyName
