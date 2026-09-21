@@ -184,7 +184,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Build modified tracked source.' }
 
       - name: Upload verified Windows package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.metadata.outputs.artifact_name }}
           path: |
@@ -231,7 +231,7 @@ jobs:
           cache: true
 
       - name: Download verified package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ needs.build.outputs.artifact_name }}
           path: dist/windows-package

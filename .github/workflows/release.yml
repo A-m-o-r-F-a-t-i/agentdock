@@ -54,7 +54,7 @@ jobs:
           shasum -a 256 "$asset" > "$asset.sha256"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentdock-linux-${{ matrix.goarch }}
           path: |
@@ -100,7 +100,7 @@ jobs:
           shasum -a 256 "$asset" > "$asset.sha256"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentdock-macos-${{ matrix.goarch }}
           path: |
@@ -125,7 +125,7 @@ jobs:
           cache: true
 
       - name: Download AgentDock macOS payloads
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: agentdock-macos-*
           path: payload
@@ -181,7 +181,7 @@ jobs:
         run: packaging/macos/build-app.sh
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentdock-macos-dmg
           path: |
@@ -313,7 +313,7 @@ jobs:
           [IO.File]::WriteAllText("$asset.sha256", "$hash  $asset`n", [Text.UTF8Encoding]::new($false))
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentdock-windows-${{ matrix.goarch }}
           path: |
@@ -336,7 +336,7 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Download Windows payload
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: agentdock-windows-${{ matrix.goarch }}
           path: payload
@@ -388,7 +388,7 @@ jobs:
             -SignedBuild
 
       - name: Upload Setup artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentdock-windows-setup-${{ matrix.goarch }}
           path: dist/AgentDockSetup-${{ matrix.goarch }}.exe
@@ -405,7 +405,7 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true

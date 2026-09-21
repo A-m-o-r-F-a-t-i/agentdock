@@ -21,12 +21,14 @@ func TestWorkflowsUseCurrentActionMajors(t *testing.T) {
 		"uses: actions/checkout@":               "uses: actions/checkout@v5",
 		"uses: actions/setup-go@":               "uses: actions/setup-go@v6",
 		"uses: actions/setup-dotnet@":           "uses: actions/setup-dotnet@v5",
+		"uses: actions/upload-artifact@":        "uses: actions/upload-artifact@v7",
+		"uses: actions/download-artifact@":      "uses: actions/download-artifact@v8",
 		"uses: github/codeql-action/init@":      "uses: github/codeql-action/init@v4",
 		"uses: github/codeql-action/autobuild@": "uses: github/codeql-action/autobuild@v4",
 		"uses: github/codeql-action/analyze@":   "uses: github/codeql-action/analyze@v4",
 	}
 	foundManagedAction := false
-	for _, name := range []string{"ci.yml", "codeql.yml", "release.yml", "windows-installer.yml", "windows-package.yml"} {
+	for _, name := range []string{"ci.yml", "codeql.yml", "release.yml", "windows-installer.yml", "windows-package.yml", "windows-release.yml"} {
 		workflow := readWorkflow(t, name)
 		for _, line := range strings.Split(workflow, "\n") {
 			trimmed := strings.TrimSpace(line)
@@ -133,8 +135,8 @@ func TestWindowsPackageOwnsAutomaticVersionTagRelease(t *testing.T) {
 		"Architectures = @('amd64')",
 		"build-windows-release.ps1",
 		"verify-windows-release-assets.ps1",
-		"actions/upload-artifact@v4",
-		"actions/download-artifact@v4",
+		"actions/upload-artifact@v7",
+		"actions/download-artifact@v8",
 		"gh release create",
 		"gh release upload",
 		"--clobber",

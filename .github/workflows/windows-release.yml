@@ -173,7 +173,7 @@ jobs:
           git diff --exit-code
           if ($LASTEXITCODE -ne 0) { throw 'Build modified tracked source.' }
       - name: Upload verified Windows assets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: agentdock-windows-release
           path: dist/windows-release/release/*
@@ -181,7 +181,7 @@ jobs:
           retention-days: 14
       - name: Upload build verification
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-build-verification
           path: |
@@ -232,7 +232,7 @@ jobs:
           & .\scripts\test\test-windows-activity-center.ps1 -RuntimeIdentifier win-arm64 -TestRoot (Join-Path $env:RUNNER_TEMP 'arm64-ui')
       - name: Upload native ARM64 verification
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-arm64-verification
           path: |
@@ -250,7 +250,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: agentdock-windows-release
           path: dist/windows-release/release
@@ -282,7 +282,7 @@ jobs:
           }
       - name: Upload native ARM64 installation result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-arm64-install-verification
           path: ${{ runner.temp }}/arm64-install-result.json
@@ -298,7 +298,7 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: agentdock-windows-release
           path: dist/windows-release/release
