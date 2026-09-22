@@ -22,9 +22,9 @@ on:
         default: ''
         type: string
       prerelease:
-        description: 'Publish as a prerelease; version-tag pushes default to prerelease'
+        description: 'Publish as a prerelease; disabled by default'
         required: true
-        default: true
+        default: false
         type: boolean
 
 permissions:
@@ -97,7 +97,7 @@ jobs:
           }
 
           $publish = $false
-          $prerelease = $true
+          $prerelease = $false
           $tag = ''
           if ($env:EVENT_NAME -eq 'push') {
             if ($env:GITHUB_REF -notlike 'refs/tags/v*') {
