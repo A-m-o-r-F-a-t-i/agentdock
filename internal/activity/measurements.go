@@ -109,5 +109,14 @@ func applyMeasurements(call *ExecutionCall, event Event) {
 
 // RecentlyActive uses a half-open server-time interval; tests need no sleeps.
 func RecentlyActive(last *time.Time, now time.Time, terminated bool) bool {
-	return !terminated && last != nil && !last.IsZero() && !now.Before(*last) && now.Sub(*last) < 30*time.Second
+	return !terminated && last != nil && !last.IsZero() && !now.Before(*last) && now.Sub(*last) < 120*time.Second
+}
+
+func genuineActivityEvent(kind string) bool {
+	switch kind {
+	case "call.created", "call.bound", "call.pending", "call.started", "call.completed", "call.rpc_returned",
+		"command.started", "command.output", "command.completed", "tool.started", "tool.completed", "file.requested", "file.changed":
+		return true
+	}
+	return false
 }

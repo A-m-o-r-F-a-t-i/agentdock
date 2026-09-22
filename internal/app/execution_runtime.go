@@ -15,6 +15,7 @@ import (
 )
 
 type ExecutionListQuery struct {
+	snapshot    bool // Internal grouped projection only; never exposed as an unbounded HTTP list.
 	Selection   bool
 	View        string
 	Search      string
@@ -24,6 +25,7 @@ type ExecutionListQuery struct {
 	Limit       int
 }
 type ConversationItem struct {
+	LastActivityAt time.Time `json:"last_activity_at"`
 	activity.Conversation
 	Statistics     activity.CallStats `json:"statistics"`
 	IsUnattributed bool               `json:"is_unattributed,omitempty"`
@@ -154,21 +156,25 @@ func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQ
 		if summary.LatestAt.After(item.UpdatedAt) {
 			item.UpdatedAt = summary.LatestAt
 		}
-		candidates = append(candidates, ConversationItem{Conversation: item, Statistics: summary})
+		lastActivity := item.CreatedAt
+		if summary.LastActivityAt != nil && summary.LastActivityAt.After(lastActivity) {
+			lastActivity = *summary.LastActivityAt
+		}
+		candidates = append(candidates, ConversationItem{Conversation: item, Statistics: summary, LastActivityAt: lastActivity})
 	}
 	if unknown := stats[""]; unknown.Total > 0 && query.View != "trash" && query.View != "archived" && query.Tag == "" && query.WorkspaceID == "" && (query.Search == "" || strings.Contains("未识别对话", query.Search)) {
 		// This is a navigation group, not a minted Conversation. Its ID is empty and
 		// calls are queried with unattributed=true, never conversation_id=unknown.
-		candidates = append(candidates, ConversationItem{Conversation: activity.Conversation{Title: "未识别对话 · 独立调用", Source: "unknown", UpdatedAt: unknown.LatestAt}, Statistics: unknown, IsUnattributed: true})
+		candidates = append(candidates, ConversationItem{Conversation: activity.Conversation{Title: "未识别对话 · 独立调用", Source: "unknown", UpdatedAt: unknown.LatestAt}, Statistics: unknown, IsUnattributed: true, LastActivityAt: unknown.LatestAt})
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].Pinned != candidates[j].Pinned {
 			return candidates[i].Pinned
 		}
-		if candidates[i].UpdatedAt.Equal(candidates[j].UpdatedAt) {
+		if candidates[i].LastActivityAt.Equal(candidates[j].LastActivityAt) {
 			return candidates[i].ID < candidates[j].ID
 		}
-		return candidates[i].UpdatedAt.After(candidates[j].UpdatedAt)
+		return candidates[i].LastActivityAt.After(candidates[j].LastActivityAt)
 	})
 	page.Total = len(candidates)
 	if query.Selection {
@@ -178,6 +184,11 @@ func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQ
 				page.SelectedIDs = append(page.SelectedIDs, item.ID)
 			}
 		}
+		return page, nil
+	}
+	if query.snapshot {
+		page.Conversations = candidates
+		page.NextOffset = len(candidates)
 		return page, nil
 	}
 	start := min(query.Offset, len(candidates))

@@ -73,6 +73,7 @@ type Event struct {
 }
 
 type Task struct {
+	Completion            *TaskCompletion        `json:"completion,omitempty"`
 	Pinned                bool                   `json:"pinned,omitempty"`
 	Tags                  []string               `json:"tags,omitempty"`
 	TrashedAt             *time.Time             `json:"trashed_at,omitempty"`

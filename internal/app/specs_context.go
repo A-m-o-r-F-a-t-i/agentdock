@@ -39,6 +39,23 @@ func contextToolContract(name string, cfg config.Config) (ToolContract, bool) {
 	output["plugins"] = pluginIndexSchema()
 	output["tasks"] = taskIndexSchema()
 	output["workspace"] = map[string]any{"type": "object", "additionalProperties": true, "required": []string{"workspace_id", "root", "runtime", "rules_revision"}}
+	if cfg.NexusEndpoint == "" {
+		if original, ok := output["dynamic_mcp"].(map[string]any); ok {
+			index := maps.Clone(original)
+			if originalItem, ok := index["items"].(map[string]any); ok {
+				item := maps.Clone(originalItem)
+				if originalProperties, ok := item["properties"].(map[string]any); ok {
+					properties := maps.Clone(originalProperties)
+					properties["revision"] = map[string]any{"type": "string"}
+					properties["server_version"] = map[string]any{"type": "string"}
+					properties["tool_count_known"] = map[string]any{"type": "boolean"}
+					item["properties"] = properties
+					index["items"] = item
+					output["dynamic_mcp"] = index
+				}
+			}
+		}
+	}
 	contract.OutputSchema["properties"] = output
 	return contract, true
 }

@@ -43,6 +43,20 @@ func TestCanonicalToolDefinitionsMatchSharedContract(t *testing.T) {
 			actualOutput = withoutLocalContextProperty(t, actualOutput, "plugins")
 			actualOutput = withoutLocalContextProperty(t, actualOutput, "tasks")
 			actualOutput = withoutLocalContextProperty(t, actualOutput, "workspace")
+			actualOutput = maps.Clone(actualOutput)
+			rootProperties := maps.Clone(actualOutput["properties"].(map[string]any))
+			dynamic := maps.Clone(rootProperties["dynamic_mcp"].(map[string]any))
+			item := dynamic["items"].(map[string]any)
+			for field, kind := range map[string]string{"revision": "string", "server_version": "string", "tool_count_known": "boolean"} {
+				property := item["properties"].(map[string]any)[field]
+				if !reflect.DeepEqual(property, map[string]any{"type": kind}) {
+					t.Fatalf("invalid local MCP metadata schema %s: %#v", field, property)
+				}
+				item = withoutLocalContextProperty(t, item, field)
+			}
+			dynamic["items"] = item
+			rootProperties["dynamic_mcp"] = dynamic
+			actualOutput["properties"] = rootProperties
 		}
 		if !reflect.DeepEqual(actualInput, wantInput) {
 			t.Fatalf("%s input schema drifted from shared contract", name)

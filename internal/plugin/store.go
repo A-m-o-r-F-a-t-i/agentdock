@@ -392,6 +392,7 @@ func (s *Store) MCPServers() (map[string]MCPMember, error) {
 	items := make(map[string]MCPMember)
 	for _, record := range records {
 		for name, config := range record.mcpConfigs {
+			config.PluginVersion = record.manifest.Version
 			config.Enabled = config.Enabled && record.state.Enabled && memberEnabled(record.state.MCPServers, name)
 			if config.Enabled && config.PluginData != "" {
 				if _, err := containedPath(s.root, config.PluginData, true); err != nil {

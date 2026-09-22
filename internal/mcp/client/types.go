@@ -21,6 +21,10 @@ var (
 )
 
 type ServerConfig struct {
+	PluginVersion   string `json:"-"`
+	revision        string
+	overrideSource  string
+	overlayRevision uint64
 	// Package data are mapped by the plugin loader, never written to the native registry.
 	PluginRoot     string            `json:"-"`
 	PluginData     string            `json:"-"`
@@ -59,16 +63,21 @@ type ToolSummary struct {
 }
 
 type ServerSummary struct {
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Transport     string `json:"transport"`
-	Plugin        string `json:"plugin,omitempty"`
-	Enabled       bool   `json:"enabled"`
-	Status        string `json:"status"`
-	ToolCount     int    `json:"tool_count"`
-	LastError     string `json:"last_error,omitempty"`
-	LastErrorCode string `json:"last_error_code,omitempty"`
-	RefreshedAt   string `json:"refreshed_at,omitempty"`
+	Revision          string `json:"revision"`
+	OverrideSource    string `json:"override_source"`
+	ToolCountKnown    bool   `json:"tool_count_known"`
+	ServerVersion     string `json:"server_version,omitempty"`
+	LastGoodAvailable bool   `json:"last_good_available,omitempty"`
+	Name              string `json:"name"`
+	Description       string `json:"description"`
+	Transport         string `json:"transport"`
+	Plugin            string `json:"plugin,omitempty"`
+	Enabled           bool   `json:"enabled"`
+	Status            string `json:"status"`
+	ToolCount         int    `json:"tool_count"`
+	LastError         string `json:"last_error,omitempty"`
+	LastErrorCode     string `json:"last_error_code,omitempty"`
+	RefreshedAt       string `json:"refreshed_at,omitempty"`
 }
 
 type Error struct {

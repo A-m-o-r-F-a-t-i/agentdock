@@ -240,6 +240,14 @@ public sealed class SkillCapabilityInfo
 
 public sealed class McpCapabilityInfo
 {
+    [JsonPropertyName("revision")]
+    public string Revision { get; set; } = "";
+    [JsonPropertyName("server_version")]
+    public string ServerVersion { get; set; } = "";
+    [JsonPropertyName("tool_count_known")]
+    public bool ToolCountKnown { get; set; }
+    [JsonPropertyName("override_source")]
+    public string OverrideSource { get; set; } = "default";
     [JsonPropertyName("name")]
     public string Name { get; set; } = "";
 

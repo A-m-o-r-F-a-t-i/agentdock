@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string] $InstallerPath = ''
+    [string] $InstallerPath = '',
+    [switch] $StaticOnly
 )
 
 Set-StrictMode -Version Latest
@@ -80,6 +81,7 @@ if ($payloadPreflightIndex -lt 0 -or $taskMutationIndex -le $payloadPreflightInd
     throw "$InstallerPath must validate the unpacked payload before mutating an existing scheduled task"
 }
 
+if (-not $StaticOnly) {
 $earlyResultPath = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-install-early-result-' + [Guid]::NewGuid().ToString('N') + '.ini')
 try {
     $previousErrorActionPreference = $ErrorActionPreference
@@ -106,6 +108,8 @@ try {
     }
 } finally {
     Remove-Item -LiteralPath $earlyResultPath -Force -ErrorAction SilentlyContinue
+}
+
 }
 
 foreach ($required in @(
@@ -212,7 +216,7 @@ try {
 $sha256Probe = [scriptblock]::Create(
     $sha256Function.Extent.Text + "`r`n" + $sha256ProbeAssertions
 )
-& $sha256Probe
+if (-not $StaticOnly) { & $sha256Probe }
 
 $setRunValueFunction = $installerAst.Find({
     param($node)
@@ -251,7 +255,7 @@ try {
 $runValueProbe = [scriptblock]::Create(
     $setRunValueFunction.Extent.Text + "`r`n" + $runValueProbeAssertions
 )
-& $runValueProbe
+if (-not $StaticOnly) { & $runValueProbe }
 
 $runValueDiagnosticPreamble = @'
 $script:registryPathExists = $false
@@ -306,7 +310,7 @@ $runValueDiagnosticProbe = [scriptblock]::Create(
     $setRunValueFunction.Extent.Text + "`r`n" +
     $runValueDiagnosticAssertions
 )
-& $runValueDiagnosticProbe
+if (-not $StaticOnly) { & $runValueDiagnosticProbe }
 
 $installResultValueFunction = $installerAst.Find({
     param($node)
@@ -377,7 +381,7 @@ $installResultProbe = [scriptblock]::Create(
     $installResultFunction.Extent.Text + "`r`n" +
     $installResultProbeAssertions
 )
-& $installResultProbe
+if (-not $StaticOnly) { & $installResultProbe }
 
 $taskStateFunction = $installerAst.Find({
     param($node)
@@ -414,7 +418,7 @@ $taskStateProbe = [scriptblock]::Create(
     $taskStateFunction.Extent.Text + "`r`n" +
     $taskStateProbeAssertions
 )
-& $taskStateProbe
+if (-not $StaticOnly) { & $taskStateProbe }
 
 $currentTaskUserFunction = $installerAst.Find({
     param($node)
@@ -436,7 +440,7 @@ if ([string]::IsNullOrWhiteSpace($taskUser.Sid) -or [string]::IsNullOrWhiteSpace
 $identityProbe = [scriptblock]::Create(
     $currentTaskUserFunction.Extent.Text + "`r`n" + $identityProbeAssertions
 )
-& $identityProbe
+if (-not $StaticOnly) { & $identityProbe }
 
 $elevationFunction = $installerAst.Find({
     param($node)
@@ -506,7 +510,7 @@ if ($helperResult.Started -ne $true -or $helperResult.Succeeded -ne $false -or $
 $elevationProbe = [scriptblock]::Create(
     $elevationProbePreamble + "`r`n" + $elevationFunction.Extent.Text + "`r`n" + $elevationProbeAssertions
 )
-& $elevationProbe
+if (-not $StaticOnly) { & $elevationProbe }
 
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $taskAdminSourcePath = Join-Path $repoRoot 'desktop\windows\control-panel\Services\TaskAdminService.cs'
@@ -592,4 +596,4 @@ foreach ($required in @(
     }
 }
 
-Write-Host 'Windows installer validation passed.'
+if ($StaticOnly) { Write-Host 'Windows installer static contract passed; runtime probes were not executed.' } else { Write-Host 'Windows installer validation passed.' }

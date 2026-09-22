@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -16,15 +15,22 @@ import (
 )
 
 type Manager struct {
-	callObserver atomic.Pointer[toolCallObserver]
-	registryMu   sync.Mutex
-	closed       atomic.Bool
-	mu           sync.RWMutex
-	store        *store
-	envs         *envstore.Store
-	external     ExternalServerProvider
-	servers      map[string]ServerConfig
-	states       map[string]*serverState
+	overridePath     string
+	runtimeOverrides map[string]ConfigPatch
+	revisionInstance string
+	revisionSequence uint64
+	retiredMu        sync.Mutex
+	retired          map[*serverState]bool
+	retiredWG        sync.WaitGroup
+	callObserver     atomic.Pointer[toolCallObserver]
+	registryMu       sync.Mutex
+	closed           atomic.Bool
+	mu               sync.RWMutex
+	store            *store
+	envs             *envstore.Store
+	external         ExternalServerProvider
+	servers          map[string]ServerConfig
+	states           map[string]*serverState
 }
 
 // ExternalServerProvider supplies dynamic MCP definitions owned by direct
@@ -33,6 +39,10 @@ type Manager struct {
 type ExternalServerProvider func() (map[string]ServerConfig, error)
 
 type serverState struct {
+	snapshot      atomic.Pointer[indexSnapshot]
+	discovered    bool
+	indexRevision uint64
+	serverVersion string
 	mu            sync.Mutex
 	client        protocolClient
 	tools         map[string]Tool
@@ -61,7 +71,20 @@ func NewManager(agentDockHome string, provided ...*envstore.Store) (*Manager, er
 	for name := range servers {
 		states[name] = &serverState{}
 	}
-	return &Manager{store: registry, envs: envs, servers: servers, states: states}, nil
+	instance, err := revisionInstance()
+	if err != nil {
+		return nil, err
+	}
+	manager := &Manager{store: registry, envs: envs, servers: servers, states: states, overridePath: overridePath(agentDockHome), runtimeOverrides: map[string]ConfigPatch{}, revisionInstance: instance, retired: map[*serverState]bool{}}
+	for name, cfg := range manager.servers {
+		cfg.revision = manager.nextRevisionLocked()
+		cfg.overrideSource = "default"
+		manager.servers[name] = cfg
+	}
+	if err = manager.syncRegistry(); err != nil {
+		return nil, err
+	}
+	return manager, nil
 }
 
 func (m *Manager) SetExternalServerProvider(provider ExternalServerProvider) error {
@@ -124,6 +147,7 @@ func (m *Manager) Add(cfg ServerConfig) (ServerSummary, error) {
 	m.mu.Lock()
 	staleStates := m.replaceRegistryLocked(combined)
 	state := m.states[cfg.Name]
+	cfg = m.servers[cfg.Name]
 	m.mu.Unlock()
 	closeServerStates(staleStates)
 	return summaryFor(cfg, state), nil
@@ -206,6 +230,7 @@ func (m *Manager) SetEnabled(name string, enabled bool) (ServerSummary, error) {
 	m.mu.Lock()
 	staleStates := m.replaceRegistryLocked(combined)
 	state := m.states[name]
+	selected = m.servers[name]
 	m.mu.Unlock()
 	if err := closeServerStates(staleStates); err != nil {
 		return ServerSummary{}, err
@@ -222,9 +247,22 @@ func (m *Manager) replaceRegistryLocked(servers map[string]ServerConfig) []*serv
 	states := make(map[string]*serverState, len(servers))
 	stale := make([]*serverState, 0)
 	for name, cfg := range servers {
-		if previous, exists := m.servers[name]; exists && reflect.DeepEqual(previous, cfg) {
-			states[name] = m.states[name]
-			continue
+		if previous, exists := m.servers[name]; exists {
+			if sameConfiguration(previous, cfg) {
+				cfg.revision = previous.revision
+				servers[name] = cfg
+				states[name] = m.states[name]
+				continue
+			}
+			cfg.revision = m.nextRevisionLocked()
+			servers[name] = cfg
+			if sameConnection(previous, cfg) {
+				states[name] = m.states[name]
+				continue
+			}
+		} else {
+			cfg.revision = m.nextRevisionLocked()
+			servers[name] = cfg
 		}
 		if previousState := m.states[name]; previousState != nil {
 			stale = append(stale, previousState)
@@ -276,6 +314,14 @@ func (m *Manager) externalServersLocked() (map[string]ServerConfig, error) {
 }
 
 func (m *Manager) mergeExternalLocked(standalone map[string]ServerConfig) (map[string]ServerConfig, error) {
+	base, err := m.mergeExternalBaseLocked(standalone)
+	if err != nil {
+		return nil, err
+	}
+	return m.applyOverridesLocked(base)
+}
+
+func (m *Manager) mergeExternalBaseLocked(standalone map[string]ServerConfig) (map[string]ServerConfig, error) {
 	combined := make(map[string]ServerConfig, len(standalone))
 	for name, cfg := range standalone {
 		combined[name] = cfg
@@ -534,7 +580,7 @@ func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[
 			return nil, targetErr
 		}
 	}
-	if state.client == nil || len(state.tools) == 0 {
+	if state.client == nil || !state.discovered {
 		runtimeCfg, err := m.runtimeConfig(cfg)
 		if err != nil {
 			recordStateError(state, err)
@@ -585,27 +631,39 @@ func (m *Manager) Close() error {
 	for _, state := range states {
 		result = errors.Join(result, closeState(state))
 	}
+	m.retiredWG.Wait()
 	return result
 }
 
 func (m *Manager) lockServer(name string) (ServerConfig, *serverState, func(), error) {
-	if m.closed.Load() {
-		return ServerConfig{}, nil, nil, newError("MCP_MANAGER_CLOSED", "dynamic MCP manager is closed", false, nil, nil)
-	}
-	m.mu.RLock()
-	cfg, exists := m.servers[name]
-	state := m.states[name]
-	if !exists {
+	for {
+		if m.closed.Load() {
+			return ServerConfig{}, nil, nil, newError("MCP_MANAGER_CLOSED", "dynamic MCP manager is closed", false, nil, nil)
+		}
+		m.mu.RLock()
+		_, exists := m.servers[name]
+		state := m.states[name]
 		m.mu.RUnlock()
-		return ServerConfig{}, nil, nil, newError("MCP_SERVER_NOT_FOUND", "dynamic MCP server not found", false, map[string]any{"server": name}, nil)
+		if !exists {
+			return ServerConfig{}, nil, nil, newError("MCP_SERVER_NOT_FOUND", "dynamic MCP server not found", false, map[string]any{"server": name}, nil)
+		}
+		// Never hold registry RLock while waiting for another tool invocation. Metadata
+		// updates remain instantaneous even when multiple calls queue on this server.
+		state.mu.Lock()
+		if m.closed.Load() {
+			state.mu.Unlock()
+			return ServerConfig{}, nil, nil, newError("MCP_MANAGER_CLOSED", "dynamic MCP manager is closed", false, nil, nil)
+		}
+		m.mu.RLock()
+		cfg, exists := m.servers[name]
+		current := m.states[name]
+		m.mu.RUnlock()
+		if !exists || current != state {
+			state.mu.Unlock()
+			continue
+		}
+		return cfg, state, state.mu.Unlock, nil
 	}
-	state.mu.Lock()
-	m.mu.RUnlock()
-	if m.closed.Load() {
-		state.mu.Unlock()
-		return ServerConfig{}, nil, nil, newError("MCP_MANAGER_CLOSED", "dynamic MCP manager is closed", false, nil, nil)
-	}
-	return cfg, state, state.mu.Unlock, nil
 }
 
 func (m *Manager) ensureOpenLocked() error {
@@ -664,7 +722,7 @@ func (m *Manager) ensureTools(ctx context.Context, name string) (map[string]Tool
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(cfg.TimeoutMS)*time.Millisecond)
 	defer cancel()
-	if state.client == nil || len(state.tools) == 0 {
+	if state.client == nil || !state.discovered {
 		runtimeCfg, err := m.runtimeConfig(cfg)
 		if err != nil {
 			recordStateError(state, err)
@@ -675,7 +733,7 @@ func (m *Manager) ensureTools(ctx context.Context, name string) (map[string]Tool
 	return cloneTools(state.tools), nil
 }
 
-func refreshStateLocked(ctx context.Context, cfg ServerConfig, state *serverState) (map[string]Tool, error) {
+func initializeStateLocked(ctx context.Context, cfg ServerConfig, state *serverState) (map[string]Tool, error) {
 	if state.client != nil {
 		_ = state.client.close()
 	}
@@ -736,6 +794,11 @@ func refreshStateLocked(ctx context.Context, cfg ServerConfig, state *serverStat
 	state.lastError = ""
 	state.lastErrorCode = ""
 	state.refreshedAt = time.Now().UTC()
+	state.discovered = true
+	if info, ok := client.(interface{ ServerVersion() string }); ok {
+		state.serverVersion = info.ServerVersion()
+	}
+	publishStateLocked(state)
 	return cloneTools(tools), nil
 }
 
@@ -765,38 +828,22 @@ func closeState(state *serverState) error {
 	state.lastError = ""
 	state.lastErrorCode = ""
 	state.refreshedAt = time.Time{}
+	state.discovered = false
+	publishStateLocked(state)
 	return err
 }
 
 func summaryFor(cfg ServerConfig, state *serverState) ServerSummary {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-	return summaryForLocked(cfg, state)
+	if state != nil {
+		if snapshot := state.snapshot.Load(); snapshot != nil {
+			return summaryForSnapshot(cfg, *snapshot)
+		}
+	}
+	return summaryForSnapshot(cfg, indexSnapshot{})
 }
 
 func summaryForLocked(cfg ServerConfig, state *serverState) ServerSummary {
-	status := "idle"
-	if !cfg.Enabled {
-		status = "disabled"
-	} else if state.lastError != "" {
-		status = "error"
-	} else if state.client != nil {
-		status = "ready"
-	}
-	item := ServerSummary{
-		Name:          cfg.Name,
-		Description:   cfg.Description,
-		Transport:     cfg.Transport,
-		Enabled:       cfg.Enabled,
-		Status:        status,
-		ToolCount:     len(state.tools),
-		LastError:     state.lastError,
-		LastErrorCode: state.lastErrorCode,
-	}
-	if !state.refreshedAt.IsZero() {
-		item.RefreshedAt = state.refreshedAt.Format(time.RFC3339Nano)
-	}
-	return item
+	return summaryForSnapshot(cfg, stateSnapshotLocked(state))
 }
 
 func recordStateError(state *serverState, err error) {
@@ -806,6 +853,7 @@ func recordStateError(state *serverState, err error) {
 	if errors.As(err, &mcpErr) {
 		state.lastErrorCode = mcpErr.Code
 	}
+	publishStateLocked(state)
 }
 
 func summarizeTools(server string, tools map[string]Tool) []ToolSummary {

@@ -23,7 +23,23 @@ public static class ExecutionJson
     public static bool HasDate(this JsonElement value, string name) => value.Field(name).ValueKind == JsonValueKind.String;
 }
 
-public sealed record WorkspaceGroupKey(string Id, string Title);
+public sealed class WorkspaceGroupKey(string id, string title) : INotifyPropertyChanged
+{
+    public string Id { get; } = id;
+    public string Title { get; private set; } = title;
+    public string Root { get; private set; } = "";
+    public int Total { get; private set; }
+    public DateTimeOffset? LastActivityAt { get; private set; }
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public void Apply(JsonElement value)
+    {
+        Title = value.Text("title", Title); Root = value.Text("root");
+        Total = (int)value.Number("total"); LastActivityAt = value.Date("last_activity_at");
+        PropertyChanged?.Invoke(this, new(null));
+    }
+    public override bool Equals(object? value) => value is WorkspaceGroupKey key && key.Id == Id;
+    public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Id);
+}
 public sealed record ExecutionChoice(string Id, string Title) { public override string ToString() => Title; }
 
 public sealed class ExecutionObject : INotifyPropertyChanged
@@ -31,28 +47,45 @@ public sealed class ExecutionObject : INotifyPropertyChanged
     private bool _recentlyActive;
     public event PropertyChangedEventHandler? PropertyChanged;
     public DateTimeOffset? LastToolCallAt { get; set; }
+    public DateTimeOffset? LastActivityAt { get; set; }
+    public DateTimeOffset? SortActivityAt { get; set; }
+    public bool IsGroupFooter { get; set; }
+    public bool HasMore { get; set; }
+    public bool AutoLoadMore { get; set; }
+    public bool InsertionEligible { get; set; }
+    public void Apply(ExecutionObject item)
+    {
+        if (Id != item.Id || Kind != item.Kind) throw new InvalidOperationException("Row identity changed.");
+        Title = item.Title; Detail = item.Detail; Tags = item.Tags; WorkspaceId = item.WorkspaceId;
+        ManagementDates = item.ManagementDates; Pinned = item.Pinned; Archived = item.Archived;
+        Trashed = item.Trashed; Terminated = item.Terminated; IsUnknown = item.IsUnknown; IsOrphan = item.IsOrphan;
+        PendingCount = item.PendingCount; RunningCount = item.RunningCount; Snapshot = item.Snapshot;
+        LastToolCallAt = item.LastToolCallAt; LastActivityAt = item.LastActivityAt; SortActivityAt = item.SortActivityAt;
+        IsGroupFooter = item.IsGroupFooter; HasMore = item.HasMore; AutoLoadMore = item.AutoLoadMore;
+        PropertyChanged?.Invoke(this, new(null));
+    }
     public bool RecentlyActive
     {
         get => _recentlyActive;
         set { if (_recentlyActive == value) return; _recentlyActive = value; PropertyChanged?.Invoke(this, new(nameof(RecentlyActive))); }
     }
-    public string Id { get; init; } = "";
-    public string Kind { get; init; } = "conversation";
-    public string Title { get; init; } = "";
-    public string Detail { get; init; } = "";
-    public string Tags { get; init; } = "";
-    public string WorkspaceId { get; init; } = "";
+    public string Id { get; set; } = "";
+    public string Kind { get; set; } = "conversation";
+    public string Title { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public string Tags { get; set; } = "";
+    public string WorkspaceId { get; set; } = "";
     public WorkspaceGroupKey WorkspaceKey { get; set; } = new("", "未归属工作区");
-    public string ManagementDates { get; init; } = "";
-    public bool Pinned { get; init; }
-    public bool Archived { get; init; }
-    public bool Trashed { get; init; }
-    public bool Terminated { get; init; }
-    public bool IsUnknown { get; init; }
-    public bool IsOrphan { get; init; }
-    public long PendingCount { get; init; }
-    public long RunningCount { get; init; }
-    public JsonElement Snapshot { get; init; }
+    public string ManagementDates { get; set; } = "";
+    public bool Pinned { get; set; }
+    public bool Archived { get; set; }
+    public bool Trashed { get; set; }
+    public bool Terminated { get; set; }
+    public bool IsUnknown { get; set; }
+    public bool IsOrphan { get; set; }
+    public long PendingCount { get; set; }
+    public long RunningCount { get; set; }
+    public JsonElement Snapshot { get; set; }
     public string SelectionKey => IsUnknown ? "unattributed" : Id;
     public static ExecutionObject From(JsonElement value, string kind)
     {
@@ -70,7 +103,7 @@ public sealed class ExecutionObject : INotifyPropertyChanged
             Detail = kind == "task" ? ExecutionJson.State(value.Text("status")) : value.Text("source"),
             Pinned = value.Flag("pinned"), Archived = value.HasDate("archived_at"), Trashed = value.HasDate("trashed_at"), Terminated = value.HasDate("terminated_at"),
             ManagementDates = created, IsUnknown = value.Flag("is_unattributed"), IsOrphan = value.Flag("is_orphan"),
-            PendingCount = stats.Number("pending"), RunningCount = stats.Number("running"), Snapshot = value.Clone(), LastToolCallAt = stats.Date("last_tool_call_at")
+            PendingCount = stats.Number("pending"), RunningCount = stats.Number("running"), Snapshot = value.Clone(), LastToolCallAt = stats.Date("last_tool_call_at"), LastActivityAt = stats.Date("last_activity_at") ?? stats.Date("last_tool_call_at"), SortActivityAt = value.Date("last_activity_at") ?? stats.Date("last_activity_at") ?? value.Date("created_at")
         };
     }
 }
@@ -101,6 +134,7 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
     public string Summary => _value.Text("summary");
     public string Title => _value.Text("activity_label", _value.Text("display_title", _value.Text("title", Tool))).Replace('\r', ' ').Replace('\n', ' ');
     public DateTimeOffset? RequestReceivedAt => _value.Date("request_received_at");
+    public DateTimeOffset? LastActivityAt => _value.Date("last_activity_at");
     public long? RpcElapsedMs => _value.OptionalNumber("rpc_elapsed_ms");
     public string Duration => FormatDuration(RpcElapsedMs ?? (_value.Number("elapsed_ms") > 0 ? _value.Number("elapsed_ms") : null));
     public string ExecutionDuration => FormatDuration(_value.OptionalNumber("execution_elapsed_ms"));
@@ -181,7 +215,7 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
 
 public sealed class ExecutionPreferences
 {
-    public int SchemaVersion { get; set; } = 2;
+    public int SchemaVersion { get; set; } = 3;
     public int RetentionDays { get; set; } = 30;
     public double FontSize { get; set; } = 14;
     public bool Notifications { get; set; } = true;
@@ -192,4 +226,7 @@ public sealed class ExecutionPreferences
     public string LastConversation { get; set; } = "";
     public HashSet<string> CollapsedWorkspaces { get; set; } = [];
     public Dictionary<string, string[]> SavedFilters { get; set; } = [];
+    public HashSet<string> DismissedNotices { get; set; } = [];
+    [System.Text.Json.Serialization.JsonExtensionData]
+    public Dictionary<string, JsonElement> AdditionalPreferences { get; set; } = [];
 }

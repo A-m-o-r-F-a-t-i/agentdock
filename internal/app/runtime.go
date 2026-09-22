@@ -14,6 +14,7 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/evolution"
+	"github.com/uvwt/agentdock/internal/insertion"
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 	"github.com/uvwt/agentdock/internal/permission"
 	pluginregistry "github.com/uvwt/agentdock/internal/plugin"
@@ -41,6 +42,9 @@ type Runtime struct {
 	connections              clientConnections
 	executionMaintenanceDone chan struct{}
 	executionInstance        string
+	insertions               *insertion.Store
+	capabilityManager        *mcpclient.Manager
+	capabilityUpdates        capabilityUpdates
 	conversations            *activity.ConversationRegistry
 	permissions              *permission.Store
 	tasks                    *taskstate.Store
@@ -142,11 +146,16 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	insertions, err := insertion.New(filepath.Join(cfg.AgentDockHome, "execution", "insertions"), instance, nil)
+	if err != nil {
+		_ = mcpClients.Close()
+		return nil, fmt.Errorf("initialize insertion queue: %w", err)
+	}
 	commandCtx, commandCancel := context.WithCancel(context.Background())
 	runtime := &Runtime{
 		display:           config.NewDisplayPreferences(cfg.AgentDockHome, cfg.MCPAppsEnabled),
-		executionInstance: instance,
-		conversations:     conversations, permissions: permissions, tasks: tasks,
+		executionInstance: instance, insertions: insertions, capabilityManager: mcpClients,
+		conversations: conversations, permissions: permissions, tasks: tasks,
 		activeCalls: map[string]*liveExecution{}, pendingCalls: map[string]*preparedExecution{},
 		workspaceRegistry: workspaceRegistry, workspaceTools: toolworkspace.New(workspaceRegistry),
 		cfg: cfg, ws: ws, skills: skills, activity: activityStore,
@@ -210,6 +219,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 			}
 			return toolplugin.MCPItem{
 				Name: item.Name, Description: item.Description, Plugin: item.Plugin, Status: item.Status,
+				Revision: item.Revision, ServerVersion: item.ServerVersion, ToolCountKnown: item.ToolCountKnown,
 				ToolCount: item.ToolCount, LastErrorCode: item.LastErrorCode,
 				ToolLoadError: item.ToolLoadError, Enabled: item.Enabled, Tools: mappedTools,
 			}, found, lookupErr

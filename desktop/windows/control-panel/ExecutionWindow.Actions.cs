@@ -24,6 +24,8 @@ public partial class ExecutionWindow
     private ContextMenu Menu(FrameworkElement anchor)
     {
         var menu = new ContextMenu { PlacementTarget = anchor, Resources = Resources }; anchor.ContextMenu = menu;
+        menu.Opened += (_, _) => _openMenus++;
+        menu.Closed += (_, _) => _openMenus = Math.Max(0, _openMenus - 1);
         return menu;
     }
     private static void AddMenu(ContextMenu menu, string title, Func<Task> action, bool enabled = true)
@@ -54,7 +56,7 @@ public partial class ExecutionWindow
         ActionMenu(menu, "历史任务与未归属记录", () => OpenDataManagerAsync(false));
         OpenMenu(menu);
     }
-    private string[] SelectedObjectIds() => _frozenSelection ?? ObjectsList.SelectedItems.Cast<ExecutionObject>().Where(item => !item.IsUnknown && !item.IsOrphan).Select(item => item.Id).Distinct().ToArray();
+    private string[] SelectedObjectIds() => _frozenSelection ?? ObjectsList.SelectedItems.Cast<ExecutionObject>().Where(item => !item.IsUnknown && !item.IsOrphan && !item.IsGroupFooter).Select(item => item.Id).Distinct().ToArray();
     private async Task SelectAllObjectsAsync()
     {
         var page = await _client.ExecutionGetAsync("/internal/runtime/conversations?" + ListQuery(true), _lifetime.Token);
@@ -66,26 +68,20 @@ public partial class ExecutionWindow
     private async void SelectAllObjects_Click(object sender, RoutedEventArgs e) => await GuardAsync(SelectAllObjectsAsync);
     private void Objects_RightClick(object sender, MouseButtonEventArgs e)
     {
-        if (Ancestor<ListBoxItem>(e.OriginalSource as DependencyObject) is not { DataContext: ExecutionObject row } item) return;
-        if (!item.IsSelected) { _frozenSelection = null; ObjectsList.SelectedItem = row; }
-        _menuSelection = SelectedObjectIds(); ShowObjectMenu(item, _menuSelection); e.Handled = true;
-    }
-    private void ObjectMore_Click(object sender, RoutedEventArgs e)
-    {
-        if ((sender as FrameworkElement)?.DataContext is not ExecutionObject item) return;
-        _frozenSelection = null; ObjectsList.SelectedItem = item;
-        _menuSelection = item.IsUnknown || item.IsOrphan ? [] : [item.Id];
-        ShowObjectMenu((FrameworkElement)sender, _menuSelection); e.Handled = true;
+        if (Ancestor<ListBoxItem>(e.OriginalSource as DependencyObject) is not { DataContext: ExecutionObject { IsGroupFooter: false } row } item) return;
+        _menuSelection = item.IsSelected ? SelectedObjectIds() : row.IsUnknown || row.IsOrphan ? [] : [row.Id];
+        ShowObjectMenu(item, _menuSelection, row); e.Handled = true;
     }
     private void ConversationMenu_Click(object sender, RoutedEventArgs e)
     {
         var ids = _selected is { IsUnknown:false, IsOrphan:false } ? new[] { _selected.Id } : Array.Empty<string>();
         _menuSelection = ids; ShowObjectMenu(Anchor(sender, ConversationHeader), ids);
     }
-    private void ShowObjectMenu(FrameworkElement anchor, string[] ids)
+    private void ShowObjectMenu(FrameworkElement anchor, string[] ids, ExecutionObject? target = null)
     {
-        var fixedIds = ids.ToArray(); var selected = Objects.FirstOrDefault(item => fixedIds.Contains(item.Id)) ?? _selected;
+        var fixedIds = ids.ToArray(); var selected = target ?? Objects.FirstOrDefault(item => fixedIds.Contains(item.Id)) ?? _selected;
         var menu = Menu(anchor);
+        ActionMenu(menu, "打开", () => selected is null ? Task.CompletedTask : OpenSidebarObjectAsync(selected), selected is { IsGroupFooter: false } && fixedIds.Length <= 1);
         ActionMenu(menu, "对话详情", () => { ShowInfo("对话详情", selected?.Snapshot.Pretty() ?? "未归属记录使用原始调用 ID 管理。"); return Task.CompletedTask; }, selected is not null);
         ActionMenu(menu, "导出执行记录", () => ExportConversationsAsync(fixedIds), selected is not null);
         if (selected is { IsUnknown:true } || selected is { IsOrphan:true })

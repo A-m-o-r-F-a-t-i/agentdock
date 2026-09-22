@@ -120,6 +120,7 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 	if err != nil {
 		return fail(toolError("INVALID_ARGUMENT", "tool arguments must be JSON-compatible", "validation"))
 	}
+	r.reserveInsertion(ctx, snapshot, received)
 	if spec.Name == "task_manage" && (stringArg(args, "action") == "create" || stringArg(args, "workspace_id") != "") {
 		workspaceID := stringArg(args, "workspace_id")
 		if workspaceID == "" && stringArg(args, "project") == "" {
@@ -147,6 +148,7 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 	if err != nil {
 		return fail(err)
 	}
+	r.verifyInsertionTarget(ctx, state.binding)
 	if state.binding.Label == "" {
 		state.binding.Label = spec.Title
 	}
@@ -598,6 +600,7 @@ func (r *Runtime) finishPrepared(p *preparedExecution, result Result, err error,
 	return r.decorateExecution(result, p), nil
 }
 func (r *Runtime) decorateExecution(result Result, p *preparedExecution) Result {
+	r.rememberCapabilityAccess(p.state.binding, p.spec.Name, p.args, result)
 	decorated := maps.Clone(result)
 	if decorated == nil {
 		decorated = Result{}

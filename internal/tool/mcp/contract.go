@@ -18,7 +18,7 @@ func InputSchema(name string) (map[string]any, bool) {
 
 	switch name {
 	case ToolManage:
-		props["action"] = map[string]any{"type": "string", "description": "Dynamic MCP server or isolated environment action.", "enum": []string{"list", "inspect", "add", "remove", "enable", "disable", "env_set", "env_unset", "env_list", "refresh"}}
+		props["action"] = map[string]any{"type": "string", "description": "Dynamic MCP server or isolated environment action.", "enum": []string{"list", "inspect", "add", "remove", "enable", "disable", "env_set", "env_unset", "env_list", "refresh", "update", "reset_override"}}
 		props["name"] = stringProp("Dynamic MCP server name. Use a stable short identifier such as figma or github.")
 		props["description"] = stringProp("Short capability description shown in agentdock_context.")
 		props["transport"] = map[string]any{"type": "string", "description": "MCP transport for action=add.", "enum": []string{"streamable_http", "stdio"}}
@@ -32,6 +32,13 @@ func InputSchema(name string) (map[string]any, bool) {
 		props["value"] = stringProp("Environment variable value for env_set. Secret values are never returned.")
 		props["enabled"] = boolProp("Enable the server after registration. Defaults to true.")
 		props["timeout_ms"] = boundedIntProp("Per-request timeout. Defaults to 30000 and is capped at 300000.", 1, 300000)
+		patchProps := map[string]any{}
+		for _, field := range []string{"description", "transport", "url", "command", "args", "cwd", "header_env", "env_from_env", "timeout_ms"} {
+			patchProps[field] = props[field]
+		}
+		props["patch"] = map[string]any{"type": "object", "description": "Editable host overlay fields for update. Does not rewrite plugin files, permissions, enabled state or discovered facts.", "properties": patchProps, "additionalProperties": false, "minProperties": 1}
+		props["scope"] = map[string]any{"type": "string", "enum": []string{"runtime", "persistent"}, "description": "Required for update/reset_override. Runtime lasts for the current process; persistent survives restart."}
+		props["expected_revision"] = stringProp("Current server.revision from inspect; required for compare-and-swap update/reset_override.")
 		required = []string{"action"}
 	case ToolSearch:
 		props["query"] = stringProp("Capability or tool query.")
@@ -80,10 +87,13 @@ func OutputSchema(name string) (map[string]any, bool) {
 		props["server"] = stringProp("Optional server filter used.")
 		props["tools"] = arrayProp("Matching lightweight MCP tool summaries.")
 		props["count"] = intProp("Matching tool count.")
+		props["catalogs"] = arrayProp("Current revisions and discovered facts for the matching servers; does not load unrelated plugins.")
 	case ToolInspect:
 		props["name"] = stringProp("Qualified MCP tool name.")
 		props["server"] = stringProp("Dynamic MCP server name.")
 		props["tool_name"] = stringProp("Upstream MCP tool name.")
+		props["catalog_revision"] = stringProp("Revision of the inspected catalog.")
+		props["server_version"] = stringProp("Version reported by initialize, empty when unknown.")
 		props["title"] = stringProp("Tool title.")
 		props["description"] = stringProp("Tool description.")
 		props["input_schema"] = objectProp("Complete upstream MCP tool input schema.")

@@ -31,14 +31,17 @@ func (s *Service) SetHeavyPluginLookup(lookup func(string) (bool, error)) {
 }
 
 type CapabilityItem struct {
-	Name          string
-	Description   string
-	Plugin        string
-	Enabled       bool
-	Status        string
-	ToolCount     int
-	LastErrorCode string
-	ToolLoadError string
+	Revision       string
+	ServerVersion  string
+	ToolCountKnown bool
+	Name           string
+	Description    string
+	Plugin         string
+	Enabled        bool
+	Status         string
+	ToolCount      int
+	LastErrorCode  string
+	ToolLoadError  string
 }
 
 type CapabilityToolItem struct {
@@ -58,6 +61,7 @@ func (s *Service) CapabilityItems() []CapabilityItem {
 		}
 		items = append(items, CapabilityItem{
 			Name: server.Name, Description: server.Description, Plugin: s.pluginName(server.Name),
+			Revision: server.Revision, ServerVersion: server.ServerVersion, ToolCountKnown: server.ToolCountKnown,
 			Enabled: server.Enabled, Status: server.Status,
 			ToolCount: server.ToolCount, LastErrorCode: server.LastErrorCode,
 		})
@@ -76,6 +80,7 @@ func (s *Service) CapabilityItem(name string) (CapabilityItem, bool, error) {
 	}
 	return CapabilityItem{
 		Name: server.Name, Description: server.Description, Plugin: s.pluginName(server.Name),
+		Revision: server.Revision, ServerVersion: server.ServerVersion, ToolCountKnown: server.ToolCountKnown,
 		Enabled: server.Enabled, Status: server.Status,
 		ToolCount: server.ToolCount, LastErrorCode: server.LastErrorCode,
 	}, true, nil
@@ -119,7 +124,11 @@ func (s *Service) PluginCapabilityItem(ctx context.Context, name string) (Capabi
 			Description: tool.Description, Server: tool.Server,
 		})
 	}
+	if refreshed, ok, refreshErr := s.CapabilityItem(name); refreshErr == nil && ok {
+		item = refreshed
+	}
 	item.Status = "ready"
+	item.ToolCountKnown = true
 	item.ToolCount = len(items)
 	item.LastErrorCode = ""
 	return item, items, true, nil

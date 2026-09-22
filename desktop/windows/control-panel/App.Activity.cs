@@ -5,6 +5,12 @@ namespace AgentDock.ControlPanel;
 public partial class App
 {
     private ExecutionWindow? _activityWindow;
+    private CompletionNotificationService? _completionNotifications;
+    private void StartCompletionNotifications() => _completionNotifications ??= new(Runtime, async notification =>
+    {
+        ShowActivityCenter();
+        if (_activityWindow is { } window) await window.NavigateCompletionAsync(notification);
+    });
 
     // The dedicated monitor entrypoint does not acquire the tray singleton, start services,
     // run upgrade handoffs, or modify runtime settings. It can observe an isolated runtime.
@@ -26,6 +32,7 @@ public partial class App
         MainWindow = _activityWindow;
         _activityWindow.Closed += (_, _) => _activityWindow = null;
         _activityWindow.Show();
+        StartCompletionNotifications();
         return true;
     }
 

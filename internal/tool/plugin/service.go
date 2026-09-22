@@ -19,15 +19,18 @@ type SkillItem struct {
 }
 
 type MCPItem struct {
-	Name          string        `json:"name"`
-	Description   string        `json:"description"`
-	Plugin        string        `json:"plugin,omitempty"`
-	Status        string        `json:"status"`
-	ToolCount     int           `json:"tool_count"`
-	LastErrorCode string        `json:"last_error_code,omitempty"`
-	ToolLoadError string        `json:"tool_load_error,omitempty"`
-	Enabled       bool          `json:"enabled"`
-	Tools         []MCPToolItem `json:"tools"`
+	Revision       string        `json:"revision"`
+	ServerVersion  string        `json:"server_version,omitempty"`
+	ToolCountKnown bool          `json:"tool_count_known"`
+	Name           string        `json:"name"`
+	Description    string        `json:"description"`
+	Plugin         string        `json:"plugin,omitempty"`
+	Status         string        `json:"status"`
+	ToolCount      int           `json:"tool_count"`
+	LastErrorCode  string        `json:"last_error_code,omitempty"`
+	ToolLoadError  string        `json:"tool_load_error,omitempty"`
+	Enabled        bool          `json:"enabled"`
+	Tools          []MCPToolItem `json:"tools"`
 }
 
 type MCPToolItem struct {

@@ -18,7 +18,10 @@ func Test114RecentlyActiveBoundary(t *testing.T) {
 		{name: "zero", last: timePointerForTest(time.Time{}), want: false},
 		{name: "now", last: timePointerForTest(now), want: true},
 		{name: "29.9 seconds", last: timePointerForTest(now.Add(-29900 * time.Millisecond)), want: true},
-		{name: "30 seconds", last: timePointerForTest(now.Add(-30 * time.Second)), want: false},
+		{name: "30 seconds remains active", last: timePointerForTest(now.Add(-30 * time.Second)), want: true},
+		{name: "119.999 seconds", last: timePointerForTest(now.Add(-119999 * time.Millisecond)), want: true},
+		{name: "120 seconds", last: timePointerForTest(now.Add(-120 * time.Second)), want: false},
+		{name: "120.001 seconds", last: timePointerForTest(now.Add(-120001 * time.Millisecond)), want: false},
 		{name: "future", last: timePointerForTest(now.Add(time.Millisecond)), want: false},
 		{name: "terminated", last: timePointerForTest(now), terminated: true, want: false},
 	}

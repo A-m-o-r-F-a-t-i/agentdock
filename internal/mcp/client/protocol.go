@@ -370,3 +370,15 @@ func (b *tailBuffer) String() string {
 	defer b.mu.Unlock()
 	return strings.TrimSpace(string(b.data))
 }
+
+// ServerVersion reports initialize metadata, never a version parsed from prose.
+func (c *sdkProtocolClient) ServerVersion() string {
+	if c.session == nil {
+		return ""
+	}
+	info := c.session.InitializeResult()
+	if info == nil || info.ServerInfo == nil {
+		return ""
+	}
+	return info.ServerInfo.Version
+}

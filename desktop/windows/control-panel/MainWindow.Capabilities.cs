@@ -5,8 +5,6 @@ using System.Windows.Media;
 using Button = System.Windows.Controls.Button;
 using CheckBox = System.Windows.Controls.CheckBox;
 using MessageBox = System.Windows.MessageBox;
-using Brushes = System.Windows.Media.Brushes;
-using Color = System.Windows.Media.Color;
 
 namespace AgentDock.ControlPanel;
 
@@ -204,7 +202,7 @@ public partial class MainWindow
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var title = new TextBlock
+        var title = new ThemeTextBlock
         {
             Text = plugin.Name,
             FontSize = 15,
@@ -249,10 +247,10 @@ public partial class MainWindow
         header.Children.Add(remove);
         header.Children.Add(toggle);
         content.Children.Add(header);
-        content.Children.Add(new TextBlock
+        content.Children.Add(new ThemeTextBlock
         {
             Text = plugin.Description,
-            Foreground = new SolidColorBrush(Color.FromRgb(102, 112, 133)),
+            ForegroundResource = "SecondaryText",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 3)
         });
@@ -277,29 +275,29 @@ public partial class MainWindow
         content.Children.Add(expander);
         if ((plugin.Diagnostics?.Count ?? 0) > 0)
         {
-            content.Children.Add(new TextBlock { Text = UiText.Format("PluginDiagnosticCount", plugin.Diagnostics!.Count),
-                Foreground = new SolidColorBrush(Color.FromRgb(180, 35, 24)), TextWrapping = TextWrapping.Wrap });
+            content.Children.Add(new ThemeTextBlock { Text = UiText.Format("PluginDiagnosticCount", plugin.Diagnostics!.Count),
+                ForegroundResource = "DangerBrush", TextWrapping = TextWrapping.Wrap });
         }
 
-        return new Border
+        return new ThemeBorder
         {
             Child = content,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(208, 213, 221)),
+            BorderResource = "SeparatorBrush",
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6),
             Padding = new Thickness(14),
             Margin = new Thickness(0, 0, 0, 10),
-            Background = Brushes.White
+            BackgroundResource = "PanelBackground"
         };
     }
 
     private StackPanel BuildPluginDetails(PluginCapabilityInfo plugin)
     {
         var details = new StackPanel();
-        details.Children.Add(new TextBlock
+        details.Children.Add(new ThemeTextBlock
         {
             Text = UiText.Format("PluginPackageMetadata", plugin.Version, plugin.Path),
-            Foreground = new SolidColorBrush(Color.FromRgb(102, 112, 133)),
+            ForegroundResource = "SecondaryText",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 0, 0, 10)
         });
@@ -333,8 +331,8 @@ public partial class MainWindow
 
         foreach (var diagnostic in plugin.Diagnostics ?? [])
         {
-            details.Children.Add(new TextBlock { Text = diagnostic, TextWrapping = TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(Color.FromRgb(180, 35, 24)), Margin = new Thickness(0, 5, 0, 0) });
+            details.Children.Add(new ThemeTextBlock { Text = diagnostic, TextWrapping = TextWrapping.Wrap,
+                ForegroundResource = "DangerBrush", Margin = new Thickness(0, 5, 0, 0) });
         }
         return details;
     }
@@ -379,7 +377,8 @@ public partial class MainWindow
 
     private Border BuildMcpCapabilityRow(McpCapabilityInfo server, bool nested, string pluginName)
     {
-        var metadata = UiText.Format("McpStatusSummary", server.Status, server.ToolCount);
+        var metadata = server.ToolCountKnown ? UiText.Format("McpStatusSummary", server.Status, server.ToolCount) : server.Status;
+        if (!string.IsNullOrWhiteSpace(server.ServerVersion)) metadata += " · " + server.ServerVersion;
         var details = string.IsNullOrWhiteSpace(server.Description)
             ? metadata
             : server.Description + " · " + metadata;
@@ -406,7 +405,7 @@ public partial class MainWindow
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var text = new StackPanel();
-        text.Children.Add(new TextBlock
+        text.Children.Add(new ThemeTextBlock
         {
             Text = title,
             FontWeight = FontWeights.Medium,
@@ -414,10 +413,10 @@ public partial class MainWindow
         });
         if (!string.IsNullOrWhiteSpace(description))
         {
-            text.Children.Add(new TextBlock
+            text.Children.Add(new ThemeTextBlock
             {
                 Text = description,
-                Foreground = new SolidColorBrush(Color.FromRgb(102, 112, 133)),
+                ForegroundResource = "SecondaryText",
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 2, 14, 0)
             });
@@ -436,32 +435,32 @@ public partial class MainWindow
         Grid.SetColumn(toggle, 1);
         row.Children.Add(text);
         row.Children.Add(toggle);
-        return new Border
+        return new ThemeBorder
         {
             Child = row,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(234, 236, 240)),
+            BorderResource = "SeparatorBrush",
             BorderThickness = new Thickness(0, 0, 0, 1),
             Padding = nested ? new Thickness(18, 7, 8, 7) : new Thickness(8, 9, 8, 9)
         };
     }
 
-    private static Border BuildUnavailableCapabilityRow(string kind, string name) => new()
+    private static Border BuildUnavailableCapabilityRow(string kind, string name) => new ThemeBorder()
     {
-        Child = new TextBlock
+        Child = new ThemeTextBlock
         {
             Text = UiText.Format("UnavailablePluginMember", kind, name),
-            Foreground = new SolidColorBrush(Color.FromRgb(180, 35, 24)),
+            ForegroundResource = "DangerBrush",
             TextWrapping = TextWrapping.Wrap
         },
-        BorderBrush = new SolidColorBrush(Color.FromRgb(254, 205, 202)),
+        BorderResource = "DangerBrush",
         BorderThickness = new Thickness(0, 0, 0, 1),
         Padding = new Thickness(18, 7, 8, 7)
     };
 
-    private static TextBlock BuildEmptyCapabilityText(string resourceKey) => new()
+    private static TextBlock BuildEmptyCapabilityText(string resourceKey) => new ThemeTextBlock()
     {
         Text = UiText.Get(resourceKey),
-        Foreground = new SolidColorBrush(Color.FromRgb(102, 112, 133)),
+        ForegroundResource = "SecondaryText",
         Margin = new Thickness(8),
         TextWrapping = TextWrapping.Wrap
     };

@@ -59,6 +59,14 @@ func (r *Runtime) RuntimeConversationLifecycle(ctx context.Context, id, action s
 	warnings := []string{}
 	cancelled := 0
 	if action == "terminate" {
+		if r.insertions != nil {
+			_, owner, lookupErr := r.conversations.LocalTarget(ctx, id)
+			if lookupErr != nil {
+				warnings = append(warnings, lookupErr.Error())
+			} else if cancelErr := r.insertions.Cancel(ctx, owner, id, "", true); cancelErr != nil {
+				warnings = append(warnings, "插入取消状态未保存："+cancelErr.Error())
+			}
+		}
 		for approvalID, pending := range r.pendingCalls {
 			if pending.state.binding.ConversationID != id {
 				continue

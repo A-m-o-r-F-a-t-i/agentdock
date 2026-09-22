@@ -167,6 +167,81 @@ func (h *activityHTTP) serveExecution(w http.ResponseWriter, r *http.Request) {
 		}
 		return true
 	}
+	if len(parts) >= 3 && parts[0] == "conversations" && parts[2] == "insertions" {
+		service, ok := h.runtime.(interface {
+			RuntimeInsertions(context.Context, string) (app.Result, error)
+			RuntimeEnqueueInsertion(context.Context, string, app.InsertionRequest) (app.Result, error)
+			RuntimeCancelInsertion(context.Context, string, string) (app.Result, error)
+		})
+		if !ok {
+			writeRuntimeAPIError(w, 503, "INSERTION_UNAVAILABLE", "insertion queue unavailable")
+			return
+		}
+		if len(parts) == 3 && r.Method == http.MethodGet {
+			result, err := service.RuntimeInsertions(ctx, parts[1])
+			finish(result, err)
+			return
+		}
+		if len(parts) == 3 && require("POST") {
+			var input app.InsertionRequest
+			if !decodeExecutionBody(w, r, &input) {
+				return
+			}
+			result, err := service.RuntimeEnqueueInsertion(ctx, parts[1], input)
+			finish(result, err)
+			return
+		}
+		if len(parts) == 5 && parts[4] == "cancel" && require("POST") {
+			var input struct{}
+			if !decodeExecutionBody(w, r, &input) {
+				return
+			}
+			result, err := service.RuntimeCancelInsertion(ctx, parts[1], parts[3])
+			finish(result, err)
+			return
+		}
+		return
+	}
+	if len(parts) == 2 && parts[0] == "execution" && parts[1] == "notifications" {
+		if !require("POST") {
+			return
+		}
+		var input struct {
+			Limit int `json:"limit"`
+		}
+		if !decodeExecutionBody(w, r, &input) {
+			return
+		}
+		service, ok := h.runtime.(interface {
+			RuntimeCompletionNotifications(context.Context, int) (app.Result, error)
+		})
+		if !ok {
+			writeRuntimeAPIError(w, 503, "NOTIFICATIONS_UNAVAILABLE", "task notifications unavailable")
+			return
+		}
+		result, err := service.RuntimeCompletionNotifications(ctx, input.Limit)
+		finish(result, err)
+		return
+	}
+	if len(parts) == 2 && parts[0] == "execution" && parts[1] == "sidebar" {
+		if !require("POST") {
+			return
+		}
+		var request app.SidebarRequest
+		if !decodeExecutionBody(w, r, &request) {
+			return
+		}
+		observer, ok := h.runtime.(interface {
+			RuntimeConversationSidebar(context.Context, app.SidebarRequest) (app.SidebarPage, error)
+		})
+		if !ok {
+			writeRuntimeAPIError(w, 503, "SIDEBAR_UNAVAILABLE", "sidebar projection unavailable")
+			return
+		}
+		result, err := observer.RuntimeConversationSidebar(ctx, request)
+		finish(result, err)
+		return
+	}
 	if len(parts) == 2 && parts[0] == "execution" && parts[1] == "connection" {
 		if !require("GET") {
 			return

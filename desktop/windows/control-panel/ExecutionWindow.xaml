@@ -11,15 +11,6 @@
         <ResourceDictionary Source="Themes/Tokens.xaml"/>
       </ResourceDictionary.MergedDictionaries>
       <BooleanToVisibilityConverter x:Key="BoolVisibility"/>
-      <Style x:Key="RowMore" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-        <Setter Property="Opacity" Value="1"/><Setter Property="Width" Value="28"/><Setter Property="Padding" Value="0"/>
-        <Setter Property="IsTabStop" Value="True"/>
-        <Style.Triggers>
-          <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True"><Setter Property="Opacity" Value="1"/></DataTrigger>
-          <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True"><Setter Property="Opacity" Value="1"/></DataTrigger>
-          <DataTrigger Binding="{Binding IsKeyboardFocusWithin, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True"><Setter Property="Opacity" Value="1"/></DataTrigger>
-        </Style.Triggers>
-      </Style>
       <DataTemplate x:Key="CallRowTemplate">
         <Grid Height="{StaticResource ExecutionRowHeight}" Margin="6,0">
           <Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/><ColumnDefinition Width="84"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
@@ -63,7 +54,7 @@
         </Grid>
         <Button x:Name="MoreObjectsButton" DockPanel.Dock="Bottom" Content="更多对话" Click="MoreObjects_Click" Visibility="Collapsed"/>
         <Grid>
-          <ListBox x:Name="ObjectsList" ItemsSource="{Binding Objects}" SelectionMode="Extended" SelectionChanged="Objects_Changed" PreviewMouseRightButtonDown="Objects_RightClick"
+          <ListBox x:Name="ObjectsList" ItemsSource="{Binding Objects}" SelectionMode="Extended" SelectionChanged="Objects_Changed" PreviewMouseRightButtonDown="Objects_RightClick" ScrollViewer.ScrollChanged="Sidebar_ScrollChanged"
                    VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.IsVirtualizingWhenGrouping="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True">
             <ListBox.GroupStyle>
               <GroupStyle>
@@ -72,13 +63,14 @@
                     <Expander IsExpanded="True" Loaded="WorkspaceGroup_Loaded" Expanded="WorkspaceGroup_Expanded" Collapsed="WorkspaceGroup_Collapsed" Margin="0,0,0,8">
                       <Expander.Template><ControlTemplate TargetType="Expander">
                         <StackPanel>
-                          <ToggleButton IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Height="34">
+                          <ToggleButton PreviewMouseRightButtonDown="Project_RightClick" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Height="34">
                             <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
                               <Border Background="Transparent" Padding="3,0,6,0"><Grid>
-                                <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <TextBlock x:Name="Arrow" Text="▸" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center"/>
                                 <TextBlock Grid.Column="1" Text="{Binding Name.Title}" Foreground="{DynamicResource PrimaryText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" Text="{Binding ItemCount}" Foreground="{DynamicResource SecondaryText}" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                <Border Grid.Column="2" Style="{StaticResource SemanticBadge}" Margin="7,0,0,0"><TextBlock Text="对话" FontSize="11" Foreground="{DynamicResource SecondaryText}"/></Border>
+                                <TextBlock Grid.Column="3" Text="{Binding Name.Total}" Foreground="{DynamicResource SecondaryText}" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center"/>
                               </Grid></Border>
                               <ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Arrow" Property="Text" Value="▾"/></Trigger></ControlTemplate.Triggers>
                             </ControlTemplate></ToggleButton.Template>
@@ -93,17 +85,24 @@
                 </GroupStyle.ContainerStyle>
               </GroupStyle>
             </ListBox.GroupStyle>
+            <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}"><EventSetter Event="PreviewMouseLeftButtonDown" Handler="SidebarFooter_PreviewMouseDown"/>
+              <Style.Triggers><DataTrigger Binding="{Binding IsGroupFooter}" Value="True"><Setter Property="Focusable" Value="False"/></DataTrigger>
+                <MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding IsGroupFooter}" Value="True"/><Condition Binding="{Binding HasMore}" Value="False"/></MultiDataTrigger.Conditions><Setter Property="Height" Value="0"/><Setter Property="Visibility" Value="Collapsed"/></MultiDataTrigger>
+              </Style.Triggers>
+            </Style></ListBox.ItemContainerStyle>
             <ListBox.ItemTemplate><DataTemplate>
               <Grid Height="34" Margin="8,0,3,0">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="20"/><ColumnDefinition Width="28"/></Grid.ColumnDefinitions>
-                <Border Style="{StaticResource SemanticBadge}" Margin="0,0,6,0"><TextBlock Text="对话" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryText}"/></Border>
-                <TextBlock Grid.Column="1" Text="{Binding Title}" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
-                <TextBlock Grid.Column="2" Text="{Binding PendingCount}" FontSize="12" Margin="6,0,2,0" VerticalAlignment="Center" Foreground="{DynamicResource DangerBrush}">
-                  <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding PendingCount}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
-                </TextBlock>
-                <TextBlock Grid.Column="3" Text="···" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="最近 30 秒有工具调用" AutomationProperties.Name="最近 30 秒有工具调用" Visibility="{Binding RecentlyActive, Converter={StaticResource BoolVisibility}}"/>
-                <Button Grid.Column="4" Content="⋮" Style="{StaticResource RowMore}" Click="ObjectMore_Click" ToolTip="管理此对话" AutomationProperties.Name="管理此对话"/>
+                <Grid x:Name="ConversationRow">
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="20"/></Grid.ColumnDefinitions>
+                  <TextBlock Text="{Binding Title}" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
+                  <TextBlock Grid.Column="1" Text="{Binding PendingCount}" FontSize="12" Margin="6,0,2,0" VerticalAlignment="Center" Foreground="{DynamicResource DangerBrush}">
+                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding PendingCount}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+                  </TextBlock>
+                  <TextBlock Grid.Column="2" Text="···" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="最近 2 分钟有执行更新" AutomationProperties.Name="最近 2 分钟有执行更新" Visibility="{Binding RecentlyActive, Converter={StaticResource BoolVisibility}}"/>
+                </Grid>
+                <Button x:Name="ProjectMore" Content="…" Click="SidebarMore_Click" Loaded="SidebarMore_Loaded" Visibility="Collapsed" BorderThickness="0" HorizontalAlignment="Stretch" ToolTip="展开更多对话" AutomationProperties.Name="展开更多对话"/>
               </Grid>
+              <DataTemplate.Triggers><DataTrigger Binding="{Binding IsGroupFooter}" Value="True"><Setter TargetName="ConversationRow" Property="Visibility" Value="Collapsed"/><Setter TargetName="ProjectMore" Property="Visibility" Value="Visible"/></DataTrigger></DataTemplate.Triggers>
             </DataTemplate></ListBox.ItemTemplate>
           </ListBox>
           <TextBlock x:Name="SidebarEmpty" Text="暂无对话" Foreground="{DynamicResource SecondaryText}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
@@ -122,7 +121,7 @@
           <Button x:Name="ConnectionButton" Content="连接" Click="Connection_Click" Foreground="{DynamicResource SecondaryText}" FontSize="12"/>
           <Button Content="主题" Click="Theme_Click" FontSize="12"/>
           <Button Content="设置" Click="SettingsMenu_Click" FontSize="12"/>
-          <Button x:Name="StopConversationButton" Content="停止" Click="Terminate_Click" Style="{StaticResource DangerButton}" Visibility="Collapsed" Margin="8,0,0,0" FontSize="12"/>
+          <Button x:Name="InsertButton" Content="插入" Click="Insert_Click" IsEnabled="False" Margin="8,0,0,0" FontSize="12"/>
           <Button Content="···" Click="ConversationMenu_Click" Width="30" Padding="0" Margin="2,0,0,0" ToolTip="当前对话操作" AutomationProperties.Name="当前对话操作"/>
         </StackPanel>
       </Grid>
@@ -170,8 +169,18 @@
       <Border x:Name="DetailsPanel" Grid.Row="6" Height="270" Visibility="Collapsed" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,1,0,0" Padding="18,5,18,12">
         <Border.Effect><DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.08"/></Border.Effect>
         <DockPanel>
-          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4"><Button DockPanel.Dock="Right" Content="关闭" Click="CloseDetails_Click" FontSize="12"/><TextBlock x:Name="DetailsTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/></DockPanel>
+          <DockPanel x:Name="DetailsHeader" DockPanel.Dock="Top" Margin="0,0,0,4"><Button DockPanel.Dock="Right" Content="关闭" Click="CloseDetails_Click" FontSize="12"/><TextBlock x:Name="DetailsTitle" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/></DockPanel>
           <Grid>
+            <DockPanel x:Name="InsertionPanel" Visibility="Collapsed" LastChildFill="True">
+              <Grid DockPanel.Dock="Bottom" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock x:Name="InsertionStatus" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
+                <Button x:Name="WithdrawInsertionButton" Grid.Column="1" Content="撤回" Click="WithdrawInsertion_Click" Visibility="Collapsed" Margin="0,0,8,0"/>
+                <Button x:Name="SendInsertionButton" Grid.Column="2" Content="发送" Click="SendInsertion_Click" MinWidth="56"/>
+                <Button x:Name="StopConversationButton" Grid.Column="3" Content="终止" Click="Terminate_Click" Style="{StaticResource DangerButton}" Margin="8,0,0,0" Visibility="Collapsed" MinWidth="56"/>
+              </Grid>
+              <TextBox x:Name="InsertionTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinLines="2" MaxLines="5" MaxLength="8192" VerticalScrollBarVisibility="Auto" TextChanged="InsertionText_Changed" PreviewKeyDown="Insertion_KeyDown" ToolTip="补充要求；发送后等待下一次工具调用，5 分钟没有新调用则作废。Shift+Enter 换行。" AutomationProperties.Name="插入补充要求"/>
+            </DockPanel>
             <TabControl x:Name="CallDetailsTabs" SelectionChanged="DetailTab_Changed" Visibility="Collapsed">
               <TabItem Header="命令与输出"><DockPanel>
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,3,0,5"><Button Content="复制命令" Click="CopyCommand_Click" FontSize="12"/><Button Content="复制输出" Click="CopyOutput_Click" FontSize="12"/><Button Content="停止调用" Click="StopCall_Click" IsEnabled="{Binding CanStop}" FontSize="12"/><Button Content="审批" Click="Approve_Click" Visibility="{Binding NeedsApproval, Converter={StaticResource BoolVisibility}}" FontSize="12"/><Button Content="拒绝" Click="Reject_Click" Visibility="{Binding NeedsApproval, Converter={StaticResource BoolVisibility}}" FontSize="12"/><Button Content="重试说明" Click="RetryInstruction_Click" IsEnabled="{Binding CanRetry}" FontSize="12"/></StackPanel>

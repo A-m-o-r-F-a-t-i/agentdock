@@ -44,4 +44,10 @@ Build the final Windows package with `.github/workflows/windows-package.yml` in
 `A-m-o-r-F-a-t-i/agentdock`. Source, tests, package construction, installation tests
 and publication are separate delivery states. Report unexecuted checks honestly.
 
-Implementation map: `docs/implementation-1.1.4.md`.
+Implementation map: `docs/implementation-1.1.5.md`.
+
+For the 1.1.5 delivery, run static and isolated automated regression only. Do not
+launch the desktop app or Setup, install/uninstall/upgrade/rollback, or change the
+production Core. Dispatch windows-package.yml with installation_tests=false.
+Keep the 120s activity, 180s request eligibility and 300s next-call insertion
+expiry independent. Manual desktop and installation checks remain not run.

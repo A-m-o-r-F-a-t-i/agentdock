@@ -94,6 +94,7 @@ public partial class App : System.Windows.Application
 
         CreateNotifyIcon();
         StartShowEventListener();
+        StartCompletionNotifications();
 
         var background = e.Args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
         if (!background)
@@ -637,6 +638,7 @@ public partial class App : System.Windows.Application
             _singleInstanceMutex?.ReleaseMutex();
         }
         _singleInstanceMutex?.Dispose();
+        _completionNotifications?.Dispose();
         Runtime?.Dispose();
         DesktopTheme.Dispose();
         base.OnExit(e);

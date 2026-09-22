@@ -281,6 +281,11 @@ func completeTask(task *Task, summary string, now time.Time, emitEvent bool) err
 	if task.Phase != PhaseCloseout {
 		return errors.New("task must reach closeout before completion")
 	}
+	completionID, err := newOpaqueID("done_")
+	if err != nil {
+		return err
+	}
+	task.Completion = &TaskCompletion{ID: completionID}
 	task.Status = StatusCompleted
 	task.Outcome = "success"
 	task.Summary = summary

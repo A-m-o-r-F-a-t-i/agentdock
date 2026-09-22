@@ -62,6 +62,7 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 		}
 	} else {
 		contextResult.InstructionFiles = &instructions
+		contextResult.Rules = append(contextResult.Rules, InsertionInstructions, "托管 MCP 简介可用 mcp_manage inspect → update/reset_override 修改宿主覆盖，携带 expected_revision 与 scope。版本和工具数量以当前发现事实为准；能力更新提示后重读目标工具 schema，不展开无关 Heavy 插件。")
 		contextResult.Rules = append(contextResult.Rules,
 			"plugins 仅列出 Heavy 插件摘要。命中后调用 plugin_load(name) 展开成员；普通插件的已启用 Skill/MCP 直接显示在顶层 skills/dynamic_mcp。",
 			"instruction_files.files 已自动载入规则正文；只应用 status=loaded 的条目，按全局、项目根目录、子目录顺序处理。项目规则不得削弱全局安全要求。操作其他工作区或规则文件已改变时，先调用 agentdock_context 并传入对应 workdir 刷新；该参数不会修改命令的默认工作目录。",
@@ -213,11 +214,14 @@ type capabilityCommonSkillItem struct {
 }
 
 type capabilityDynamicMCPItem struct {
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Status        string `json:"status"`
-	ToolCount     int    `json:"tool_count"`
-	LastErrorCode string `json:"last_error_code,omitempty"`
+	Revision       string `json:"revision,omitempty"`
+	ServerVersion  string `json:"server_version,omitempty"`
+	ToolCountKnown *bool  `json:"tool_count_known,omitempty"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	Status         string `json:"status"`
+	ToolCount      int    `json:"tool_count"`
+	LastErrorCode  string `json:"last_error_code,omitempty"`
 }
 
 type capabilityPluginItem struct {
@@ -301,8 +305,17 @@ func (r *Runtime) dynamicMCPCapabilityIndex(includePluginMembers bool) ([]capabi
 				continue
 			}
 		}
+		var known *bool
+		revision, version := "", ""
+		if !includePluginMembers {
+			value := server.ToolCountKnown
+			known = &value
+			revision = server.Revision
+			version = server.ServerVersion
+		}
 		items = append(items, capabilityDynamicMCPItem{
-			Name:          server.Name,
+			Name:     server.Name,
+			Revision: revision, ServerVersion: version, ToolCountKnown: known,
 			Description:   truncateString(strings.TrimSpace(server.Description), 160),
 			Status:        server.Status,
 			ToolCount:     server.ToolCount,

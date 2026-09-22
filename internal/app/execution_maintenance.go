@@ -65,6 +65,9 @@ func (r *Runtime) startExecutionMaintenance() {
 			ctx, cancel := context.WithTimeout(r.commandCtx, 30*time.Second)
 			_, _ = r.purgeExpiredManagement(ctx, time.Now().UTC())
 			r.expirePendingApprovals(ctx)
+			if r.insertions != nil {
+				_ = r.insertions.Sweep(ctx)
+			}
 			cancel()
 			timer.Reset(time.Minute)
 		}

@@ -21,6 +21,11 @@ on:
         required: false
         default: ''
         type: string
+      installation_tests:
+        description: 'Run isolated installer/runtime tests; disable for compile-only delivery'
+        required: true
+        default: true
+        type: boolean
       prerelease:
         description: 'Publish as a prerelease; version-tag pushes default to prerelease'
         required: true
@@ -147,10 +152,17 @@ jobs:
           go vet ./...
           if ($LASTEXITCODE -ne 0) { throw 'Go vet failed.' }
 
+      - name: Desktop pure-policy regression
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project desktop/windows/control-panel-tests/AgentDock.ControlPanel.Tests.csproj --configuration Release
+          if ($LASTEXITCODE -ne 0) { throw 'Desktop pure-policy tests failed.' }
+
       - name: Windows installer contracts
         run: |
           $ErrorActionPreference = 'Stop'
-          & .\scripts\test\test-install-windows.ps1
+          $staticOnly = '${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.installation_tests }}' -ne 'true'
+          & .\scripts\test\test-install-windows.ps1 -StaticOnly:$staticOnly
 
       - name: Build Windows x64 ZIP and offline Setup
         run: |
@@ -184,6 +196,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Build modified tracked source.' }
 
       - name: Verify offline Setup installation and uninstall
+        if: github.event_name != 'workflow_dispatch' || inputs.installation_tests == true
         run: |
           $ErrorActionPreference = 'Stop'
           & .\scripts\test\test-windows-setup-e2e.ps1 `
@@ -191,6 +204,12 @@ jobs:
             -LegacyCorePath .\dist\windows-package\payload-amd64\agentdock.exe `
             -LegacyTrayPath .\dist\windows-package\payload-amd64\agentdock-tray.exe `
             -AllowLegacyTaskMutation
+
+      - name: Record verification scope
+        run: |
+          $installed = '${{ github.event_name }}' -ne 'workflow_dispatch' -or '${{ inputs.installation_tests }}' -eq 'true'
+          $scope = @{ automated_regression = 'passed'; metadata_checksums = 'passed'; installation_tests = $(if ($installed) { 'passed' } else { 'not_run_user_requested' }); manual_desktop_tests = 'not_run'; commit = '${{ steps.metadata.outputs.commit }}' }
+          $scope | ConvertTo-Json | Set-Content -Encoding utf8 .\dist\windows-package\verification-scope.json
 
       - name: Upload verified Windows package
         uses: actions/upload-artifact@v7
@@ -200,6 +219,7 @@ jobs:
             dist/windows-package/release/*
             dist/windows-package/build-report.json
             dist/windows-package/verification.json
+            dist/windows-package/verification-scope.json
           if-no-files-found: error
           retention-days: 30
 
@@ -213,6 +233,8 @@ jobs:
           - Channel: `${{ steps.metadata.outputs.channel }}`
           - Artifact: `${{ steps.metadata.outputs.artifact_name }}`
           - Publish requested: `${{ steps.metadata.outputs.publish }}`
+          - Installation test input: `${{ inputs.installation_tests }}`
+          - Manual desktop tests: not run
           "@ | Add-Content $env:GITHUB_STEP_SUMMARY
 
   publish:

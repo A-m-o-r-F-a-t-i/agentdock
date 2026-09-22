@@ -163,7 +163,7 @@ func (s *Service) recordTaskActivity(parent context.Context, request ManageReque
 		return
 	}
 	kind := map[string]string{
-		"create": "task.created", "checkpoint": "step.summary", "block": "task.blocked", "resume": "task.resumed", "final_review": "review.completed", "complete": "task.completed", "cancel": "task.completed", "archive": "task.archived", "unarchive": "task.unarchived",
+		"create": "task.created", "checkpoint": "step.summary", "block": "task.blocked", "resume": "task.resumed", "final_review": "review.completed", "complete": "task.completed", "cancel": "task.cancelled", "archive": "task.archived", "unarchive": "task.unarchived",
 		"thread_create": "thread.created", "thread_fork": "thread.created", "thread_switch": "thread.switched", "thread_checkpoint": "step.summary", "thread_block": "thread.blocked", "thread_resume": "thread.resumed", "thread_close": "thread.closed",
 	}[request.Action]
 	if kind == "" {

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/buildinfo"
@@ -166,4 +167,15 @@ func (r *Runtime) runtimeMCPManage(ctx context.Context, args map[string]any) (Re
 	result["ok"] = true
 	result["source"] = runtimeAPISource
 	return result, nil
+}
+
+func (r *Runtime) RuntimeCompletionNotifications(ctx context.Context, limit int) (Result, error) {
+	if !activity.IsLocalManagement(ctx) {
+		return nil, activity.ErrConversationOwner
+	}
+	items, err := r.tasks.ClaimCompletionNotifications(ctx, limit, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	return Result{"notifications": items}, nil
 }

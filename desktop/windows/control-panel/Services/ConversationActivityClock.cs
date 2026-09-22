@@ -7,7 +7,10 @@ namespace AgentDock.ControlPanel;
 // history and never treats reconnect, render or task state as a tool request.
 internal sealed class ConversationActivityClock : IDisposable
 {
-    private static readonly TimeSpan Window = TimeSpan.FromSeconds(30);
+    internal static readonly TimeSpan ActivityWindow = ConversationActivityPolicy.ActivityWindow;
+    internal static readonly TimeSpan InsertionWindow = ConversationActivityPolicy.InsertionWindow;
+    internal event EventHandler? Changed;
+    internal DateTimeOffset? ServerNow => _serverAnchor is { } anchor ? anchor + Stopwatch.GetElapsedTime(_anchorTimestamp) : null;
     private readonly Func<IEnumerable<ExecutionObject>> _items;
     private readonly DispatcherTimer _expiry = new(DispatcherPriority.Background);
     private DateTimeOffset? _serverAnchor;
@@ -29,7 +32,10 @@ internal sealed class ConversationActivityClock : IDisposable
     }
 
     internal static bool IsRecent(DateTimeOffset? last, DateTimeOffset now, bool terminated) =>
-        !terminated && last is not null && now >= last && now - last < Window;
+        ConversationActivityPolicy.IsRecent(last, now, terminated);
+
+    internal static bool CanInsert(DateTimeOffset? last, DateTimeOffset now, bool terminated) =>
+        ConversationActivityPolicy.CanInsert(last, now, terminated);
 
     internal void Refresh()
     {
@@ -40,11 +46,20 @@ internal sealed class ConversationActivityClock : IDisposable
         TimeSpan? next = null;
         foreach (var item in _items())
         {
-            item.RecentlyActive = !item.IsUnknown && IsRecent(item.LastToolCallAt, now, item.Terminated);
-            if (!item.RecentlyActive || item.LastToolCallAt is null) continue;
-            var remaining = item.LastToolCallAt.Value + Window - now;
-            if (next is null || remaining < next) next = remaining;
+            item.RecentlyActive = !item.IsUnknown && !item.IsOrphan && !item.IsGroupFooter && IsRecent(item.LastActivityAt, now, item.Terminated);
+            item.InsertionEligible = !item.IsUnknown && !item.IsOrphan && !item.IsGroupFooter && !item.Trashed && CanInsert(item.LastToolCallAt, now, item.Terminated);
+            if (item.RecentlyActive && item.LastActivityAt is { } activity)
+            {
+                var remaining = activity + ActivityWindow - now;
+                if (next is null || remaining < next) next = remaining;
+            }
+            if (item.InsertionEligible && item.LastToolCallAt is { } request)
+            {
+                var remaining = request + InsertionWindow - now;
+                if (next is null || remaining < next) next = remaining;
+            }
         }
+        Changed?.Invoke(this, EventArgs.Empty);
         if (next is null) return;
         _expiry.Interval = next.Value < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : next.Value;
         _expiry.Start();

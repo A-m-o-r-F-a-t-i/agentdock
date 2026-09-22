@@ -29,6 +29,16 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 		}
 		summary.Plugin = s.pluginName(summary.Name)
 		return Result{"action": action, "server": summary, "config": cfg}, nil
+	case "update", "reset_override":
+		if err := s.ensureAvailable(request.Name); err != nil {
+			return nil, err
+		}
+		server, err := s.mcpClients.Update(ctx, request.Name, request.ExpectedRevision, request.Scope, request.Patch, action == "reset_override")
+		if err != nil {
+			return nil, dynamicMCPToolError(err)
+		}
+		server.Plugin = s.pluginName(server.Name)
+		return Result{"action": action, "server": server}, nil
 	case "add":
 		cfg := mcpclient.ServerConfig{
 			Name:        request.Name,
@@ -80,7 +90,7 @@ func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, er
 			"INVALID_ACTION",
 			"unsupported mcp_manage action",
 			"validation",
-			map[string]any{"action": action, "allowed": []string{"list", "inspect", "add", "remove", "enable", "disable", "env_set", "env_unset", "env_list", "refresh"}},
+			map[string]any{"action": action, "allowed": []string{"list", "inspect", "add", "remove", "enable", "disable", "env_set", "env_unset", "env_list", "refresh", "update", "reset_override"}},
 		)
 	}
 }
@@ -117,7 +127,18 @@ func (s *Service) Search(ctx context.Context, request SearchRequest) (Result, er
 	if err != nil {
 		return nil, dynamicMCPToolError(err)
 	}
-	return Result{"query": query, "server": server, "tools": tools, "count": len(tools)}, nil
+	names := []string{}
+	seen := map[string]bool{}
+	for _, tool := range tools {
+		if !seen[tool.Server] {
+			names = append(names, tool.Server)
+			seen[tool.Server] = true
+		}
+	}
+	if server != "" && !seen[server] {
+		names = append(names, server)
+	}
+	return Result{"query": query, "server": server, "tools": tools, "count": len(tools), "catalogs": s.mcpClients.Snapshots(names)}, nil
 }
 
 func (s *Service) Inspect(ctx context.Context, request InspectRequest) (Result, error) {
@@ -140,6 +161,10 @@ func (s *Service) Inspect(ctx context.Context, request InspectRequest) (Result, 
 		"title":        tool.Title,
 		"description":  tool.Description,
 		"input_schema": tool.InputSchema,
+	}
+	if summaries := s.mcpClients.Snapshots([]string{server}); len(summaries) == 1 {
+		result["catalog_revision"] = summaries[0].Revision
+		result["server_version"] = summaries[0].ServerVersion
 	}
 	if tool.OutputSchema != nil {
 		result["output_schema"] = tool.OutputSchema

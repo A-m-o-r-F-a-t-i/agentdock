@@ -22,6 +22,7 @@ type FileChange struct {
 	StatsKnown bool   `json:"stats_known"`
 }
 type ExecutionCall struct {
+	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
 	CallMeasurements
 	FileEdit *FileEditDetails `json:"file_edit,omitempty"`
 	CallManagement
@@ -97,6 +98,7 @@ type CallPage struct {
 	Warnings      []string        `json:"warnings,omitempty"`
 }
 type CallStats struct {
+	LastActivityAt  *time.Time `json:"last_activity_at,omitempty"`
 	LastToolCallAt  *time.Time `json:"last_tool_call_at,omitempty"`
 	Total           int        `json:"total"`
 	Running         int        `json:"running"`
@@ -263,6 +265,13 @@ func (p *callProjection) apply(event Event) {
 	}
 	call.UpdatedAt, call.UpdatedSeq = event.CreatedAt, event.Seq
 	applyMeasurements(call, event)
+	// Only genuine external-root execution facts advance activity. Projection reads,
+	// metadata edits and recovery events must not restart an activity window.
+	if call.RequestReceivedAt != nil && call.ParentCallID == "" && call.Visibility != "diagnostic" && genuineActivityEvent(event.Kind) {
+		if call.LastActivityAt == nil || event.CreatedAt.After(*call.LastActivityAt) {
+			call.LastActivityAt = copyValue(&event.CreatedAt)
+		}
+	}
 	call.EventCount++
 	if call.OwnerPID == 0 {
 		call.OwnerPID = event.OwnerPID
@@ -439,6 +448,7 @@ func (s *Store) projectAppendedLocked(event Event) {
 func cloneCall(call *ExecutionCall, output bool) ExecutionCall {
 	copied := *call
 	copied.CallMeasurements = call.CallMeasurements.clone()
+	copied.LastActivityAt = copyValue(call.LastActivityAt)
 	copied.FileEdit = call.FileEdit.clone(output)
 	copied.FileChanges = append([]FileChange(nil), call.FileChanges...)
 	if !output {
@@ -583,6 +593,9 @@ func (accumulator *callStatsAccumulator) add(call *ExecutionCall) {
 	stats.Total++
 	if call.RequestReceivedAt != nil && (stats.LastToolCallAt == nil || call.RequestReceivedAt.After(*stats.LastToolCallAt)) {
 		stats.LastToolCallAt = copyValue(call.RequestReceivedAt)
+	}
+	if call.LastActivityAt != nil && (stats.LastActivityAt == nil || call.LastActivityAt.After(*stats.LastActivityAt)) {
+		stats.LastActivityAt = copyValue(call.LastActivityAt)
 	}
 	if call.UpdatedAt.After(stats.LatestAt) {
 		stats.LatestAt = call.UpdatedAt

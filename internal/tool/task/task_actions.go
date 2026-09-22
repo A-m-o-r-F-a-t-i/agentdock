@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
 
@@ -276,7 +277,8 @@ func (s *Service) manageLegacy(ctx context.Context, request ManageRequest) (Resu
 			evolutionWarning = strings.Join(warnings, "; ")
 		}
 	case "complete":
-		task, err = s.tasks.Complete(input.TaskID)
+		binding := activity.FromContext(ctx)
+		task, err = s.tasks.CompleteWithSource(input.TaskID, binding.ConversationID, binding.ThreadID)
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported task_manage action", "validation", map[string]any{"action": input.Action, "allowed": taskActions})
 	}

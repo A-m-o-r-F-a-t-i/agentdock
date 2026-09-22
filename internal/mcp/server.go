@@ -99,8 +99,14 @@ func (s *Server) Invoke(ctx context.Context, name string, arguments map[string]a
 	if s == nil || s.runtime == nil {
 		return nil, errors.New("AgentDock runtime is not initialized")
 	}
+	ctx, response := app.BeginToolResponse(ctx)
+	defer s.runtime.FinishToolResponse(ctx, response, false)
 	result, err := s.runtime.Call(ctx, name, arguments)
-	return toolEnvelope(name, result, err), nil
+	envelope := toolEnvelope(name, result, err)
+	if _, encodeErr := json.Marshal(envelope); encodeErr != nil {
+		return nil, encodeErr
+	}
+	return appendResponseBlocks(envelope, s.runtime.FinishToolResponse(ctx, response, true)), nil
 }
 
 func (s *Server) HTTPHandler() http.Handler {
@@ -163,6 +169,8 @@ func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.Call
 			return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInvalidParams, Message: "tool arguments must be a JSON object"}
 		}
 	}
+	ctx, pendingResponse := app.BeginToolResponse(ctx)
+	defer s.runtime.FinishToolResponse(ctx, pendingResponse, false)
 	slog.Info("tool started", "tool", name)
 	result, err := s.runtime.Call(ctx, name, arguments)
 	finishedAttrs := []any{"tool", name, "duration_ms", time.Since(started).Milliseconds(), "ok", err == nil}
@@ -191,6 +199,9 @@ func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.Call
 	}
 	if !s.uiEnabled() {
 		response.Meta = withoutOwnedUIMount(response.Meta)
+	}
+	for _, text := range s.runtime.FinishToolResponse(ctx, pendingResponse, true) {
+		response.Content = append(response.Content, &mcpsdk.TextContent{Text: text})
 	}
 	return &response, nil
 }
@@ -426,4 +437,30 @@ func pretty(value any) string {
 		return fmt.Sprint(value)
 	}
 	return string(data)
+}
+
+// Supplements are independent trailing content blocks; the tool's error flag,
+// structured content, images, resources and file rewriting metadata are unchanged.
+func appendResponseBlocks(envelope map[string]any, blocks []string) map[string]any {
+	if len(blocks) == 0 {
+		return envelope
+	}
+	content := []any{}
+	switch existing := envelope["content"].(type) {
+	case []any:
+		content = append(content, existing...)
+	case []map[string]any:
+		for _, item := range existing {
+			content = append(content, item)
+		}
+	default:
+		if existing != nil {
+			content = append(content, existing)
+		}
+	}
+	for _, text := range blocks {
+		content = append(content, map[string]any{"type": "text", "text": text})
+	}
+	envelope["content"] = content
+	return envelope
 }
