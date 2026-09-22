@@ -120,7 +120,7 @@ foreach ($required in @(
     '--user-sid',
     '--user-name',
     '-AdminLauncherPath $sourceTrayBinary',
-    '-LauncherPath $destinationBinary',
+    '-LauncherPath $destinationTrayBinary',
     '$effectivePrivilegeMode -eq ''elevated'' -and -not $taskState.Exists',
     '$installWarningCode = ''elevated-mode-fallback''',
     '$installWarningCode = "$installWarningCode,runtime-launch-deferred"',
@@ -522,7 +522,7 @@ foreach ($required in @(
     'EnsureSameWindowsUser(request.UserSid)',
     'RegisterTaskDefinition(',
     'SetSecurityDescriptor(',
-    'service launch-core --runtime-root',
+    '--run-core-task --runtime-root',
     'prepare-elevated',
     'prepare-standard',
     'restore',
@@ -552,7 +552,7 @@ foreach ($required in @('CreateJobObject', 'JobObjectLimitKillOnJobClose', 'SetI
         throw "$jobSourcePath is missing kill-on-close Job Object behavior: $required"
     }
 }
-foreach ($forbidden in @('--installer-admin-action', '--script', 'powershell.exe')) {
+foreach ($forbidden in @('--installer-admin-action', '--script', 'powershell.exe', 'service launch-core --runtime-root')) {
     if ($taskAdminSource.Contains($forbidden) -or $appSource.Contains($forbidden)) {
         throw "AgentDock elevated helper must not expose arbitrary PowerShell execution: $forbidden"
     }

@@ -23,8 +23,10 @@ internal static partial class Program
         {
             var source = XDocument.Load(styles).Root!;
             XNamespace presentation = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
-            var dictionary = new XElement(presentation + "ResourceDictionary", source.Attributes().Where(attribute => attribute.IsNamespaceDeclaration), source.Element(presentation + "Application.Resources")!.Elements());
-            app.Resources = (ResourceDictionary)XamlReader.Parse(dictionary.ToString());
+            var resources = source.Element(presentation + "Application.Resources")!;
+            var dictionary = resources.Element(presentation + "ResourceDictionary") ?? new XElement(presentation + "ResourceDictionary", source.Attributes().Where(attribute => attribute.IsNamespaceDeclaration), resources.Elements());
+            var parser = new ParserContext { BaseUri = new Uri("pack://application:,,,/agentdock-tray;component/") };
+            app.Resources = (ResourceDictionary)XamlReader.Parse(dictionary.ToString(), parser);
         }
         TestAccessModes(runtimeRoot: root);
         var trace = new BindingErrors();

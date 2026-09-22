@@ -69,7 +69,18 @@ func tailscaleStatusError(status TunnelStatus, err error) TunnelStatus {
 	status.Ready = false
 	status.DiagnosticCode = tailscaleDiagnosticCode(err)
 	status.Diagnostic = err.Error()
+	status.Phase = "Failed"
+	if status.DiagnosticCode == "not_configured" || status.DiagnosticCode == "disabled" {
+		status.Phase = "Idle"
+	}
+	if status.DiagnosticCode == "verification_pending" {
+		status.Phase = "VerifyingPublic"
+	}
+	if status.DiagnosticCode == "public_unreachable" {
+		status.Phase = "Degraded"
+	}
 	if status.DiagnosticCode == "funnel_permission_required" {
+		status.Phase = "NeedsApproval"
 		status.AuthorizationURL = tailscaleAuthorizationURL
 	}
 	return status
@@ -130,9 +141,6 @@ func inspectTailscaleRuntime(ctx context.Context, runtime tunnelRuntime, binary 
 	if !state.Enabled {
 		return tailscaleStatusError(status, tailscaleProblem("disabled", "AgentDock Funnel 已停用"))
 	}
-	if state.Pending || state.VerifiedAt == nil {
-		return tailscaleStatusError(status, tailscaleProblem("verification_pending", "AgentDock Funnel 尚未完成验证，请重新应用访问模式"))
-	}
 	if !status.Running {
 		return tailscaleStatusError(status, tailscaleProblem("mapping_missing", "AgentDock Funnel 根映射未运行或本机目标已变化"))
 	}
@@ -147,7 +155,13 @@ func inspectTailscaleRuntime(ctx context.Context, runtime tunnelRuntime, binary 
 	if !testHealth(ctx, runtime.localOrigin()+"/healthz") {
 		return tailscaleStatusError(status, tailscaleProblem("core_unhealthy", "Funnel 已配置，但 AgentDock 本机健康检查未通过"))
 	}
+	status.LocalReady = true
+	status.VerifiedAt = state.VerifiedAt
+	if state.Pending || state.VerifiedAt == nil {
+		return tailscaleStatusError(status, tailscaleProblem("verification_pending", "本地配置已完成，公网验证中。无需重新应用或重建映射。"))
+	}
 	status.Ready = true
+	status.Phase = "Ready"
 	if node.KeyExpiry != nil && !node.KeyExpiry.IsZero() && time.Until(*node.KeyExpiry) < 14*24*time.Hour {
 		status.DiagnosticCode, status.Diagnostic = "key_expiring", "Tailscale 设备密钥将在 14 天内到期，请在官方客户端安排重新认证"
 	}

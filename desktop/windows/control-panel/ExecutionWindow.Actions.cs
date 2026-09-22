@@ -32,6 +32,12 @@ public partial class ExecutionWindow
         item.Click += async (_, _) => await action(); menu.Items.Add(item);
     }
     private void ActionMenu(ContextMenu menu, string title, Func<Task> action, bool enabled = true) => AddMenu(menu, title, () => GuardAsync(action), enabled);
+    private void ChoiceMenu(ContextMenu menu, string title, bool selected, Func<Task> action)
+    {
+        var item = new MenuItem { Header = title, IsCheckable = true, IsChecked = selected };
+        item.Click += async (_, _) => await GuardAsync(action);
+        menu.Items.Add(item);
+    }
     private static void Divider(ContextMenu menu) => menu.Items.Add(new Separator());
     private void OpenMenu(ContextMenu menu) { menu.IsOpen = true; }
     private static FrameworkElement Anchor(object sender, FrameworkElement fallback) => sender as FrameworkElement ?? fallback;
@@ -40,9 +46,9 @@ public partial class ExecutionWindow
     private void SidebarMenu_Click(object sender, RoutedEventArgs e)
     {
         var menu = Menu(Anchor(sender, ObjectsList));
-        ActionMenu(menu, "当前对话", () => SetConversationViewAsync("active"));
-        ActionMenu(menu, "已归档", () => SetConversationViewAsync("archived"));
-        ActionMenu(menu, "回收站", () => SetConversationViewAsync("trash")); Divider(menu);
+        ChoiceMenu(menu, "当前对话", _conversationView == "active", () => SetConversationViewAsync("active"));
+        ChoiceMenu(menu, "已归档", _conversationView == "archived", () => SetConversationViewAsync("archived"));
+        ChoiceMenu(menu, "回收站", _conversationView == "trash", () => SetConversationViewAsync("trash"));
         ActionMenu(menu, "选择当前筛选的全部对话", SelectAllObjectsAsync);
         ActionMenu(menu, "管理所选对话", () => { ShowObjectMenu(ObjectsList, SelectedObjectIds()); return Task.CompletedTask; }, ObjectsList.SelectedItems.Count > 0);
         ActionMenu(menu, "历史任务与未归属记录", () => OpenDataManagerAsync(false));
@@ -201,7 +207,7 @@ public partial class ExecutionWindow
     {
         var menu = Menu(Anchor(sender, ConversationHeader));
         foreach (var choice in new[] { ("system", "跟随系统"), ("light", "浅色"), ("dark", "深色") })
-            ActionMenu(menu, choice.Item2, () => { ApplyTheme(choice.Item1); SavePreferences(); return Task.CompletedTask; });
+            ChoiceMenu(menu, choice.Item2, _preferences.Theme == choice.Item1, () => { ApplyTheme(choice.Item1); SavePreferences(); return Task.CompletedTask; });
         OpenMenu(menu);
     }
     private void SettingsMenu_Click(object sender, RoutedEventArgs e)
@@ -232,7 +238,7 @@ public partial class ExecutionWindow
         ActionMenu(menu, "隔离所选", () => BatchAsync("call", fixedIds, "isolate"), fixedIds.Length > 0);
         ActionMenu(menu, "移入回收站", () => ConfirmBatchAsync("call", fixedIds, "trash"), fixedIds.Length > 0); Divider(menu);
         foreach (var view in new[] { ("active", "当前记录"), ("archived", "已归档记录"), ("isolated", "已隔离记录"), ("trash", "回收站记录") })
-            ActionMenu(menu, view.Item2, async () => { _callView = view.Item1; await LoadCallsAsync(false); });
+            ChoiceMenu(menu, view.Item2, _callView == view.Item1, async () => { _callView = view.Item1; await LoadCallsAsync(false); });
         if (_callView == "trash") { ActionMenu(menu, "恢复所选", () => BatchAsync("call", fixedIds, "restore"), fixedIds.Length > 0); ActionMenu(menu, "永久删除所选", () => ConfirmBatchAsync("call", fixedIds, "delete"), fixedIds.Length > 0); }
         if (_callView == "isolated") ActionMenu(menu, "取消隔离所选", () => BatchAsync("call", fixedIds, "unisolate"), fixedIds.Length > 0);
         if (_callView == "archived") ActionMenu(menu, "取消归档所选", () => BatchAsync("call", fixedIds, "unarchive"), fixedIds.Length > 0);

@@ -120,6 +120,9 @@ func normalizeTunnelConfigureRequest(request TunnelConfigureRequest) (TunnelConf
 	if request.TailscaleBinary != "" && request.Provider != PublicAccessProviderTailscale {
 		return request, errors.New("--tailscale-binary requires provider tailscale")
 	}
+	if request.WaitForPublic && request.Provider != PublicAccessProviderTailscale {
+		return request, errors.New("--wait-for-public requires provider tailscale")
+	}
 	return request, nil
 }
 

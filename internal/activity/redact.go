@@ -46,6 +46,24 @@ func (r Redactor) Text(value string, limit int) string {
 }
 
 func (r Redactor) Event(e Event) Event {
+	e.CallMeasurements = e.CallMeasurements.clone()
+	if e.FileEdit != nil {
+		detail := e.FileEdit.clone(true)
+		detail.Action = r.Text(detail.Action, 32)
+		detail.Path, detail.NewPath = r.Text(detail.Path, 512), r.Text(detail.NewPath, 512)
+		if len(detail.AffectedFiles) > MaxRecordedAffectedFiles {
+			detail.AffectedFiles = detail.AffectedFiles[:MaxRecordedAffectedFiles]
+			detail.FilesTruncated = true
+		}
+		for index := range detail.AffectedFiles {
+			file := &detail.AffectedFiles[index]
+			file.Path, file.MoveTo = r.Text(file.Path, 512), r.Text(file.MoveTo, 512)
+			file.Operation = r.Text(file.Operation, 32)
+		}
+		detail.DiffTruncated = detail.DiffTruncated || len(detail.DiffPreview) > 2048
+		detail.DiffPreview = r.Text(detail.DiffPreview, 2048)
+		e.FileEdit = detail
+	}
 	e.Label = r.Text(e.Label, 512)
 	e.Title = r.Text(e.Title, 512)
 	e.ParameterSummary = r.Text(e.ParameterSummary, 4096)

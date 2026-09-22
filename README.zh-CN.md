@@ -6,7 +6,7 @@
 
 # AgentDock MCP
 
-本分支 Windows 发行版：**[AgentDock 1.1.0](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/tag/v1.1.0)** · [发布说明与验证范围](./docs/releases/v1.1.0.md) · [Tailscale Funnel 配置](./docs/tailscale-funnel.md)。本分支仅发布 Windows 安装包，其他平台的上游发行版保持独立。
+本分支当前 Windows 候选版：**AgentDock 1.1.4** · [1.1.4 发布说明与验证](./docs/releases/v1.1.4.md) · [与上游官方版的差异及迁移](./docs/official-version-differences-and-migration.md) · [Tailscale Funnel 配置](./docs/tailscale-funnel.md)。本分支仅发布 Windows 安装包，其他平台的上游发行版保持独立。
 
 **让 AI 的双手，真正触达你的每一台设备。**
 
@@ -69,6 +69,10 @@ AgentDock 不提供聊天界面，也不负责模型推理。它专注于解决�
 - 保存长时间任务的执行状态，并在中断后继续
 - 用同一套工具模型连接 macOS、Linux、Windows 与容器环境
 - 等等
+
+## 本分支与上游官方版
+
+README 只保留简要入口。插件机制、`AGENTS.md` 自动注入、执行中心、Windows 桌面扩展和状态边界见[详细差异与迁移指南](./docs/official-version-differences-and-migration.md)。在上游官方版与本分支之间切换时，需要先卸载原发行线并使用干净状态；也可以让 AI 在备份副本中转换已复核的文本配置，但凭据、审批、执行日志和安装事务不能直接复制。
 
 
 ## 快速开始

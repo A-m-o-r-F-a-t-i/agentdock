@@ -1685,7 +1685,7 @@ try {
             -Action $taskAction `
             -BackupDirectory $taskBackupDirectory `
             -AdminLauncherPath $sourceTrayBinary `
-            -LauncherPath $destinationBinary `
+            -LauncherPath $destinationTrayBinary `
             -RuntimeRoot $runtimeDir `
             -TaskUser $taskUser
         if (-not $taskActionResult.Started) {

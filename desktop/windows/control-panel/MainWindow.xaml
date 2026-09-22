@@ -5,7 +5,7 @@
         Title="{local:Loc MainWindowTitle}"
         Width="860" Height="780" MinWidth="760" MinHeight="680"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource SurfaceBrush}">
+        Background="{DynamicResource AppBackground}" Foreground="{DynamicResource PrimaryText}">
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
@@ -13,7 +13,7 @@
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <Border Grid.Row="0" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="20,16">
+    <Border Grid.Row="0" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,0,0,1" Padding="20,16">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
@@ -21,10 +21,10 @@
         </Grid.ColumnDefinitions>
         <StackPanel>
           <TextBlock Text="AgentDock" FontSize="24" FontWeight="SemiBold" />
-          <TextBlock Text="{local:Loc WindowsControlPanel}" Foreground="#667085" Margin="0,3,0,0" />
+          <TextBlock Text="{local:Loc WindowsControlPanel}" Foreground="{DynamicResource SecondaryText}" Margin="0,3,0,0" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <Ellipse x:Name="StatusDot" Width="10" Height="10" Fill="#98A2B3" Margin="0,0,8,0" />
+          <Ellipse x:Name="StatusDot" Width="10" Height="10" Fill="{DynamicResource SecondaryText}" Margin="0,0,8,0" />
           <TextBlock x:Name="HeaderStatusText" Text="{local:Loc LoadingStatus}" VerticalAlignment="Center" />
         </StackPanel>
       </Grid>
@@ -120,18 +120,18 @@
             <GroupBox Header="{local:Loc AccessMode}">
               <StackPanel>
                 <RadioButton x:Name="LocalModeRadio" GroupName="TunnelMode" Content="{local:Loc LocalOnly}" Tag="none" Margin="0,4,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="{local:Loc LocalOnlyDescription}" Foreground="#667085" Margin="24,-8,0,14" TextWrapping="Wrap" />
+                <TextBlock Text="{local:Loc LocalOnlyDescription}" Foreground="{DynamicResource SecondaryText}" Margin="24,-8,0,14" TextWrapping="Wrap" />
                 <RadioButton x:Name="QuickModeRadio" GroupName="TunnelMode" Content="{local:Loc TemporaryAddress}" Tag="quick" Margin="0,0,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="{local:Loc TemporaryAddressDescription}" Foreground="#667085" Margin="24,-8,0,14" TextWrapping="Wrap" />
+                <TextBlock Text="{local:Loc TemporaryAddressDescription}" Foreground="{DynamicResource SecondaryText}" Margin="24,-8,0,14" TextWrapping="Wrap" />
                 <RadioButton x:Name="NamedModeRadio" GroupName="TunnelMode" Content="{local:Loc CustomDomain}" Tag="named" Margin="0,0,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="{local:Loc CustomDomainDescription}" Foreground="#667085" Margin="24,-8,0,4" TextWrapping="Wrap" />
+                <TextBlock Text="{local:Loc CustomDomainDescription}" Foreground="{DynamicResource SecondaryText}" Margin="24,-8,0,4" TextWrapping="Wrap" />
                 <RadioButton x:Name="TailscaleModeRadio" GroupName="TunnelMode" Content="Tailscale Funnel" Tag="funnel" Margin="0,12,0,10" Checked="TunnelModeRadio_Checked" />
-                <TextBlock Text="{local:Loc TailscaleDescription}" Foreground="#667085" Margin="24,-8,0,4" TextWrapping="Wrap" />
+                <TextBlock Text="{local:Loc TailscaleDescription}" Foreground="{DynamicResource SecondaryText}" Margin="24,-8,0,4" TextWrapping="Wrap" />
               </StackPanel>
             </GroupBox>
 
             <TextBlock x:Name="EffectiveAccessText" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,6" />
-            <TextBlock x:Name="AccessDraftText" TextWrapping="Wrap" Foreground="#475467" Margin="0,0,0,12" />
+            <TextBlock x:Name="AccessDraftText" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" Margin="0,0,0,12" />
             <GroupBox x:Name="LocalAccessGroup" Header="{local:Loc LocalOnly}" Visibility="Collapsed">
               <TextBox x:Name="LocalAccessAddress" IsReadOnly="True" />
             </GroupBox>
@@ -197,7 +197,7 @@
               <Button x:Name="ApplyAccessButton" Content="{local:Loc ApplyAccessMode}" Click="ApplyTunnelModeButton_Click" />
               <Button x:Name="RegenerateQuickButton" Content="{local:Loc RegenerateTemporaryAddress}" Click="RegenerateQuickButton_Click" />
             </StackPanel>
-            <TextBlock x:Name="TunnelActionStatusText" Foreground="#475467" TextWrapping="Wrap" Margin="0,6,0,0" />
+            <TextBlock x:Name="TunnelActionStatusText" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,6,0,0" />
           </StackPanel>
         </ScrollViewer>
       </TabItem>
@@ -206,14 +206,14 @@
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="18">
             <TextBlock Text="{local:Loc CapabilitiesDescription}"
-                       Foreground="#667085"
+                       Foreground="{DynamicResource SecondaryText}"
                        TextWrapping="Wrap"
                        Margin="0,0,0,14" />
             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
               <Button Content="{local:Loc RefreshCapabilities}" Click="RefreshCapabilitiesButton_Click" />
             </StackPanel>
             <TextBlock x:Name="CapabilityStatusText"
-                       Foreground="#475467"
+                       Foreground="{DynamicResource SecondaryText}"
                        TextWrapping="Wrap"
                        MinHeight="22"
                        Margin="0,0,0,8" />
@@ -236,7 +236,7 @@
       <TabItem Header="{local:Loc RuntimeConfiguration}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel x:Name="RuntimeOptionsPanel" Margin="18" Loaded="RuntimeOptionsPanel_Loaded">
-            <TextBlock Text="{local:Loc RuntimeConfigurationHelp}" TextWrapping="Wrap" Foreground="#667085" Margin="0,0,0,14" />
+            <TextBlock Text="{local:Loc RuntimeConfigurationHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" Margin="0,0,0,14" />
             <GroupBox Header="{local:Loc WorkspaceAndInstructions}">
               <StackPanel>
                 <TextBlock Text="{local:Loc DefaultGlobalWorkspace}" Margin="0,0,0,5" />
@@ -250,7 +250,7 @@
                   <Button DockPanel.Dock="Right" Content="{local:Loc Browse}" Tag="instructions" Margin="8,0,0,0" Click="RuntimeFileBrowse_Click" />
                   <TextBox x:Name="ExtraInstructionsTextBox" VerticalContentAlignment="Center" />
                 </DockPanel>
-                <TextBlock Text="{local:Loc ExtraInstructionsHelp}" TextWrapping="Wrap" Foreground="#667085" />
+                <TextBlock Text="{local:Loc ExtraInstructionsHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" />
               </StackPanel>
             </GroupBox>
             <GroupBox Header="{local:Loc ProcessAndNetwork}">
@@ -262,10 +262,10 @@
                 </DockPanel>
                 <TextBlock Text="{local:Loc TrustedProxyNetworks}" Margin="0,0,0,5" />
                 <TextBox x:Name="TrustedProxyTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="52" Margin="0,0,0,6" />
-                <TextBlock Text="{local:Loc TrustedProxyNetworksHelp}" TextWrapping="Wrap" Foreground="#667085" Margin="0,0,0,12" />
+                <TextBlock Text="{local:Loc TrustedProxyNetworksHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" Margin="0,0,0,12" />
                 <TextBlock Text="{local:Loc CommandEnvironmentReferences}" Margin="0,0,0,5" />
                 <TextBox x:Name="CommandEnvReferencesTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="58" Margin="0,0,0,6" />
-                <TextBlock Text="{local:Loc CommandEnvironmentHelp}" TextWrapping="Wrap" Foreground="#667085" Margin="0,0,0,12" />
+                <TextBlock Text="{local:Loc CommandEnvironmentHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" Margin="0,0,0,12" />
                 <TextBlock Text="{local:Loc AcpConcurrency}" Margin="0,0,0,5" />
                 <TextBox x:Name="AcpConcurrencyTextBox" Width="180" HorizontalAlignment="Left" Margin="0,0,0,12" />
                 <TextBlock Text="{local:Loc AcpInteractionTimeout}" Margin="0,0,0,5" />
@@ -280,7 +280,7 @@
                 <TextBox x:Name="RuntimeConfigurationPathsTextBox" IsReadOnly="True" TextWrapping="Wrap" />
               </StackPanel>
             </GroupBox>
-            <TextBlock x:Name="RuntimeOptionsStatusText" TextWrapping="Wrap" Foreground="#475467" MinHeight="22" Margin="0,0,0,8" />
+            <TextBlock x:Name="RuntimeOptionsStatusText" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" MinHeight="22" Margin="0,0,0,8" />
             <StackPanel Orientation="Horizontal">
               <Button x:Name="SaveRuntimeOptionsButton" Content="{local:Loc SaveAndRestart}" Click="SaveRuntimeOptions_Click" />
               <Button x:Name="ReloadRuntimeOptionsButton" Content="{local:Loc ReloadConfiguration}" Click="ReloadRuntimeOptions_Click" />
@@ -289,6 +289,25 @@
         </ScrollViewer>
       </TabItem>
 
+      <TabItem Header="显示">
+        <StackPanel Margin="18" Loaded="DisplaySettings_Loaded" Unloaded="DisplaySettings_Unloaded">
+          <GroupBox Header="主题">
+            <StackPanel>
+              <ComboBox x:Name="ThemePreferenceCombo" Width="180" HorizontalAlignment="Left" SelectedValuePath="Tag" SelectionChanged="ThemePreference_Changed">
+                <ComboBoxItem Content="跟随系统" Tag="system"/><ComboBoxItem Content="浅色" Tag="light"/><ComboBoxItem Content="深色" Tag="dark"/>
+              </ComboBox>
+              <TextBlock x:Name="ThemeSaveStatus" Foreground="{DynamicResource SecondaryText}" Margin="0,8,0,0" TextWrapping="Wrap"/>
+            </StackPanel>
+          </GroupBox>
+          <GroupBox Header="ChatGPT 内嵌界面">
+            <StackPanel>
+              <CheckBox x:Name="McpUiEnabledChoice" Content="提供 AgentDock 内嵌界面" Click="McpUiPreference_Click" IsEnabled="False"/>
+              <TextBlock Text="关闭后仍可调用工具、管理任务和读写文件。此设置不影响其他插件和已经渲染的历史卡片。" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+              <TextBlock x:Name="McpUiSaveStatus" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+            </StackPanel>
+          </GroupBox>
+        </StackPanel>
+      </TabItem>
       <TabItem Header="{local:Loc AdvancedSettings}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="18">
@@ -304,7 +323,7 @@
                   <RowDefinition Height="Auto" />
                   <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <CheckBox x:Name="McpAppsEnabledCheckBox" Grid.Row="0" Grid.ColumnSpan="2" Content="{local:Loc EnableMcpAppsUi}" Margin="0,4,0,12" />
+                <CheckBox x:Name="McpAppsEnabledCheckBox" Grid.Row="0" Grid.ColumnSpan="2" Content="{local:Loc EnableMcpAppsUi}" Margin="0,4,0,12" Visibility="Collapsed" />
                 <TextBlock Text="{local:Loc Port}" Grid.Row="1" VerticalAlignment="Center" Margin="0,0,0,10" />
                 <TextBox x:Name="PortTextBox" Grid.Row="1" Grid.Column="1" Width="130" HorizontalAlignment="Left" Margin="0,0,0,10" />
                 <TextBlock Text="{local:Loc LogLevel}" Grid.Row="2" VerticalAlignment="Center" Margin="0,0,0,10" />
@@ -341,7 +360,7 @@
                 <PasswordBox x:Name="NexusPairingCodePasswordBox" Grid.Row="1" Grid.Column="1" Margin="0,0,8,10" PreviewKeyDown="PasswordBox_PreviewKeyDown" />
                 <Button Grid.Row="1" Grid.Column="2" Content="{local:Loc PairAndRestart}" Click="PairNexusButton_Click" Margin="0,0,0,10" />
                 <TextBlock Text="Device Token" Grid.Row="2" VerticalAlignment="Center" />
-                <TextBlock x:Name="NexusDeviceTokenStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{local:Loc NotPaired}" Foreground="#667085" TextWrapping="Wrap" />
+                <TextBlock x:Name="NexusDeviceTokenStatusText" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{local:Loc NotPaired}" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" />
               </Grid>
             </GroupBox>
 
@@ -364,7 +383,7 @@
                     <ComboBoxItem Content="{local:Loc SpecifiedCdpBrowser}" Tag="specified" />
                   </ComboBox>
                   <TextBox x:Name="BrowserCdpUrlTextBox" Margin="0,8,0,0" Visibility="Collapsed" ToolTip="{local:Loc CdpUrlExample}" />
-                  <TextBlock x:Name="BrowserConnectionHelpText" Margin="0,6,0,0" Foreground="#667085" TextWrapping="Wrap" />
+                  <TextBlock x:Name="BrowserConnectionHelpText" Margin="0,6,0,0" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" />
                 </StackPanel>
               </Grid>
             </GroupBox>
@@ -410,7 +429,7 @@
             </GroupBox>
 
             <TextBlock x:Name="SettingsStatusText"
-                       Foreground="#475467"
+                       Foreground="{DynamicResource SecondaryText}"
                        TextWrapping="Wrap"
                        MinHeight="22"
                        Margin="0,0,0,8" />
@@ -424,9 +443,9 @@
       </TabItem>
     </TabControl>
 
-    <Border Grid.Row="2" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="18,10">
+    <Border Grid.Row="2" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,1,0,0" Padding="18,10">
       <Grid>
-        <TextBlock x:Name="FooterStatusText" Text="{local:Loc Ready}" Foreground="#667085" VerticalAlignment="Center" />
+        <TextBlock x:Name="FooterStatusText" Text="{local:Loc Ready}" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center" />
         <Button Content="{local:Loc Refresh}" HorizontalAlignment="Right" Margin="0" Click="RefreshButton_Click" />
       </Grid>
     </Border>

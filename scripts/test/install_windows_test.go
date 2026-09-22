@@ -103,7 +103,7 @@ func TestInstallWindowsUsesChecksumsDPAPIAndCurrentUserStartup(t *testing.T) {
 		"& $destinationBinary tunnel start --runtime-root $runtimeDir",
 		"--start-tunnel --runtime-root",
 		"-AdminLauncherPath $sourceTrayBinary",
-		"-LauncherPath $destinationBinary",
+		"-LauncherPath $destinationTrayBinary",
 		"-FilePath $AdminLauncherPath",
 		"Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath",
 		"Wait-QuickTunnelUrl -LogPaths @($cloudflaredStdoutLogPath, $cloudflaredStderrLogPath)",
@@ -529,7 +529,7 @@ func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 		"Schedule.Service",
 		"TaskRunLevelHighest",
 		"TaskLogonInteractiveToken",
-		"service launch-core --runtime-root",
+		"--run-core-task --runtime-root",
 		"SetSecurityDescriptor",
 		"prepare-elevated",
 		"prepare-standard",
@@ -553,6 +553,7 @@ func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 	for _, forbidden := range []string{
 		"powershell.exe",
 		"File.Exists(request.LauncherPath)",
+		"service launch-core --runtime-root",
 	} {
 		if strings.Contains(source, forbidden) {
 			t.Fatalf("TaskAdminService.cs must not depend on %q", forbidden)

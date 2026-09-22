@@ -4,6 +4,14 @@ namespace AgentDock.ControlPanel;
 
 public sealed class NativeTunnelStatus
 {
+    [JsonPropertyName("phase")]
+    public string Phase { get; set; } = "";
+    [JsonPropertyName("local_ready")]
+    public bool LocalReady { get; set; }
+    [JsonPropertyName("verified_at")]
+    public DateTimeOffset? VerifiedAt { get; set; }
+    [JsonPropertyName("funnel_public_probe_ms")]
+    public long? PublicProbeMs { get; set; }
     [JsonPropertyName("provider")]
     public string Provider { get; set; } = "";
     [JsonPropertyName("mode")]

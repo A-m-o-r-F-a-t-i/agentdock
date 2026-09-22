@@ -86,7 +86,47 @@ func InputSchema(name string) (map[string]any, bool) {
 	default:
 		return nil, false
 	}
-	return toolcontract.InputObject(props, required...), true
+	schema := toolcontract.InputObject(props, required...)
+	if name == ToolFileEdit {
+		schema["allOf"] = []any{
+			map[string]any{
+				"if": map[string]any{
+					"properties": map[string]any{"action": map[string]any{"const": "replace"}},
+					"required":   []string{"action"},
+				},
+				"then": map[string]any{"required": []string{"path", "old", "new"}},
+			},
+			map[string]any{
+				"if": map[string]any{
+					"properties": map[string]any{"action": map[string]any{"const": "patch"}},
+					"required":   []string{"action"},
+				},
+				"then": map[string]any{"required": []string{"patch"}},
+			},
+			map[string]any{
+				"if": map[string]any{
+					"properties": map[string]any{"action": map[string]any{"const": "add"}},
+					"required":   []string{"action"},
+				},
+				"then": map[string]any{"required": []string{"path", "content"}},
+			},
+			map[string]any{
+				"if": map[string]any{
+					"properties": map[string]any{"action": map[string]any{"const": "delete"}},
+					"required":   []string{"action"},
+				},
+				"then": map[string]any{"required": []string{"path"}},
+			},
+			map[string]any{
+				"if": map[string]any{
+					"properties": map[string]any{"action": map[string]any{"const": "move"}},
+					"required":   []string{"action"},
+				},
+				"then": map[string]any{"required": []string{"path", "new_path"}},
+			},
+		}
+	}
+	return schema, true
 }
 
 func OutputSchema(name string) (map[string]any, bool) {

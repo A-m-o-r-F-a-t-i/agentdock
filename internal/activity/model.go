@@ -63,17 +63,19 @@ func (b ExecutionScope) Validate() error {
 }
 
 type Event struct {
-	OwnerPID         int       `json:"owner_pid,omitempty"`
-	OwnerInstance    string    `json:"owner_instance,omitempty"`
-	ApprovalID       string    `json:"approval_id,omitempty"`
-	RuleID           string    `json:"rule_id,omitempty"`
-	PermissionMode   string    `json:"permission_mode,omitempty"`
-	ErrorCode        string    `json:"error_code,omitempty"`
-	ChangeStatsKnown bool      `json:"change_stats_known,omitempty"`
-	SchemaVersion    int       `json:"schema_version"`
-	Seq              uint64    `json:"seq"`
-	EventID          string    `json:"event_id"`
-	CreatedAt        time.Time `json:"created_at"`
+	CallMeasurements
+	FileEdit         *FileEditDetails `json:"file_edit,omitempty"`
+	OwnerPID         int              `json:"owner_pid,omitempty"`
+	OwnerInstance    string           `json:"owner_instance,omitempty"`
+	ApprovalID       string           `json:"approval_id,omitempty"`
+	RuleID           string           `json:"rule_id,omitempty"`
+	PermissionMode   string           `json:"permission_mode,omitempty"`
+	ErrorCode        string           `json:"error_code,omitempty"`
+	ChangeStatsKnown bool             `json:"change_stats_known,omitempty"`
+	SchemaVersion    int              `json:"schema_version"`
+	Seq              uint64           `json:"seq"`
+	EventID          string           `json:"event_id"`
+	CreatedAt        time.Time        `json:"created_at"`
 	Binding
 	Kind             string `json:"kind"`
 	Status           string `json:"status,omitempty"`

@@ -144,6 +144,13 @@ func TestTailscaleRealCoreAndFakeCLILifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	status := inspectTailscaleRuntime(ctx, runtime, fakeBinary, newWindowsTailscaleClient(fakeBinary))
+	if status.Ready || !status.LocalReady || status.Phase != "VerifyingPublic" {
+		t.Fatalf("local commit was confused with public readiness: %+v", status)
+	}
+	status, err = verifyConfiguredTailscale(ctx, root, hooks)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !status.Ready || !status.Running || status.Provider != "tailscale" {
 		t.Fatalf("not ready: %+v", status)
 	}

@@ -68,7 +68,7 @@ def run(binary: Path, version: str, root: Path, count: int, title_mode: str) -> 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", required=True, type=Path)
-    parser.add_argument("--version", default="1.1.3")
+    parser.add_argument("--version", default="1.1.4")
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--count", type=int, default=1000)
     parser.add_argument("--title-mode", choices=("manual", "legacy"), default="manual")

@@ -13,6 +13,7 @@ using System.Windows.Threading;
 using Microsoft.Win32;
 using Button = System.Windows.Controls.Button;
 using ComboBox = System.Windows.Controls.ComboBox;
+using RadioButton = System.Windows.Controls.RadioButton;
 using ListBox = System.Windows.Controls.ListBox;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
@@ -22,6 +23,7 @@ public partial class ExecutionWindow : Window
 {
     private readonly RuntimeService _runtime;
     private readonly ActivityClient _client;
+    private readonly ConversationActivityClock _activityClock;
     private readonly CancellationTokenSource _lifetime = new();
     private CancellationTokenSource? _selectionCancellation, _streamCancellation;
     private Task? _streamTask;
@@ -55,6 +57,8 @@ public partial class ExecutionWindow : Window
     public ExecutionWindow(RuntimeService runtime)
     {
         _runtime = runtime; _client = new ActivityClient(runtime);
+        _activityClock = new ConversationActivityClock(() => Objects);
+        DesktopTheme.Initialize(runtime.RuntimeRoot);
         InitializeComponent(); DataContext = this;
         CollectionViewSource.GetDefaultView(Objects).GroupDescriptions.Add(new PropertyGroupDescription(nameof(ExecutionObject.WorkspaceKey)));
         _filterTimer.Tick += async (_, _) => { _filterTimer.Stop(); await GuardAsync(() => LoadObjectsAsync()); };
@@ -63,9 +67,9 @@ public partial class ExecutionWindow : Window
     }
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        LoadPreferences(); FontSize = _preferences.FontSize; ApplyTheme();
+        LoadPreferences(); FontSize = _preferences.FontSize; ApplyTheme(); ApplyCallPresentation();
         _conversationView = _preferences.LastView is "archived" or "trash" ? _preferences.LastView : "active";
-        SystemEvents.UserPreferenceChanged += SystemTheme_Changed;
+        DesktopTheme.Changed += Theme_Changed;
         await GuardAsync(async () => { await LoadWorkspacesAsync(); _initialized = true; await RefreshOverviewAsync(); await LoadObjectsAsync(); });
         _initialized = true; _pulse.Start();
     }
@@ -98,6 +102,13 @@ public partial class ExecutionWindow : Window
     private async Task RefreshOverviewAsync()
     {
         var value = await _client.ExecutionGetAsync("/internal/runtime/execution", _lifetime.Token);
+        var activities = value.Field("conversation_activity");
+        foreach (var item in Objects)
+        {
+            var latest = activities.Field(item.Id).Date("last_tool_call_at");
+            if (latest is not null && (item.LastToolCallAt is null || latest > item.LastToolCallAt)) item.LastToolCallAt = latest;
+        }
+        _activityClock.Synchronize(value.Date("server_now"));
         var pending = value.Field("statistics").Number("pending");
         AttentionButton.Visibility = pending > 0 ? Visibility.Visible : Visibility.Collapsed;
         AttentionButton.Content = "待处理 " + pending;
@@ -133,6 +144,7 @@ public partial class ExecutionWindow : Window
             foreach (var item in Objects.Where(item => selectedKeys.Contains(item.SelectionKey))) if (!ObjectsList.SelectedItems.Contains(item)) ObjectsList.SelectedItems.Add(item);
         }
         finally { _updating = false; }
+        _activityClock.Synchronize(value.Date("server_now"));
         var selected = ObjectsList.SelectedItem as ExecutionObject;
         if (selected?.SelectionKey != _selected?.SelectionKey) await SelectObjectAsync(selected);
         else if (selected is not null)
@@ -210,7 +222,16 @@ public partial class ExecutionWindow : Window
         _updating = true;
         try { TaskChoiceCombo.ItemsSource = choices; TaskChoiceCombo.SelectedValue = choices.FirstOrDefault()?.Id; }
         finally { _updating = false; }
-        ConversationProgressCard.Visibility = choices.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ConversationProgressCard.Visibility = Visibility.Visible;
+        TaskChoiceCombo.Visibility = choices.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        NoTaskPanel.Visibility = choices.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        TaskActionsPanel.Visibility = choices.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        CurrentTaskProgress.Visibility = choices.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (choices.Count == 0)
+        {
+            CurrentTaskStatus.Text = CurrentTaskNext.Text = "";
+            CurrentTaskProgress.Visibility = Visibility.Collapsed;
+        }
         _selectedTaskId = choices.FirstOrDefault()?.Id ?? "";
         if (_selectedTaskId.Length > 0) await LoadTaskAsync(_selectedTaskId, "", false);
     }
@@ -293,6 +314,15 @@ public partial class ExecutionWindow : Window
     private void UpsertCall(JsonElement value)
     {
         var incoming = new ExecutionCallRow(value);
+        if (incoming.RequestReceivedAt is { } received)
+        {
+            var item = Objects.FirstOrDefault(candidate => candidate.Id == incoming.ConversationId);
+            if (item is not null && (item.LastToolCallAt is null || received > item.LastToolCallAt))
+            {
+                item.LastToolCallAt = received;
+                _activityClock.Refresh();
+            }
+        }
         if (!MatchesScope(incoming)) return;
         var status = ComboValue(CallStatusCombo);
         if (!incoming.VisibleIn(_callView) || status.Length > 0 && incoming.Status != status)
@@ -416,6 +446,28 @@ public partial class ExecutionWindow : Window
     private async void MoreObjects_Click(object sender, RoutedEventArgs e) => await GuardAsync(() => LoadObjectsAsync(true));
     private async void OlderCalls_Click(object sender, RoutedEventArgs e) { _following = false; UpdateFollowButton(); await GuardAsync(() => LoadCallsAsync(true)); }
     private void Follow_Click(object sender, RoutedEventArgs e) { _following = !_following; UpdateFollowButton(); if (_following && Calls.Count > 0) CallsList.ScrollIntoView(Calls[^1]); }
+    private async void LinkTask_Click(object sender, RoutedEventArgs e)
+    {
+        if (_selected is { IsUnknown: false, IsOrphan: false, Terminated: false } selected)
+            await GuardAsync(() => LinkTaskAsync(selected.Id));
+    }
+    private void ApplyCallPresentation()
+    {
+        var detailed = _preferences.DetailedCalls;
+        CallsList.ItemTemplate = (DataTemplate)Resources[detailed ? "DetailedCallRowTemplate" : "CallRowTemplate"];
+        DetailedCallsHeader.Visibility = detailed ? Visibility.Visible : Visibility.Collapsed;
+        CompactCallsChoice.IsChecked = !detailed;
+        DetailedCallsChoice.IsChecked = detailed;
+    }
+    private void CallPresentation_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_initialized || sender is not RadioButton choice) return;
+        var detailed = choice.Tag?.ToString() == "detailed";
+        if (_preferences.DetailedCalls == detailed) return;
+        _preferences.DetailedCalls = detailed;
+        SavePreferences();
+        ApplyCallPresentation();
+    }
     private void Calls_Wheel(object sender, MouseWheelEventArgs e) { if (e.Delta > 0) { _following = false; UpdateFollowButton(); } }
     private void Calls_ScrollChanged(object sender, ScrollChangedEventArgs e) { if (e.VerticalChange < 0 && e.ExtentHeightChange == 0) { _following = false; UpdateFollowButton(); } }
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await GuardAsync(async () => { await LoadWorkspacesAsync(); await LoadObjectsAsync(); await LoadCallsAsync(false); await RefreshOverviewAsync(); });
@@ -444,6 +496,7 @@ public partial class ExecutionWindow : Window
     private void SavePreferences()
     {
         if (!_preferencesWritable) return;
+        _preferences.Theme = DesktopTheme.Preference;
         var path = Path.Combine(_runtime.RuntimeRoot, "execution-center-settings.json"); var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try { _preferences.SchemaVersion = 2; _preferences.LastView = _conversationView; _preferences.LastKind = "conversation"; Directory.CreateDirectory(_runtime.RuntimeRoot); File.WriteAllText(temporary, JsonSerializer.Serialize(_preferences, ActivityClient.JsonOptions)); File.Move(temporary, path, true); }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { if (!_closed) Warn("显示设置未保存：" + ex.Message); }
@@ -451,20 +504,15 @@ public partial class ExecutionWindow : Window
     }
     internal void ApplyTheme(string? selection = null)
     {
-        if (selection is not null) _preferences.Theme = selection;
-        var dark = _preferences.Theme == "dark";
-        if (_preferences.Theme == "system")
-        {
-            try { using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"); dark = key?.GetValue("AppsUseLightTheme") is int value && value == 0; }
-            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException) { dark = false; }
-        }
-        Resources.MergedDictionaries[1] = new ResourceDictionary { Source = new Uri("/agentdock-tray;component/Themes/" + (dark ? "Dark" : "Light") + ".xaml", UriKind.Relative) };
+        if (selection is not null) DesktopTheme.Save(selection);
+        _preferences.Theme = DesktopTheme.Preference;
     }
-    private void SystemTheme_Changed(object sender, UserPreferenceChangedEventArgs e) { if (_preferences.Theme == "system" && !_closed) Dispatcher.BeginInvoke(() => ApplyTheme()); }
+    private void Theme_Changed(object? sender, EventArgs e) { _preferences.Theme = DesktopTheme.Preference; }
     private void Window_Closed(object? sender, EventArgs e)
     {
         if (_closed) return; _closed = true; SavePreferences();
-        SystemEvents.UserPreferenceChanged -= SystemTheme_Changed;
+        DesktopTheme.Changed -= Theme_Changed;
+        _activityClock.Dispose();
         _filterTimer.Stop(); _callSearchTimer.Stop(); _pulse.Stop(); _lifetime.Cancel(); _selectionCancellation?.Cancel(); _streamCancellation?.Cancel();
         _client.Dispose(); _selectionCancellation?.Dispose(); _streamCancellation?.Dispose(); _lifetime.Dispose();
         // Closing an observer window never stops tasks or command processes.

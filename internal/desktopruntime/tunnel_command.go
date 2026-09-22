@@ -16,6 +16,10 @@ import (
 
 // TunnelStatus 是桌面端和 CLI 共享的结构化 Tunnel 状态。
 type TunnelStatus struct {
+	Phase            string     `json:"phase,omitempty"`
+	LocalReady       bool       `json:"local_ready,omitempty"`
+	VerifiedAt       *time.Time `json:"verified_at,omitempty"`
+	PublicProbeMS    *int64     `json:"funnel_public_probe_ms,omitempty"`
 	Provider         string     `json:"provider,omitempty"`
 	Mode             string     `json:"mode"`
 	Running          bool       `json:"running"`
@@ -37,6 +41,7 @@ type TunnelStatus struct {
 }
 
 type TunnelConfigureRequest struct {
+	WaitForPublic   bool
 	Provider        string
 	TailscaleBinary string
 	RuntimeRoot     string
@@ -101,6 +106,16 @@ func RunTunnelCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			}
 		}
 		return json.NewEncoder(stdout).Encode(status)
+	case "verify":
+		root, err := parseRuntimeRoot("agentdock tunnel verify", args[1:], stderr)
+		if err != nil {
+			return err
+		}
+		status, err := platformVerifyTailscale(ctx, root)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(status)
 	case "start", "stop", "restart", "regenerate":
 		action := args[0]
 		runtimeRoot, err := parseRuntimeRoot("agentdock tunnel "+action, args[1:], stderr)
@@ -122,6 +137,7 @@ func RunTunnelCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		binary := flags.String("tailscale-binary", "", "Tailscale 客户端绝对路径")
 		serverURL := flags.String("server-url", "", "Named Tunnel HTTPS Origin")
 		tokenFile := flags.String("token-file", "", "临时 Tunnel Token 文件")
+		waitForPublic := flags.Bool("wait-for-public", false, "Tailscale 配置事务等待公网验证；默认只等待本地配置提交")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -129,6 +145,7 @@ func RunTunnelCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 			return errors.New("用法：agentdock tunnel configure --runtime-root <目录> [--provider <none|cloudflare|tailscale>] --mode <none|local|quick|named|funnel> [--server-url <HTTPS Origin>] [--token-file <文件>] [--tailscale-binary <文件>]")
 		}
 		request, err := normalizeTunnelConfigureRequest(TunnelConfigureRequest{
+			WaitForPublic:   *waitForPublic,
 			Provider:        *provider,
 			TailscaleBinary: *binary,
 			RuntimeRoot:     *runtimeRoot,
@@ -144,6 +161,9 @@ func RunTunnelCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 		}
 		if err := platformConfigureTunnel(ctx, request); err != nil {
 			return err
+		}
+		if request.Provider == PublicAccessProviderTailscale && !request.WaitForPublic {
+			return json.NewEncoder(stdout).Encode(map[string]any{"action": "configure", "completed": true, "completion_scope": "local_configuration", "public_verification_required": true})
 		}
 		return json.NewEncoder(stdout).Encode(serviceCommandResult{Action: "configure", Completed: true})
 	case "autostart":

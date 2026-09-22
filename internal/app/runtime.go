@@ -37,6 +37,7 @@ import (
 type Result = toolcore.Result
 
 type Runtime struct {
+	display                  *config.DisplayPreferences
 	connections              clientConnections
 	executionMaintenanceDone chan struct{}
 	executionInstance        string
@@ -143,6 +144,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	}
 	commandCtx, commandCancel := context.WithCancel(context.Background())
 	runtime := &Runtime{
+		display:           config.NewDisplayPreferences(cfg.AgentDockHome, cfg.MCPAppsEnabled),
 		executionInstance: instance,
 		conversations:     conversations, permissions: permissions, tasks: tasks,
 		activeCalls: map[string]*liveExecution{}, pendingCalls: map[string]*preparedExecution{},

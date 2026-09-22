@@ -206,9 +206,21 @@ func TestTypedForeignToolFailureAndGuidanceIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	last := page.Events[len(page.Events)-1]
-	if last.Kind != "call.completed" || last.Status != "failed" {
-		t.Fatalf("typed tool failure reported success: %+v", last)
+	var completed, rpcReturned *activity.Event
+	for index := range page.Events {
+		event := &page.Events[index]
+		switch event.Kind {
+		case "call.completed":
+			completed = event
+		case "call.rpc_returned":
+			rpcReturned = event
+		}
+	}
+	if completed == nil || completed.Status != "failed" {
+		t.Fatalf("typed tool failure reported success: completed=%+v events=%+v", completed, page.Events)
+	}
+	if rpcReturned == nil || rpcReturned.RPCStatus != "failed" || rpcReturned.RPCElapsedMS == nil {
+		t.Fatalf("typed tool failure RPC return was not measured: %+v", rpcReturned)
 	}
 	data, _ := json.Marshal(page)
 	if strings.Contains(string(data), "not-for-the-journal") || strings.Contains(string(data), "ignore server state") {

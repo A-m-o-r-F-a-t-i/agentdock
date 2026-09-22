@@ -58,6 +58,7 @@ internal static partial class Program
             var sideText = Descendants(objects).OfType<TextBlock>().Select(item => item.Text).ToArray();
             Require(!sideText.Any(value => value.Contains('●') || value.Contains('□')), "Decorative focus markers returned to sidebar.");
             Require(!Descendants(window).OfType<TextBlock>().Any(item => item.Text == "执行中心"), "Redundant standalone title returned.");
+            AssertDisplay114(window, root);
             // Select the actual row; details must be fetched only on demand.
             calls.SelectedItem = reading;
             PumpUntil(() => reading.DetailLoaded && ((FrameworkElement)window.FindName("DetailsPanel")).Visibility == Visibility.Visible, TimeSpan.FromSeconds(5));
@@ -105,7 +106,8 @@ internal static partial class Program
             var menuIds = (string[])typeof(ExecutionWindow).GetField("_menuSelection", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(window)!;
             Require(menuIds.SequenceEqual([LocalFixture.ConversationB]), "Right-click targeted an unrelated previous selection.");
             if (second.ContextMenu is not null) second.ContextMenu.IsOpen = false;
-            PumpUntil(() => ((FrameworkElement)window.FindName("ConversationProgressCard")).Visibility == Visibility.Collapsed && window.Calls.Count == 0, TimeSpan.FromSeconds(5));
+            PumpUntil(() => ((FrameworkElement)window.FindName("NoTaskPanel")).Visibility == Visibility.Visible && window.Calls.Count == 0, TimeSpan.FromSeconds(5));
+            Require(((FrameworkElement)window.FindName("ConversationProgressCard")).Visibility == Visibility.Visible && ((FrameworkElement)window.FindName("TaskActionsPanel")).Visibility == Visibility.Collapsed, "An unbound conversation must offer association without inventing task progress.");
             Require(fixture.ControlCount == 0, "Navigation changed execution state.");
             var managerTask = (Task)InvokeExecution(window, "OpenDataManagerAsync", false)!;
             PumpUntil(() => managerTask.IsCompleted, TimeSpan.FromSeconds(5)); managerTask.GetAwaiter().GetResult();

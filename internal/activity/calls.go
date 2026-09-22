@@ -22,6 +22,8 @@ type FileChange struct {
 	StatsKnown bool   `json:"stats_known"`
 }
 type ExecutionCall struct {
+	CallMeasurements
+	FileEdit *FileEditDetails `json:"file_edit,omitempty"`
 	CallManagement
 	OwnerPID      int    `json:"owner_pid,omitempty"`
 	OwnerInstance string `json:"owner_instance,omitempty"`
@@ -95,12 +97,20 @@ type CallPage struct {
 	Warnings      []string        `json:"warnings,omitempty"`
 }
 type CallStats struct {
-	Total    int       `json:"total"`
-	Running  int       `json:"running"`
-	Pending  int       `json:"pending"`
-	Failed   int       `json:"failed"`
-	Unknown  int       `json:"unknown"`
-	LatestAt time.Time `json:"latest_at"`
+	LastToolCallAt  *time.Time `json:"last_tool_call_at,omitempty"`
+	Total           int        `json:"total"`
+	Running         int        `json:"running"`
+	Pending         int        `json:"pending"`
+	Succeeded       int        `json:"succeeded"`
+	Partial         int        `json:"partial"`
+	Failed          int        `json:"failed"`
+	Cancelled       int        `json:"cancelled"`
+	Unknown         int        `json:"unknown"`
+	DurationSamples int        `json:"duration_samples"`
+	TotalElapsedMS  int64      `json:"total_elapsed_ms"`
+	P50ElapsedMS    *int64     `json:"p50_elapsed_ms,omitempty"`
+	P95ElapsedMS    *int64     `json:"p95_elapsed_ms,omitempty"`
+	LatestAt        time.Time  `json:"latest_at"`
 }
 type callProjection struct {
 	seq            uint64
@@ -252,6 +262,7 @@ func (p *callProjection) apply(event Event) {
 		call.Visibility = event.Visibility
 	}
 	call.UpdatedAt, call.UpdatedSeq = event.CreatedAt, event.Seq
+	applyMeasurements(call, event)
 	call.EventCount++
 	if call.OwnerPID == 0 {
 		call.OwnerPID = event.OwnerPID
@@ -427,6 +438,8 @@ func (s *Store) projectAppendedLocked(event Event) {
 }
 func cloneCall(call *ExecutionCall, output bool) ExecutionCall {
 	copied := *call
+	copied.CallMeasurements = call.CallMeasurements.clone()
+	copied.FileEdit = call.FileEdit.clone(output)
 	copied.FileChanges = append([]FileChange(nil), call.FileChanges...)
 	if !output {
 		copied.OutputPreview, copied.StderrPreview = "", ""
@@ -556,11 +569,21 @@ func (s *Store) Calls(ctx context.Context, query CallQuery) (CallPage, error) {
 	}
 	return page, nil
 }
-func addCallStats(stats *CallStats, call *ExecutionCall) {
+
+type callStatsAccumulator struct {
+	stats     CallStats
+	durations []int64
+}
+
+func (accumulator *callStatsAccumulator) add(call *ExecutionCall) {
 	if call.ParentCallID != "" || call.Visibility == "diagnostic" {
 		return
 	}
+	stats := &accumulator.stats
 	stats.Total++
+	if call.RequestReceivedAt != nil && (stats.LastToolCallAt == nil || call.RequestReceivedAt.After(*stats.LastToolCallAt)) {
+		stats.LastToolCallAt = copyValue(call.RequestReceivedAt)
+	}
 	if call.UpdatedAt.After(stats.LatestAt) {
 		stats.LatestAt = call.UpdatedAt
 	}
@@ -569,31 +592,80 @@ func addCallStats(stats *CallStats, call *ExecutionCall) {
 		stats.Running++
 	case "pending_approval":
 		stats.Pending++
+	case "succeeded":
+		stats.Succeeded++
+	case "partial":
+		stats.Partial++
 	case "failed":
 		stats.Failed++
+	case "cancelled":
+		stats.Cancelled++
 	case "unknown":
 		stats.Unknown++
 	}
+	if !CallTerminal(call.Status) {
+		return
+	}
+	if call.OperationElapsedMS != nil {
+		accumulator.durations = append(accumulator.durations, *call.OperationElapsedMS)
+		return
+	}
+	if call.ElapsedMS > 0 {
+		accumulator.durations = append(accumulator.durations, call.ElapsedMS)
+	}
 }
+
+func (accumulator *callStatsAccumulator) result() CallStats {
+	stats := accumulator.stats
+	if len(accumulator.durations) == 0 {
+		return stats
+	}
+	durations := append([]int64(nil), accumulator.durations...)
+	sort.Slice(durations, func(i, j int) bool { return durations[i] < durations[j] })
+	for _, duration := range durations {
+		stats.TotalElapsedMS += duration
+	}
+	stats.DurationSamples = len(durations)
+	stats.P50ElapsedMS = copyValue(&durations[percentileIndex(len(durations), 50)])
+	stats.P95ElapsedMS = copyValue(&durations[percentileIndex(len(durations), 95)])
+	return stats
+}
+
+func percentileIndex(count, percentile int) int {
+	index := (count*percentile + 99) / 100
+	if index < 1 {
+		index = 1
+	}
+	return min(index-1, count-1)
+}
+
 func (s *Store) CallStatistics(ctx context.Context) (CallStats, map[string]CallStats, error) {
-	total, byConversation := CallStats{}, map[string]CallStats{}
+	total := callStatsAccumulator{}
+	byConversation := map[string]*callStatsAccumulator{}
 	release, err := s.lock(ctx)
 	if err != nil {
-		return total, byConversation, err
+		return total.stats, map[string]CallStats{}, err
 	}
 	defer release()
 	projection, err := s.projectionLocked(ctx)
 	if err != nil {
-		return total, byConversation, err
+		return total.stats, map[string]CallStats{}, err
 	}
 	for _, call := range projection.calls {
 		if call.Visibility == "diagnostic" || !callManagementMatches(call.CallManagement, "active") {
 			continue
 		}
-		addCallStats(&total, call)
+		total.add(call)
 		stats := byConversation[call.ConversationID]
-		addCallStats(&stats, call)
-		byConversation[call.ConversationID] = stats
+		if stats == nil {
+			stats = &callStatsAccumulator{}
+			byConversation[call.ConversationID] = stats
+		}
+		stats.add(call)
 	}
-	return total, byConversation, nil
+	result := make(map[string]CallStats, len(byConversation))
+	for conversationID, stats := range byConversation {
+		result[conversationID] = stats.result()
+	}
+	return total.result(), result, nil
 }

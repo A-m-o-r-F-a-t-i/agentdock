@@ -20,7 +20,7 @@ type appResourceDefinition struct {
 }
 
 func (s *Server) appResourceDefinitions() []appResourceDefinition {
-	if s == nil || !s.cfg.MCPAppsEnabled {
+	if s == nil || !s.uiEnabled() {
 		return nil
 	}
 	definitions := []appResourceDefinition{
@@ -121,6 +121,9 @@ func (s *Server) registerAppResources() {
 			MIMEType:    protocol.MCPAppMIMEType,
 			Meta:        meta,
 		}, func(_ context.Context, request *mcpsdk.ReadResourceRequest) (*mcpsdk.ReadResourceResult, error) {
+			if !s.uiEnabled() {
+				return nil, mcpsdk.ResourceNotFoundError(definition.URI)
+			}
 			if request == nil || request.Params == nil || request.Params.URI != definition.URI {
 				return nil, mcpsdk.ResourceNotFoundError(definition.URI)
 			}

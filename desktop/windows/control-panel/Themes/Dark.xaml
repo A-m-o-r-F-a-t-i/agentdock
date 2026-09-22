@@ -7,4 +7,18 @@
   <SolidColorBrush x:Key="PrimaryText" Color="#F1F2F3"/>
   <SolidColorBrush x:Key="SecondaryText" Color="#9A9FA6"/>
   <SolidColorBrush x:Key="DangerBrush" Color="#F97066"/>
+  <SolidColorBrush x:Key="ActionBorderBrush" Color="#535A64"/>
+  <SolidColorBrush x:Key="HoverBackground" Color="#25292E"/>
+  <SolidColorBrush x:Key="PressedBackground" Color="#363D46"/>
+  <SolidColorBrush x:Key="FocusBrush" Color="#8AB4F8"/>
+  <SolidColorBrush x:Key="BadgeBorderBrush" Color="#49515B"/>
+  <SolidColorBrush x:Key="AccentBrush" Color="#8AB4F8"/>
+  <SolidColorBrush x:Key="SurfaceBrush" Color="#17191C"/>
+  <SolidColorBrush x:Key="BorderBrush" Color="#3A3F47"/>
+  <SolidColorBrush x:Key="ButtonBrush" Color="#202328"/>
+  <SolidColorBrush x:Key="ButtonHoverBrush" Color="#25292E"/>
+  <SolidColorBrush x:Key="ButtonPressedBrush" Color="#363D46"/>
+  <SolidColorBrush x:Key="ButtonBorderBrush" Color="#535A64"/>
+  <SolidColorBrush x:Key="SuccessBrush" Color="#75D99B"/>
+  <SolidColorBrush x:Key="WarningBrush" Color="#F8C46C"/>
 </ResourceDictionary>

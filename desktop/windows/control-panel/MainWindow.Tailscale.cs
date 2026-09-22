@@ -17,7 +17,14 @@ public partial class MainWindow
         TailscaleDomainTextBox.Text = status.DnsName;
         TailscaleMcpTextBox.Text = string.IsNullOrEmpty(status.PublicUrl) ? "" : status.PublicUrl.TrimEnd('/') + "/mcp";
         TailscaleTargetText.Text = status.LocalOrigin;
-        TailscaleFunnelText.Text = status.Ready ? UiText.Get("ServerChecksAuthorizationRequired") : status.Running ? UiText.Get("TailscalePending") : UiText.Get("Disabled");
+        TailscaleFunnelText.Text = status.Phase switch
+        {
+            "CheckingLocal" => "检查本地配置", "NeedsApproval" => "需要首次授权",
+            "LocalReady" => "本地配置完成", "VerifyingPublic" => "公网验证中",
+            "Degraded" => "公网暂未就绪，本地配置保留", "Failed" => "验证失败",
+            "Ready" => "公网已验证",
+            _ => status.Ready ? "公网已验证" : status.Running ? UiText.Get("TailscalePending") : UiText.Get("Disabled")
+        };
         TailscaleKeyExpiryText.Text = status.KeyExpiry is { Year: > 1 } expiry
             ? expiry.ToLocalTime().ToString("yyyy-MM-dd HH:mm") : UiText.Get("TailscaleNoKeyExpiry");
         TailscaleDiagnosticText.Text = status.Diagnostic;
@@ -82,7 +89,7 @@ public partial class MainWindow
                     mode == "named" ? ServerUrlTextBox.Text.Trim() : "",
                     mode == "named" ? TunnelTokenPasswordBox.Password : ""), TunnelActionStatusText);
             FinishAccessApply(success, mode);
-            if (mode == "funnel" || previous == "funnel") await RefreshTailscalePanelAsync(true);
+            if (success && mode == "funnel") TunnelActionStatusText.Text = "本地配置已提交，公网验证在后台进行。";
         }
         finally
         {

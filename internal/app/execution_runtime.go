@@ -29,6 +29,7 @@ type ConversationItem struct {
 	IsUnattributed bool               `json:"is_unattributed,omitempty"`
 }
 type ConversationPage struct {
+	ServerNow     time.Time          `json:"server_now"`
 	SelectedIDs   []string           `json:"selected_ids,omitempty"`
 	Conversations []ConversationItem `json:"conversations"`
 	Total         int                `json:"total"`
@@ -59,7 +60,7 @@ type BatchResult struct {
 
 func (r *Runtime) RuntimeExecutionOverview(ctx context.Context) (Result, error) {
 	r.expirePendingApprovals(ctx)
-	stats, _, err := r.activity.CallStatistics(ctx)
+	stats, conversations, err := r.activity.CallStatistics(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -67,10 +68,10 @@ func (r *Runtime) RuntimeExecutionOverview(ctx context.Context) (Result, error) 
 	if err != nil {
 		return nil, err
 	}
-	return Result{"statistics": stats, "permission_mode": policy.GlobalMode, "policy_revision": policy.Revision, "schema_version": 2}, nil
+	return Result{"statistics": stats, "conversation_activity": conversations, "server_now": time.Now().UTC(), "permission_mode": policy.GlobalMode, "policy_revision": policy.Revision, "schema_version": 2}, nil
 }
 func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQuery) (ConversationPage, error) {
-	page := ConversationPage{Conversations: []ConversationItem{}}
+	page := ConversationPage{Conversations: []ConversationItem{}, ServerNow: time.Now().UTC()}
 	if query.Offset < 0 || query.Offset > 20000 || len(query.Search) > 512 {
 		return page, errors.New("invalid conversation query")
 	}

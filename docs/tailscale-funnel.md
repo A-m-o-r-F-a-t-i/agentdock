@@ -46,3 +46,15 @@ Windows Desktop supports native Tailscale Funnel alongside local-only and Cloudf
 Only matching, owned paths are removed. Private sibling Serve paths, conflicting roots, changed device identities, and unknown schemas fail closed. Updates preserve provider state and the existing port; the control panel performs port changes. The previous schema1/none projection remains readable by old Core versions, but old installers cannot manage the new fields. This fork publishes Windows assets only.
 
 Official CLI semantics: [Tailscale Funnel reference](https://tailscale.com/docs/reference/tailscale-cli/funnel).
+
+## AgentDock 1.1.4 状态与等待行为
+
+1.1.4 将“本机配置已应用”和“公网已经可以访问”拆成两个阶段，避免把 DNS／边缘传播延迟误判为本机配置失败。
+
+- 检测结果短时缓存，重复刷新和重复点击共用同一进行中的请求，避免并发调用 Tailscale CLI。
+- 启用时先完成本地 Core、端口、映射所有权和 Funnel 状态检查；本地已就绪后立即恢复界面交互。
+- 公网验证在独立可取消探测中执行，使用有界退避并区分 DNS 尚未传播、TLS／HTTP 失败、认证失败和成功。
+- 公网探测超时不会清空已经正确应用且归 AgentDock 所有的本地映射，也不会把“已配置、待外部验证”显示成未启用。
+- 已存在且完全匹配的 AgentDock 映射直接复用；冲突映射仍保持失败关闭，不执行全局 reset、down 或 logout。
+
+因此，控制面板中的“本地已就绪”只证明 Tailscale 和 AgentDock 本机配置成立；将公网 MCP 地址交给客户端前，仍应等待外部验证成功或从独立网络手工验证。

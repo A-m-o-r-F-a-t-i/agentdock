@@ -23,6 +23,9 @@ type executionObservation struct {
 	originals    map[string]string
 	scoped       bool
 	started      time.Time
+	executed     bool
+	waitMS       *int64
+	executionMS  *int64
 	selected     *workspace.Record
 }
 

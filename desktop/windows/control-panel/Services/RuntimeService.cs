@@ -146,7 +146,7 @@ public sealed partial class RuntimeService : IDisposable
         if (usesTailscale)
         {
             tunnelMode = "funnel";
-            tailscale = await ReadTailscaleStatusAsync(cancellationToken: cancellationToken);
+            tailscale = CachedTailscaleStatus(publicOrigin);
         }
 
         return new RuntimeSnapshot(
@@ -420,6 +420,7 @@ public sealed partial class RuntimeService : IDisposable
         string tunnelToken,
         CancellationToken cancellationToken = default)
     {
+        InvalidateTailscaleStatus();
         var arguments = new List<string>
         {
             "configure",
@@ -825,6 +826,19 @@ public sealed partial class RuntimeService : IDisposable
             : binaryPath;
     }
 
+    private string ResolveTrayBinary(RuntimeManifest? manifest)
+    {
+        var rootRelativePath = Path.Combine(RuntimeRoot, "bin", "agentdock-tray.exe");
+        var binaryPath = manifest?.TrayBinaryPath;
+        if (string.IsNullOrWhiteSpace(binaryPath))
+        {
+            return rootRelativePath;
+        }
+        return !File.Exists(binaryPath) && File.Exists(rootRelativePath)
+            ? rootRelativePath
+            : binaryPath;
+    }
+
     private async Task RunTaskAdminTransitionAsync(
         string action,
         RuntimeManifest manifest,
@@ -834,9 +848,7 @@ public sealed partial class RuntimeService : IDisposable
         var taskName = string.IsNullOrWhiteSpace(manifest.AgentDockTaskName)
             ? "AgentDock"
             : manifest.AgentDockTaskName.Trim();
-        var trayBinary = string.IsNullOrWhiteSpace(manifest.TrayBinaryPath)
-            ? Path.Combine(RuntimeRoot, "bin", "agentdock-tray.exe")
-            : manifest.TrayBinaryPath;
+        var trayBinary = ResolveTrayBinary(manifest);
         if (!File.Exists(trayBinary))
         {
             throw new FileNotFoundException(UiText.Format("ManagementBinaryMissing", trayBinary), trayBinary);
@@ -851,10 +863,10 @@ public sealed partial class RuntimeService : IDisposable
         };
         if (action == "prepare-elevated")
         {
-            var stableCoreEntry = ResolveCoreBinaryPath(manifest);
-            if (!File.Exists(stableCoreEntry))
+            var stableTrayEntry = ResolveTrayBinary(manifest);
+            if (!File.Exists(stableTrayEntry))
             {
-                throw new FileNotFoundException(UiText.Format("ManagementBinaryMissing", stableCoreEntry), stableCoreEntry);
+                throw new FileNotFoundException(UiText.Format("ManagementBinaryMissing", stableTrayEntry), stableTrayEntry);
             }
             using var identity = WindowsIdentity.GetCurrent();
             var userSid = identity.User?.Value;
@@ -863,7 +875,7 @@ public sealed partial class RuntimeService : IDisposable
                 throw new InvalidOperationException(UiText.Get("CurrentWindowsIdentityUnavailable"));
             }
             arguments.AddRange([
-                "--launcher-path", stableCoreEntry,
+                "--launcher-path", stableTrayEntry,
                 "--user-sid", userSid,
                 "--user-name", identity.Name
             ]);
@@ -920,9 +932,7 @@ public sealed partial class RuntimeService : IDisposable
             return;
         }
 
-        var trayBinary = string.IsNullOrWhiteSpace(manifest.TrayBinaryPath)
-            ? Path.Combine(RuntimeRoot, "bin", "agentdock-tray.exe")
-            : manifest.TrayBinaryPath;
+        var trayBinary = ResolveTrayBinary(manifest);
         if (!File.Exists(trayBinary))
         {
             throw new FileNotFoundException(UiText.Format("TrayBinaryMissing", trayBinary), trayBinary);
@@ -995,6 +1005,7 @@ public sealed partial class RuntimeService : IDisposable
         {
             throw new ArgumentOutOfRangeException(nameof(action), action, UiText.Get("UnsupportedTunnelAction"));
         }
+        InvalidateTailscaleStatus();
         try { await RunNativeAgentDockAsync("tunnel", [action], cancellationToken); }
         finally { InvalidateTailscaleStatus(); }
     }
@@ -1560,6 +1571,8 @@ public sealed partial class RuntimeService : IDisposable
 
     public void Dispose()
     {
+        _tailscaleLifetime.Cancel();
+        _funnelVerification.Dispose();
         _httpClient.Dispose();
     }
 }

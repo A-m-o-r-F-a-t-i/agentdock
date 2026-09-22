@@ -13,6 +13,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/app"
+	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/permission"
 	"github.com/uvwt/agentdock/internal/taskstate"
 )
@@ -178,6 +179,32 @@ func (h *activityHTTP) serveExecution(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result, err := observer.RuntimeClientConnection(ctx)
+		finish(result, err)
+		return
+	}
+	if len(parts) == 2 && parts[0] == "execution" && parts[1] == "display" {
+		display, ok := h.runtime.(interface {
+			RuntimeDisplaySettings(context.Context) (app.Result, error)
+			RuntimeUpdateDisplaySettings(context.Context, config.DisplayChange) (app.Result, error)
+		})
+		if !ok {
+			writeRuntimeAPIError(w, 503, "DISPLAY_UNAVAILABLE", "display settings are unavailable")
+			return
+		}
+		if r.Method == http.MethodGet {
+			result, err := display.RuntimeDisplaySettings(ctx)
+			finish(result, err)
+			return
+		}
+		if r.Method != http.MethodPost {
+			activityMethodError(w, "GET, POST")
+			return
+		}
+		var change config.DisplayChange
+		if !decodeExecutionBody(w, r, &change) {
+			return
+		}
+		result, err := display.RuntimeUpdateDisplaySettings(ctx, change)
 		finish(result, err)
 		return
 	}

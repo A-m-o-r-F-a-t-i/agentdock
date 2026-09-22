@@ -16,6 +16,7 @@ import (
 // Hooks keep lifecycle failures testable without a production environment flag
 // that could skip authentication, public verification or ownership checks.
 type publicAccessHooks struct {
+	waitForPublic       bool
 	findBinary          func(string) (string, error)
 	client              func(string) tailscaleClient
 	ensureCredentials   func(string) error
@@ -56,7 +57,7 @@ func defaultPublicAccessHooks() publicAccessHooks {
 			if err != nil {
 				return errors.New("无法读取 AgentDock Bearer Token，未执行公网认证验证")
 			}
-			return waitTailscalePublicOrigin(ctx, origin, token, newTailscaleHTTPClient())
+			return verifyTailscalePublicOrigin(ctx, origin, token, newTailscaleHTTPClient())
 		},
 		saveState:    saveTailscaleState,
 		saveManifest: func(runtime tunnelRuntime, mode, origin string) error { return runtime.updateManifest(mode, origin) },
@@ -110,6 +111,7 @@ func configurePublicAccess(ctx context.Context, runtime tunnelRuntime, request T
 	}
 	return withTailscaleMutationLock(ctx, binary, func() error {
 		if request.Provider == PublicAccessProviderTailscale {
+			hooks.waitForPublic = request.WaitForPublic
 			return configureTailscaleAccess(ctx, runtime, binary, true, hooks)
 		}
 		return leaveTailscaleAccess(ctx, runtime, binary, request, hooks)
@@ -242,7 +244,7 @@ func configureTailscaleAccess(ctx context.Context, runtime tunnelRuntime, binary
 		return err
 	}
 	origin := "https://" + node.DNSName
-	if !allowAdoption && len(change.mutations) == 0 && previous != nil && previous.Enabled && !previous.Pending && previous.VerifiedAt != nil && previous.LocalOrigin == runtime.localOrigin() {
+	if len(change.mutations) == 0 && previous != nil && previous.Enabled && previous.LocalOrigin == runtime.localOrigin() && (!hooks.waitForPublic || !previous.Pending && previous.VerifiedAt != nil) {
 		currentOrigin, readErr := readTrimmedText(runtime.files.serverURL)
 		cfRunning, processErr := hooks.cloudflareRunning(runtime.manifest.CloudflaredBinary)
 		startup, startupErr := hooks.startupEnabled(runtime.manifest)
@@ -301,8 +303,13 @@ func configureTailscaleAccess(ctx context.Context, runtime tunnelRuntime, binary
 	if err := hooks.restartCore(ctx, runtime.root); err != nil {
 		return err
 	}
-	if err := hooks.verifyOrigin(ctx, runtime, origin); err != nil {
-		return err
+	if !hooks.localHealthy(ctx, runtime.localOrigin()+"/healthz") {
+		return tailscaleProblem("core_unhealthy", "本地配置未通过健康检查，尚未进入公网验证")
+	}
+	if hooks.waitForPublic {
+		if err := hooks.verifyOrigin(ctx, runtime, origin); err != nil {
+			return err
+		}
 	}
 	verifiedNode, verifiedConfig, err := client.observe(ctx)
 	if err != nil {
@@ -323,12 +330,15 @@ func configureTailscaleAccess(ctx context.Context, runtime tunnelRuntime, binary
 		return tailscaleProblem("configuration_changed", "验证期间其他 Tailscale 配置发生变化，已停止提交")
 	}
 	now := time.Now().UTC()
-	pending.Pending, pending.VerifiedAt = false, &now
+	if hooks.waitForPublic {
+		pending.Pending, pending.VerifiedAt = false, &now
+	}
 	if err := hooks.saveState(runtime.root, pending); err != nil {
 		return err
 	}
 	runtime.manifest.TailscaleBinary = binary
-	// The provider and public URL become visible only after local/public checks.
+	// This commits local ownership and the configured URL. A pending record is
+	// not public readiness; the separate verifier must establish that fact.
 	if err := hooks.saveManifest(runtime, "funnel", origin); err != nil {
 		return err
 	}

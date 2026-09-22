@@ -427,34 +427,36 @@ func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 		}
 	}
 }
-func TestWindowsControlPanelKeepsExistingBackgroundAndStylesOnlyButtonsAndTabs(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml"))
-	if err != nil {
-		t.Fatalf("read App.xaml: %v", err)
+func TestWindowsControlPanelSharesDynamicThemeWithoutLayoutChanges(t *testing.T) {
+	base := filepath.Join("..", "..", "desktop", "windows", "control-panel")
+	read := func(name string) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(base, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
 	}
-	app := string(data)
-
-	for _, want := range []string{
-		`x:Key="SurfaceBrush" Color="#F5F7FA"`,
-		`x:Key="BorderBrush" Color="#D8DEE8"`,
-		`<Style TargetType="Button">`,
-		`<Style TargetType="TabControl">`,
-		`<Style TargetType="TabItem">`,
-		`x:Name="PART_SelectedContentHost"`,
-		`Background="White"`,
-	} {
-		if !strings.Contains(app, want) {
-			t.Fatalf("App.xaml missing restrained Windows style %q", want)
+	app, light, dark, tokens := read("App.xaml"), read("Themes/Light.xaml"), read("Themes/Dark.xaml"), read("Themes/Tokens.xaml")
+	if !strings.Contains(light, `x:Key="SurfaceBrush" Color="#F5F7FA"`) || !strings.Contains(light, `x:Key="BorderBrush" Color="#D8DEE8"`) {
+		t.Fatal("light mode lost its restrained surface palette")
+	}
+	for _, key := range []string{"AppBackground", "PanelBackground", "PrimaryText", "SecondaryText", "ActionBorderBrush", "SelectionBackground", "FocusBrush"} {
+		if !strings.Contains(light, `x:Key="`+key+`"`) || !strings.Contains(dark, `x:Key="`+key+`"`) {
+			t.Fatalf("theme parity missing %s", key)
 		}
 	}
-
-	for _, forbidden := range []string{
-		`x:Key="PanelBrush"`,
-		`x:Key="ContentBrush"`,
-		`<Style TargetType="ComboBox">`,
-	} {
+	if !strings.Contains(tokens, `<Style TargetType="TabItem">`) || !strings.Contains(tokens, `Property="IsChecked"`) {
+		t.Fatal("shared templates lost persistent selection")
+	}
+	for _, want := range []string{`Source="Themes/Tokens.xaml"`, `Source="Themes/Light.xaml"`, `BasedOn="{StaticResource ActionButton}"`, `<Style TargetType="TabControl">`, `x:Name="PART_SelectedContentHost"`, `Value="{DynamicResource PanelBackground}"`} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("App.xaml missing shared theme contract %q", want)
+		}
+	}
+	for _, forbidden := range []string{`x:Key="PanelBrush"`, `x:Key="ContentBrush"`, `<Style TargetType="ComboBox">`, `Background="White"`} {
 		if strings.Contains(app, forbidden) {
-			t.Fatalf("button/tab styling must not change the existing window background or unrelated controls: %q", forbidden)
+			t.Fatalf("App.xaml reintroduced a competing palette or control template: %q", forbidden)
 		}
 	}
 }

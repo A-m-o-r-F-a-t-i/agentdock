@@ -43,6 +43,7 @@ public partial class MainWindow : Window
     public MainWindow(RuntimeService runtime)
     {
         _runtime = runtime;
+        DesktopTheme.Initialize(runtime.RuntimeRoot);
         InitializeComponent();
         _updatingUi = true;
         SelectUiLanguage(UiText.ReadPreference());
@@ -89,7 +90,7 @@ public partial class MainWindow : Window
         {
             FooterStatusText.Text = ex.Message;
             HeaderStatusText.Text = UiText.Get("StatusReadFailed");
-            StatusDot.Fill = new SolidColorBrush(Color.FromRgb(217, 45, 32));
+            StatusDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "DangerBrush");
             NexusStatusText.Text = UiText.Get("StatusReadFailed");
         }
         finally
@@ -105,9 +106,7 @@ public partial class MainWindow : Window
         try
         {
             HeaderStatusText.Text = snapshot.Healthy ? UiText.Get("RunningNormally") : snapshot.CoreRunning ? UiText.Get("RunningHealthFailed") : UiText.Get("Stopped");
-            StatusDot.Fill = new SolidColorBrush(snapshot.Healthy
-                ? Color.FromRgb(18, 183, 106)
-                : snapshot.CoreRunning ? Color.FromRgb(247, 144, 9) : Color.FromRgb(152, 162, 179));
+            StatusDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, snapshot.Healthy ? "SuccessBrush" : snapshot.CoreRunning ? "WarningBrush" : "SecondaryText");
 
             NexusStatusText.Text = !string.IsNullOrWhiteSpace(snapshot.Nexus.Error)
                 ? UiText.Get("ConfigurationError")
@@ -151,9 +150,7 @@ public partial class MainWindow : Window
                 : snapshot.Nexus.Paired
                     ? UiText.Format("DeviceTokenSaved", snapshot.Nexus.NodeId)
                     : UiText.Get("DeviceNotPairedHelp");
-            NexusDeviceTokenStatusText.Foreground = snapshot.Nexus.Error.Length > 0
-                ? new SolidColorBrush(Color.FromRgb(217, 45, 32))
-                : new SolidColorBrush(Color.FromRgb(102, 112, 133));
+            NexusDeviceTokenStatusText.SetResourceReference(TextBlock.ForegroundProperty, snapshot.Nexus.Error.Length > 0 ? "DangerBrush" : "SecondaryText");
 
             if (!_settingsLoaded)
             {
@@ -754,14 +751,15 @@ public partial class MainWindow : Window
         row.Children.Add(nameView);
         row.Children.Add(toggle);
 
-        return new Border
+        var container = new Border
         {
             Child = row,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(234, 236, 240)),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Padding = new Thickness(8, 8, 8, 8)
         };
+        container.SetResourceReference(Border.BorderBrushProperty, "SeparatorBrush");
+        return container;
     }
 
     private static string AcpDisplayName(AcpProfileSettings profile)

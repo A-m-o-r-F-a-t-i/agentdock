@@ -214,8 +214,8 @@ def main() -> None:
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--target", type=Path, required=True)
     parser.add_argument("--root", type=Path, required=True)
-    parser.add_argument("--baseline-version", default="1.1.2")
-    parser.add_argument("--target-version", default="1.1.3")
+    parser.add_argument("--baseline-version", default="1.1.3")
+    parser.add_argument("--target-version", default="1.1.4")
     args = parser.parse_args()
     require(not args.root.exists(), "Provide a fresh isolated test directory")
     for path in (args.baseline, args.target):

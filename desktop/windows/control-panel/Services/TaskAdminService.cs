@@ -446,7 +446,7 @@ internal static class TaskAdminService
 
         dynamic action = definition.Actions.Create(TaskActionExec);
         action.Path = Path.GetFullPath(request.LauncherPath);
-        action.Arguments = $"service launch-core --runtime-root \"{Path.GetFullPath(request.RuntimeRoot)}\"";
+        action.Arguments = ElevatedCoreArguments(request.RuntimeRoot);
 
         dynamic task = root.RegisterTaskDefinition(
             request.TaskName,
@@ -461,6 +461,8 @@ internal static class TaskAdminService
             $"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;{request.UserSid})",
             0);
     }
+
+    internal static string ElevatedCoreArguments(string runtimeRoot) => $"--run-core-task --runtime-root \"{Path.GetFullPath(runtimeRoot)}\"";
 
     private sealed class SchedulerSession : IDisposable
     {

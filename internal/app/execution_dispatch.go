@@ -22,17 +22,20 @@ type liveExecution struct {
 	source    activity.Source
 }
 type preparedExecution struct {
-	spec       ToolSpec
-	args       map[string]any
-	state      executionObservation
-	source     activity.Source
-	decision   permission.Decision
-	approvalID string
-	sessionIDs []string
-	mcpTarget  string
+	spec                ToolSpec
+	args                map[string]any
+	state               executionObservation
+	source              activity.Source
+	decision            permission.Decision
+	approvalID          string
+	approvalRequestedAt time.Time
+	executionStartedAt  time.Time
+	sessionIDs          []string
+	mcpTarget           string
 }
 
-func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[string]any) (Result, error) {
+func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[string]any) (result Result, returnErr error) {
+	received := time.Now()
 	callID, err := activity.NewExecutionID("call_")
 	if err != nil {
 		return nil, err
@@ -43,10 +46,38 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 	initial := snapshot
 	// Audit the trusted origin before validating optional business overrides.
 	initial.TaskID, initial.ThreadID, initial.StepID, initial.WorkspaceID = "", "", "", ""
-	state := executionObservation{binding: snapshot, entryBinding: snapshot, started: time.Now(), originals: map[string]string{}}
-	if err = r.appendExecution(activity.Event{Binding: initial, Kind: "call.created", Status: "created", ToolName: spec.Name, Title: spec.Title}); err != nil {
+	state := executionObservation{binding: snapshot, entryBinding: snapshot, started: received, originals: map[string]string{}}
+	created := activity.Event{Binding: initial, Kind: "call.created", Status: "created", ToolName: spec.Name, Title: spec.Title}
+	if parent.CallID == "" && resolveErr == nil && !activity.IsDiagnostic(ctx) && !activity.IsLocalManagement(ctx) && initial.ConversationID != "" {
+		stamp := received.UTC()
+		created.RequestReceivedAt = &stamp
+	}
+	if err = r.appendExecution(created); err != nil {
 		return nil, toolError("AUDIT_UNAVAILABLE", "The execution journal is unavailable; the tool was not dispatched.", "runtime")
 	}
+	defer func() {
+		binding := state.binding
+		if binding.Validate() != nil {
+			binding = initial
+		}
+		if recovered := recover(); recovered != nil {
+			result = nil
+			returnErr = r.executionError(toolError("TOOL_PANIC", "Tool handler panicked; the side-effect result is unknown. Verify it before retrying.", "runtime"), state)
+			if auditErr := r.appendExecution(activity.Event{Binding: binding, Kind: "call.completed", ToolName: spec.Name, Status: "unknown", ErrorCode: "TOOL_PANIC", Summary: returnErr.Error()}); auditErr != nil {
+				returnErr = errors.Join(returnErr, fmt.Errorf("panic outcome could not be persisted: %w", auditErr))
+			}
+		}
+		if auditErr := r.recordRPCReturn(binding, spec.Name, received, result, returnErr); auditErr != nil {
+			if returnErr != nil {
+				returnErr = errors.Join(returnErr, fmt.Errorf("RPC audit persistence failed; verify side effects before retrying: %w", auditErr))
+			} else {
+				if result == nil {
+					result = Result{}
+				}
+				result["activity_warning"] = "RPC returned, but its timing record could not be saved. Verify side effects before retrying."
+			}
+		}
+	}()
 	fail := func(failure error) (Result, error) {
 		event := activity.Event{Binding: state.binding, Kind: "call.completed", Status: "failed", ToolName: spec.Name, Title: spec.Title, ElapsedMS: time.Since(state.started).Milliseconds(), Summary: r.executionRedactor(original).Text(failure.Error(), 4096)}
 		if event.Binding.Validate() != nil {
@@ -56,7 +87,12 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 		if errors.As(failure, &toolErr) {
 			event.ErrorCode = toolErr.Code
 		}
-		_ = r.appendExecution(event)
+		if spec.Name == "file_edit" {
+			event.FileEdit = r.fileEditDetails(original, nil, state, failure)
+		}
+		if auditErr := r.appendExecution(event); auditErr != nil {
+			failure = errors.Join(failure, fmt.Errorf("rejected call could not be persisted: %w", auditErr))
+		}
 		return nil, r.executionError(failure, state)
 	}
 	if resolveErr != nil {
@@ -107,6 +143,7 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 	}
 	ctx = activity.WithExecutionScope(ctx, snapshot)
 	state, err = r.prepareObservedExecution(ctx, spec.Name, args)
+	state.started = received
 	if err != nil {
 		return fail(err)
 	}
@@ -123,6 +160,11 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 	description := r.describeExecution(spec.Name, args, state)
 	if err = r.appendExecution(activity.Event{Binding: state.binding, Kind: "call.bound", ToolName: spec.Name, Title: description, ParameterSummary: r.executionParameters(args), DisplayCommand: r.executionRedactor(args).Text(stringArg(args, "cmd"), 4096), Summary: description}); err != nil {
 		return fail(err)
+	}
+	if spec.Name == "file_edit" {
+		if err = r.appendExecution(activity.Event{Binding: state.binding, Kind: "file.requested", ToolName: spec.Name, FileEdit: r.fileEditDetails(args, nil, state, nil)}); err != nil {
+			return fail(err)
+		}
 	}
 	r.executionMu.Lock()
 	if err = r.executionAdmissionLocked(ctx, state.binding, spec.Name, stringArg(args, "action"), callID); err != nil {
@@ -257,7 +299,7 @@ func (r *Runtime) describeExecution(name string, args map[string]any, state exec
 	if name == "mcp_tool_call" {
 		return r.executionRedactor(args).Text(stringArg(args, "name"), 512)
 	}
-	descriptions := map[string]string{"agentdock_context": "加载上下文", "read_file": "读取文件", "list_dir": "列出目录", "search_text": "搜索文本", "exec_command": "运行命令", "file_edit": "编辑文件", "task_manage": "任务管理", "workspace_manage": "工作区管理", "mcp_tool_search": "发现动态工具", "mcp_tool_inspect": "加载工具 Schema", "mcp_tool_call": "调用动态工具", "plugin_load": "展开插件", "session_observe": "查看命令会话", "session_act": "控制命令会话"}
+	descriptions := map[string]string{"agentdock_context": "加载上下文", "read_file": "读取文件", "list_dir": "列出目录", "search_text": "搜索文本", "exec_command": "运行命令", "file_edit": "EDIT_FILE", "task_manage": "任务管理", "workspace_manage": "工作区管理", "mcp_tool_search": "发现动态工具", "mcp_tool_inspect": "加载工具 Schema", "mcp_tool_call": "调用动态工具", "plugin_load": "展开插件", "session_observe": "查看命令会话", "session_act": "控制命令会话"}
 	title := descriptions[name]
 	if title == "" {
 		title = name
@@ -461,11 +503,16 @@ func (r *Runtime) executePrepared(ctx context.Context, p *preparedExecution) (re
 		}
 	}
 	var err error
+	handlerStarted := time.Now()
+	waitMS := handlerStarted.Sub(p.state.started).Milliseconds()
+	p.state.waitMS, p.state.executed = &waitMS, true
 	if p.spec.Name == "session_act" && stringArg(p.args, "action") == "kill_all" {
 		result, err = r.executeSessionSelection(ctx, p)
 	} else {
 		result, err = p.spec.Handler(ctx, r, p.args)
 	}
+	executionMS := time.Since(handlerStarted).Milliseconds()
+	p.state.executionMS = &executionMS
 	if p.spec.Name == "file_edit" && err == nil {
 		r.recordFileChanges(p.args, result, state)
 	}
@@ -477,6 +524,11 @@ func (r *Runtime) executePrepared(ctx context.Context, p *preparedExecution) (re
 		result = r.filterSessionList(ctx, result, p.state.binding)
 	}
 	if p.spec.Name == "exec_command" && err == nil && stringArg(result, "session_id") != "" {
+		phase := activity.Event{Binding: state.binding, Kind: "call.phases", ToolName: p.spec.Name}
+		phase.ExecutionElapsedMS, phase.WaitElapsedMS = &executionMS, &waitMS
+		if auditErr := r.appendExecution(phase); auditErr != nil {
+			result["activity_warning"] = "Command returned but dispatch phase measurements could not be persisted."
+		}
 		// Command activity owns stdout/stderr and completion, including asynchronous
 		// exit. Do not produce a second success event when the process is still running.
 		if p.approvalID != "" {
@@ -514,6 +566,11 @@ func (r *Runtime) finishPrepared(p *preparedExecution, result Result, err error,
 		}
 	}
 	event := activity.Event{Binding: p.state.binding, Kind: "call.completed", Status: status, ToolName: p.spec.Name, Title: r.describeExecution(p.spec.Name, p.args, p.state), ApprovalID: p.approvalID, PermissionMode: p.decision.Mode, RuleID: p.decision.RuleID, ElapsedMS: time.Since(p.state.started).Milliseconds(), Summary: summary}
+	event.OperationElapsedMS = &event.ElapsedMS
+	event.ExecutionElapsedMS, event.WaitElapsedMS = p.state.executionMS, p.state.waitMS
+	if p.spec.Name == "file_edit" {
+		event.FileEdit = r.fileEditDetails(p.args, result, p.state, err)
+	}
 	var te *ToolError
 	if errors.As(err, &te) {
 		event.ErrorCode = te.Code

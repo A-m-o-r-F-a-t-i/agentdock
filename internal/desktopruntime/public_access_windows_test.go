@@ -45,6 +45,9 @@ func newPublicAccessTestSystem(t *testing.T, mode string) (tunnelRuntime, *publi
 	}
 	system := &publicAccessTestSystem{t: t, fake: newMemoryTailscale(&tailscaleServeConfig{}), core: true, cloudflare: mode != "none", startup: mode != "none"}
 	hooks := defaultPublicAccessHooks()
+	// Explicit synchronous mode retains the transaction/rollback contract used
+	// by installation acceptance. Normal desktop configuration is two-stage.
+	hooks.waitForPublic = true
 	hooks.findBinary = func(string) (string, error) { return filepath.Join(root, "tailscale.exe"), nil }
 	hooks.client = func(string) tailscaleClient { return system.fake.client() }
 	hooks.ensureCredentials = func(string) error { return nil }

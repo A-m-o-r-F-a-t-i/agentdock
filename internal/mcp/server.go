@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -20,10 +21,12 @@ import (
 )
 
 type Server struct {
-	runtime     *app.Runtime
-	cfg         config.Config
-	sdk         *mcpsdk.Server
-	httpHandler http.Handler
+	presentationMu        sync.Mutex
+	registeredUIResources []string
+	runtime               *app.Runtime
+	cfg                   config.Config
+	sdk                   *mcpsdk.Server
+	httpHandler           http.Handler
 }
 
 func NewServer(runtime *app.Runtime, cfg config.Config) *Server {
@@ -38,10 +41,8 @@ func NewServer(runtime *app.Runtime, cfg config.Config) *Server {
 	)
 	if runtime != nil {
 		server.sdk.AddReceivingMiddleware(server.observeDiscovery)
-		server.registerAppResources()
-		for _, definition := range runtime.ToolDefinitions() {
-			server.registerTool(definition)
-		}
+		runtime.OnDisplaySettingsChanged(server.refreshPresentation)
+		server.refreshPresentation()
 	}
 	server.httpHandler = mcpsdk.NewStreamableHTTPHandler(
 		func(*http.Request) *mcpsdk.Server { return server.sdk },
@@ -91,7 +92,7 @@ func (s *Server) ToolDescriptors() []map[string]any {
 	if s == nil || s.runtime == nil {
 		return nil
 	}
-	return toolDescriptors(s.runtime.ToolDefinitions(), s.cfg.MCPAppsEnabled)
+	return toolDescriptors(s.runtime.ToolDefinitions(), s.uiEnabled())
 }
 
 func (s *Server) Invoke(ctx context.Context, name string, arguments map[string]any) (map[string]any, error) {
@@ -117,7 +118,7 @@ func (s *Server) ServeStdio(in io.Reader, out io.Writer) error {
 }
 
 func (s *Server) registerTool(def ToolDefinition) {
-	meta := toolMetadata(def, s.cfg.MCPAppsEnabled)
+	meta := toolMetadata(def, s.uiEnabled())
 	tool := &mcpsdk.Tool{
 		Name:         def.Name,
 		Title:        def.Title,
@@ -179,11 +180,76 @@ func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.Call
 		return nil, fmt.Errorf("decode MCP tool result: %w", decodeErr)
 	}
 	if def, ok := s.runtime.ToolDefinition(name); ok {
-		if meta := toolResultMetadata(def, arguments, s.cfg.MCPAppsEnabled); len(meta) > 0 {
-			response.Meta = meta
+		if meta := toolResultMetadata(def, arguments, s.uiEnabled()); len(meta) > 0 {
+			if response.Meta == nil {
+				response.Meta = mcpsdk.Meta{}
+			}
+			for key, value := range meta {
+				response.Meta[key] = value
+			}
 		}
 	}
+	if !s.uiEnabled() {
+		response.Meta = withoutOwnedUIMount(response.Meta)
+	}
 	return &response, nil
+}
+
+func (s *Server) uiEnabled() bool {
+	if s == nil {
+		return false
+	}
+	if s.runtime != nil {
+		return s.runtime.ChatGPTMCPUIEnabled()
+	}
+	return s.cfg.MCPAppsEnabled
+}
+
+func (s *Server) refreshPresentation() {
+	s.presentationMu.Lock()
+	defer s.presentationMu.Unlock()
+	if s.sdk == nil || s.runtime == nil {
+		return
+	}
+	if !s.uiEnabled() && len(s.registeredUIResources) > 0 {
+		s.sdk.RemoveResources(s.registeredUIResources...)
+		s.registeredUIResources = nil
+	} else if s.uiEnabled() && len(s.registeredUIResources) == 0 {
+		s.registerAppResources()
+		for _, resource := range s.appResourceDefinitions() {
+			s.registeredUIResources = append(s.registeredUIResources, resource.URI)
+		}
+	}
+	// AddTool replaces descriptors without stopping in-flight handlers. The SDK
+	// coalesces tools/list_changed on initialized supporting connections.
+	for _, definition := range s.runtime.ToolDefinitions() {
+		s.registerTool(definition)
+	}
+}
+
+func withoutOwnedUIMount(original mcpsdk.Meta) mcpsdk.Meta {
+	if len(original) == 0 {
+		return original
+	}
+	copy := make(mcpsdk.Meta, len(original))
+	for key, value := range original {
+		copy[key] = value
+	}
+	delete(copy, "openai/outputTemplate")
+	if ui, ok := original["ui"].(map[string]any); ok {
+		kept := make(map[string]any, len(ui))
+		for key, value := range ui {
+			if key != "resourceUri" {
+				kept[key] = value
+			}
+		}
+		if len(kept) == 0 {
+			delete(copy, "ui")
+		} else {
+			copy["ui"] = kept
+		}
+	}
+	return copy
 }
 
 func requestConversationContext(ctx context.Context, meta map[string]any) (context.Context, error) {

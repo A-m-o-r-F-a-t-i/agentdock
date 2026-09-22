@@ -9,6 +9,8 @@ public static class ExecutionJson
     public static JsonElement Field(this JsonElement value, string name) => value.ValueKind == JsonValueKind.Object && value.TryGetProperty(name, out var field) ? field : default;
     public static string Text(this JsonElement value, string name, string fallback = "") => value.Field(name).ValueKind == JsonValueKind.String ? value.Field(name).GetString() ?? fallback : fallback;
     public static long Number(this JsonElement value, string name) => value.Field(name).ValueKind == JsonValueKind.Number && value.Field(name).TryGetInt64(out var number) ? number : 0;
+    public static long? OptionalNumber(this JsonElement value, string name) => value.Field(name).ValueKind == JsonValueKind.Number && value.Field(name).TryGetInt64(out var number) ? number : null;
+    public static DateTimeOffset? Date(this JsonElement value, string name) => DateTimeOffset.TryParse(value.Text(name), out var date) && date.Year > 1 ? date : null;
     public static bool Flag(this JsonElement value, string name) => value.Field(name).ValueKind == JsonValueKind.True;
     public static JsonElement[] Array(this JsonElement value, string name) => value.Field(name).ValueKind == JsonValueKind.Array ? value.Field(name).EnumerateArray().Select(item => item.Clone()).ToArray() : [];
     public static string Pretty(this JsonElement value) => value.ValueKind == JsonValueKind.Undefined ? "" : JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });
@@ -24,8 +26,16 @@ public static class ExecutionJson
 public sealed record WorkspaceGroupKey(string Id, string Title);
 public sealed record ExecutionChoice(string Id, string Title) { public override string ToString() => Title; }
 
-public sealed class ExecutionObject
+public sealed class ExecutionObject : INotifyPropertyChanged
 {
+    private bool _recentlyActive;
+    public event PropertyChangedEventHandler? PropertyChanged;
+    public DateTimeOffset? LastToolCallAt { get; set; }
+    public bool RecentlyActive
+    {
+        get => _recentlyActive;
+        set { if (_recentlyActive == value) return; _recentlyActive = value; PropertyChanged?.Invoke(this, new(nameof(RecentlyActive))); }
+    }
     public string Id { get; init; } = "";
     public string Kind { get; init; } = "conversation";
     public string Title { get; init; } = "";
@@ -60,7 +70,7 @@ public sealed class ExecutionObject
             Detail = kind == "task" ? ExecutionJson.State(value.Text("status")) : value.Text("source"),
             Pinned = value.Flag("pinned"), Archived = value.HasDate("archived_at"), Trashed = value.HasDate("trashed_at"), Terminated = value.HasDate("terminated_at"),
             ManagementDates = created, IsUnknown = value.Flag("is_unattributed"), IsOrphan = value.Flag("is_orphan"),
-            PendingCount = stats.Number("pending"), RunningCount = stats.Number("running"), Snapshot = value.Clone()
+            PendingCount = stats.Number("pending"), RunningCount = stats.Number("running"), Snapshot = value.Clone(), LastToolCallAt = stats.Date("last_tool_call_at")
         };
     }
 }
@@ -90,7 +100,37 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
     public bool ReadOnlyLegacy => _value.Flag("read_only_legacy");
     public string Summary => _value.Text("summary");
     public string Title => _value.Text("activity_label", _value.Text("display_title", _value.Text("title", Tool))).Replace('\r', ' ').Replace('\n', ' ');
-    public string Duration => (_value.Number("elapsed_ms") / 1000.0).ToString("0.000") + " s";
+    public DateTimeOffset? RequestReceivedAt => _value.Date("request_received_at");
+    public long? RpcElapsedMs => _value.OptionalNumber("rpc_elapsed_ms");
+    public string Duration => FormatDuration(RpcElapsedMs ?? (_value.Number("elapsed_ms") > 0 ? _value.Number("elapsed_ms") : null));
+    public string ExecutionDuration => FormatDuration(_value.OptionalNumber("execution_elapsed_ms"));
+    public string WaitDuration => FormatDuration(_value.OptionalNumber("wait_elapsed_ms"));
+    public string ActualTool => Tool == "file_edit" ? "file_edit · EDIT_FILE" : Tool;
+    public string Started => _value.Date("started_at")?.ToLocalTime().ToString("HH:mm:ss.fff") ?? When;
+    public string SourceType => _value.Text("source", "未记录");
+    public string TimingDetails => string.Join("\n", new[]
+    {
+        "工具：" + Tool,
+        "RPC 返回：" + (_value.Date("rpc_completed_at")?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff") ?? "未记录"),
+        "RPC 耗时：" + FormatDuration(RpcElapsedMs),
+        "执行阶段：" + ExecutionDuration,
+        "执行前等待：" + WaitDuration + "（含已观测到的准备及审批等待）",
+        "操作完成耗时：" + FormatDuration(_value.OptionalNumber("operation_elapsed_ms")),
+        "后台命令进程：" + FormatDuration(_value.OptionalNumber("process_elapsed_ms")),
+        "RPC 与后台命令分别计时。并发调用的累计耗时不等于实际经过时间。"
+    });
+    public string FileEditDetails
+    {
+        get
+        {
+            var edit = _value.Field("file_edit");
+            if (edit.ValueKind != JsonValueKind.Object) return "文件操作详情未记录。";
+            var changed = edit.Field("changed").ValueKind switch { JsonValueKind.True => "是", JsonValueKind.False => "否", _ => "结果未知" };
+            var files = edit.Array("affected_files").Select(file => file.Text("path") + (file.Text("move_to").Length > 0 ? " → " + file.Text("move_to") : ""));
+            return $"EDIT_FILE / file_edit · {edit.Text("action")}\n目标：{edit.Text("path")}\n预览：{(edit.Flag("dry_run") ? "是，未写入" : "否")}\n已派发：{(edit.Flag("executed") ? "是" : "否")}\n实际修改：{changed}\n影响文件数：{edit.OptionalNumber("affected_count")?.ToString() ?? "未记录"}\n新增/删除行：{edit.OptionalNumber("insertions")?.ToString() ?? "未记录"} / {edit.OptionalNumber("deletions")?.ToString() ?? "未记录"}\n" + string.Join("\n", files) + (edit.Flag("files_truncated") ? "\n文件明细超过预览上限。" : "") + "\n\n" + edit.Text("diff_preview") + (edit.Flag("diff_truncated") ? "\n差异预览已截断。" : "");
+        }
+    }
+    private static string FormatDuration(long? milliseconds) => milliseconds is >= 0 ? (milliseconds.Value / 1000.0).ToString("0.000") + " s" : "未记录";
     public string When => DateTimeOffset.TryParse(_value.Text("created_at"), out var date) ? date.ToLocalTime().ToString("HH:mm:ss") : "";
     public string Rule => string.Join(" · ", new[] { _value.Text("rule_id"), ExecutionJson.Mode(_value.Text("permission_mode")) }.Where(value => value.Length > 0));
     public string SourceState => _sourceState;
@@ -148,6 +188,7 @@ public sealed class ExecutionPreferences
     public string LastView { get; set; } = "conversation";
     public string LastKind { get; set; } = "conversation";
     public string Theme { get; set; } = "system";
+    public bool DetailedCalls { get; set; }
     public string LastConversation { get; set; } = "";
     public HashSet<string> CollapsedWorkspaces { get; set; } = [];
     public Dictionary<string, string[]> SavedFilters { get; set; } = [];

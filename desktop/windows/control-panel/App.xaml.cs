@@ -88,6 +88,7 @@ public partial class App : System.Windows.Application
 
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         Runtime = new RuntimeService();
+        DesktopTheme.Initialize(Runtime.RuntimeRoot);
         ControlPanelWindow = new MainWindow(Runtime);
         MainWindow = ControlPanelWindow;
 
@@ -637,6 +638,7 @@ public partial class App : System.Windows.Application
         }
         _singleInstanceMutex?.Dispose();
         Runtime?.Dispose();
+        DesktopTheme.Dispose();
         base.OnExit(e);
     }
 }

@@ -6,7 +6,7 @@ English | [简体中文](./README.zh-CN.md)
 
 # AgentDock MCP
 
-This fork's Windows release: **[AgentDock 1.1.0](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/tag/v1.1.0)** · [Release notes and verification scope](./docs/releases/v1.1.0.md) · [Tailscale Funnel configuration](./docs/tailscale-funnel.md). This fork publishes Windows packages only; upstream platform downloads remain separate.
+This fork's current Windows candidate: **AgentDock 1.1.4** · [1.1.4 release notes and verification](./docs/releases/v1.1.4.md) · [Differences from upstream and migration](./docs/official-version-differences-and-migration.md) · [Tailscale Funnel configuration](./docs/tailscale-funnel.md). This fork publishes Windows packages only; upstream platform downloads remain separate.
 
 **Give AI agents secure, controlled access to every machine you operate.**
 
@@ -69,6 +69,10 @@ AgentDock does not provide a chat interface or perform model inference. It focus
 - Persist long-running task state and continue after an interruption
 - Use the same tool model across macOS, Linux, Windows, and containers
 - And more
+
+## This fork and upstream AgentDock
+
+This README keeps the comparison concise. See [the detailed feature differences and migration guide](./docs/official-version-differences-and-migration.md) for the fork's plugin model, `AGENTS.md` injection, execution center, Windows desktop extensions, and state boundaries. Switching between the upstream release and this fork requires uninstalling the previous distribution and starting with clean state, or converting only reviewed text configuration in a backup copy; credentials and runtime journals must not be copied directly.
 
 ## Quick start
 
