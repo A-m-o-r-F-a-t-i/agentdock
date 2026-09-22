@@ -50,6 +50,7 @@ type Item struct {
 	Sequence     uint64    `json:"sequence"`
 	Text         string    `json:"text"`
 	Status       string    `json:"status"`
+	ExpiredFrom  string    `json:"expired_from,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -150,6 +151,7 @@ func expire(state *diskState, now time.Time) bool {
 	for index := range state.Items {
 		item := &state.Items[index]
 		if waiting(item.Status) && !now.Before(item.ExpiresAt) {
+			item.ExpiredFrom = item.Status
 			item.Status = "expired"
 			item.UpdatedAt = now
 			dirty = true
@@ -215,13 +217,22 @@ func (s *Store) Reserve(ctx context.Context, target Target, callID string, recei
 		dirty := false
 		for index := range state.Items {
 			item := &state.Items[index]
-			if item.Status != "pending" || item.Owner != target.Owner || item.Conversation != target.Conversation {
+			// The authenticated root arrival time is authoritative. A read/sweep
+			// may acquire this lock first just after the deadline while that root
+			// is still completing attribution. Only a formerly pending item may
+			// be claimed in that case; paused, cancelled or delivered items cannot.
+			claimable := item.Status == "pending" || item.Status == "expired" && item.ExpiredFrom == "pending" && item.CallID == ""
+			if !claimable || item.Owner != target.Owner || item.Conversation != target.Conversation {
 				continue
 			}
 			if received.Before(item.CreatedAt) {
 				continue
 			}
 			if !received.Before(item.ExpiresAt) {
+				if item.Status == "expired" {
+					continue
+				}
+				item.ExpiredFrom = item.Status
 				item.Status = "expired"
 				item.UpdatedAt = now
 				dirty = true
@@ -234,6 +245,7 @@ func (s *Store) Reserve(ctx context.Context, target Target, callID string, recei
 				continue
 			}
 			item.Status = "reserved"
+			item.ExpiredFrom = ""
 			item.CallID = callID
 			item.RunID = s.run
 			item.UpdatedAt = now
@@ -317,7 +329,7 @@ func (s *Store) Cancel(ctx context.Context, owner, conversation, id string, incl
 			if id != "" && !includeReserved && item.Status == "reserved" {
 				return false, errors.New("insertion already reserved by a tool call; withdrawal was not performed")
 			}
-			if waiting(item.Status) || includeReserved && item.Status == "reserved" {
+			if waiting(item.Status) || includeReserved && item.Status == "reserved" || item.Status == "expired" && item.ExpiredFrom == "pending" {
 				item.Status = "cancelled"
 				item.UpdatedAt = now
 				dirty = true

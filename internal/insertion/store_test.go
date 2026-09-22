@@ -202,3 +202,44 @@ func TestInsertionBoundsAndCorruptStorePreservation(t *testing.T) {
 		t.Fatal("corrupt store overwritten")
 	}
 }
+
+func TestInsertionArrivalBeforeDeadlineSurvivesConcurrentExpirySweep(t *testing.T) {
+	for _, mode := range []string{"pending", "task_changed", "cancelled", "late"} {
+		t.Run(mode, func(t *testing.T) {
+			s, now, target := fixture(t)
+			item := enqueue(t, s, target, "deadline_race")
+			received := item.ExpiresAt.Add(-time.Millisecond)
+			if mode == "task_changed" {
+				other := target
+				other.Task = "tsk_other"
+				*now = now.Add(time.Second)
+				if _, err := s.Reserve(context.Background(), other, "call_other", *now); err != nil {
+					t.Fatal(err)
+				}
+			}
+			*now = item.ExpiresAt.Add(time.Millisecond)
+			if err := s.Sweep(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "cancelled" {
+				if err := s.Cancel(context.Background(), target.Owner, target.Conversation, item.ID, false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if mode == "late" {
+				received = *now
+			}
+			items, err := s.Reserve(context.Background(), target, "call_delayed_attribution", received)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := 0
+			if mode == "pending" {
+				want = 1
+			}
+			if len(items) != want {
+				t.Fatalf("mode=%s claimed=%d", mode, len(items))
+			}
+		})
+	}
+}
