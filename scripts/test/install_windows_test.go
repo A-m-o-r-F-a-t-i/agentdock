@@ -1052,11 +1052,15 @@ func TestWindowsSetupE2EStagesCompleteLegacyFixture(t *testing.T) {
 		"Copy-Item -LiteralPath $resolvedLegacyTray -Destination $trayPath -Force",
 		"[IO.Path]::GetFullPath($trayPath)",
 		"$_.Arguments.Contains('--run-core-task')",
-		"$parent.Name -ne 'agentdock-tray.exe'",
-		"Elevated generation Core is not supervised by the tray WinExe host",
+		"$stableCoreShim.Name -ne 'agentdock.exe'",
+		"Elevated generation Core is not supervised by the stable CUI shim",
+		"$generationTrayHost.Name -ne 'agentdock-tray.exe'",
+		"Stable CUI shim is not supervised by the active generation tray WinExe host",
+		"$stableTrayHost.Name -ne 'agentdock-tray.exe'",
+		"Active generation tray WinExe is not supervised by the stable tray WinExe host",
 	} {
 		if !strings.Contains(testScript, want) {
-			t.Fatalf("Setup E2E must stage a complete legacy fixture and validate the WinExe core host; missing %q", want)
+			t.Fatalf("Setup E2E must stage a complete legacy fixture and validate the stable/generation core host chain; missing %q", want)
 		}
 	}
 

@@ -19,7 +19,7 @@ locations and gates. It is not a declaration that the release has passed.
 | Observation | `internal/app/execution_dispatch.go`, `execution_observation.go`, `internal/activity/{model,calls}.go` | One root per request, separate RPC/process measurements, file action result and affected paths, replay-safe request activity |
 | UI policy | `internal/mcp/server.go`, local runtime HTTP API | Persisted `chatgpt_mcp_ui_enabled`, live directory/result policy without restart, retain non-UI metadata and tool capabilities |
 | Funnel | `internal/desktopruntime/tailscale_*.go`, `RuntimeService.Tailscale.cs` | Reuse owned mappings, separate local readiness from public verification, bounded backoff, cancellation and detailed phase results |
-| Startup | `Services/TaskAdminService.cs`, existing `--run-core-task` GUI entry | Avoid directly launching the console core as the scheduled task; preserve elevated execution and installer recovery |
+| Startup | `Services/TaskAdminService.cs`, existing `--run-core-task` GUI entry | Scheduled Task -> stable tray shim -> generation tray -> hidden stable CUI shim -> generation Core; reject direct console task actions, visible console windows and orphaned Core while preserving elevated execution and installer recovery |
 | Engineering | activity projection, desktop data services, documentation | Incremental/bounded updates, regression tests, architecture/development guidance, fixed upstream comparison and migration paths |
 | Delivery | `.github/workflows/windows-package.yml` | Go and desktop tests, Windows package/manifest validation, install/upgrade/rollback acceptance, release only in the user's fork |
 

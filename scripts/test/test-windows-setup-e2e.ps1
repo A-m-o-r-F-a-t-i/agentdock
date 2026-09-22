@@ -134,6 +134,15 @@ function Test-CoreReadOnlyProbe {
     return $CommandLine -match '(?i)^\s*(?:"[^"]+"|\S+)\s+(?:"?version"?(?:\s+"?--json"?)?\s*$|"?service"?\s+"?status"?(?:\s|$))'
 }
 
+function Format-ProcessIdentity {
+    param($Process)
+
+    if ($null -eq $Process) {
+        return '<missing>'
+    }
+    return "$($Process.Name) $($Process.ExecutablePath) pid=$($Process.ProcessId)"
+}
+
 function Assert-CoreRunsWithoutConsole {
     $generation = Get-ActiveGenerationPaths
     $normalizedBinary = [IO.Path]::GetFullPath($generation.Core)
@@ -152,15 +161,33 @@ function Assert-CoreRunsWithoutConsole {
     if ($listenerOwners.Count -ne 1 -or $listenerOwners[0] -ne $core.ProcessId) {
         throw "The expected generation Core does not own the runtime listener: core=$($core.ProcessId); owners=$($listenerOwners -join ', ')"
     }
-    $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($core.ParentProcessId)" -ErrorAction Stop
-    if ($parent.Name -ne 'agentdock-tray.exe' -or
-        [string]::IsNullOrWhiteSpace($parent.ExecutablePath) -or
-        -not [string]::Equals([IO.Path]::GetFullPath($parent.ExecutablePath), [IO.Path]::GetFullPath($trayPath), [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Elevated generation Core is not supervised by the tray WinExe host: $($parent.Name) $($parent.ExecutablePath)"
+    $stableCoreShim = Get-CimInstance Win32_Process -Filter "ProcessId=$($core.ParentProcessId)" -ErrorAction Stop
+    if ($null -eq $stableCoreShim -or
+        $stableCoreShim.Name -ne 'agentdock.exe' -or
+        [string]::IsNullOrWhiteSpace($stableCoreShim.ExecutablePath) -or
+        -not [string]::Equals([IO.Path]::GetFullPath($stableCoreShim.ExecutablePath), [IO.Path]::GetFullPath($binaryPath), [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Elevated generation Core is not supervised by the stable CUI shim: $(Format-ProcessIdentity -Process $stableCoreShim)"
     }
 
+    $generationTrayHost = Get-CimInstance Win32_Process -Filter "ProcessId=$($stableCoreShim.ParentProcessId)" -ErrorAction Stop
+    if ($null -eq $generationTrayHost -or
+        $generationTrayHost.Name -ne 'agentdock-tray.exe' -or
+        [string]::IsNullOrWhiteSpace($generationTrayHost.ExecutablePath) -or
+        -not [string]::Equals([IO.Path]::GetFullPath($generationTrayHost.ExecutablePath), [IO.Path]::GetFullPath($generation.Tray), [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Stable CUI shim is not supervised by the active generation tray WinExe host: $(Format-ProcessIdentity -Process $generationTrayHost)"
+    }
+
+    $stableTrayHost = Get-CimInstance Win32_Process -Filter "ProcessId=$($generationTrayHost.ParentProcessId)" -ErrorAction Stop
+    if ($null -eq $stableTrayHost -or
+        $stableTrayHost.Name -ne 'agentdock-tray.exe' -or
+        [string]::IsNullOrWhiteSpace($stableTrayHost.ExecutablePath) -or
+        -not [string]::Equals([IO.Path]::GetFullPath($stableTrayHost.ExecutablePath), [IO.Path]::GetFullPath($trayPath), [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Active generation tray WinExe is not supervised by the stable tray WinExe host: $(Format-ProcessIdentity -Process $stableTrayHost)"
+    }
+
+    $consoleOwnerIds = @([int] $core.ProcessId, [int] $stableCoreShim.ProcessId)
     $consoleHosts = @(Get-CimInstance Win32_Process | Where-Object {
-        $_.Name -eq 'conhost.exe' -and $_.ParentProcessId -eq $core.ProcessId
+        $_.Name -eq 'conhost.exe' -and $consoleOwnerIds -contains [int] $_.ParentProcessId
     })
     $visibleConsoleHosts = @($consoleHosts | Where-Object {
         try {
@@ -170,8 +197,16 @@ function Assert-CoreRunsWithoutConsole {
             $false
         }
     })
-    if ($visibleConsoleHosts.Count -gt 0) {
-        throw "Elevated generation Core unexpectedly owns a visible console window: $($visibleConsoleHosts.ProcessId -join ', ')"
+    $visibleConsoleProcesses = @(@($core, $stableCoreShim) | Where-Object {
+        try {
+            (Get-Process -Id $_.ProcessId -ErrorAction Stop).MainWindowHandle -ne 0
+        } catch {
+            $false
+        }
+    })
+    if ($visibleConsoleHosts.Count -gt 0 -or $visibleConsoleProcesses.Count -gt 0) {
+        $visibleProcessIds = @($visibleConsoleHosts.ProcessId) + @($visibleConsoleProcesses.ProcessId)
+        throw "Elevated Core launch chain unexpectedly owns a visible console window: $($visibleProcessIds -join ', ')"
     }
 }
 
