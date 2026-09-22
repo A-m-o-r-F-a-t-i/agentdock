@@ -87,9 +87,10 @@ func run() error {
 		command.Stderr = os.Stderr
 
 		var runErr error
-		if coreLaunchRequiresParentLifetime(os.Args[1:]) {
-			// Scheduled Task owns the stable shim, not the generation Core. Keep the Core
-			// in a kill-on-close Job owned by this shim so ending the task cannot orphan it.
+		if shimChildRequiresParentLifetime(tray, os.Args[1:]) {
+			// Scheduled Task owns the stable shim, not its active-generation child. Keep
+			// the long-lived child tree in a kill-on-close Job owned by this shim so ending
+			// the task cannot orphan either the generation tray host or the generation Core.
 			if err := command.Start(); err != nil {
 				return fmt.Errorf("start AgentDock active generation: %w", err)
 			}
@@ -153,6 +154,21 @@ func coreLaunchRequiresParentLifetime(args []string) bool {
 	return len(args) >= 2 &&
 		strings.EqualFold(strings.TrimSpace(args[0]), "service") &&
 		strings.EqualFold(strings.TrimSpace(args[1]), "launch-core")
+}
+
+func shimChildRequiresParentLifetime(tray bool, args []string) bool {
+	if coreLaunchRequiresParentLifetime(args) {
+		return true
+	}
+	if !tray {
+		return false
+	}
+	for _, argument := range args {
+		if strings.EqualFold(strings.TrimSpace(argument), "--run-core-task") {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveActiveWithRecovery(root string, store *updateengine.Store, layout updateengine.WindowsLayout, allowInstallerHost ...bool) (updateengine.ActiveVersion, error) {

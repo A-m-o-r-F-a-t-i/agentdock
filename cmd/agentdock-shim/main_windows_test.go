@@ -57,6 +57,31 @@ func TestCoreLaunchRequiresParentLifetimeOnlyForServiceHost(t *testing.T) {
 	}
 }
 
+func TestShimChildRequiresParentLifetimeForBothScheduledTaskHosts(t *testing.T) {
+	tests := []struct {
+		name string
+		tray bool
+		args []string
+		want bool
+	}{
+		{name: "stable core shim", args: []string{"service", "launch-core", "--runtime-root", `C:\AgentDock`}, want: true},
+		{name: "stable tray shim", tray: true, args: []string{"--run-core-task", "--runtime-root", `C:\AgentDock`}, want: true},
+		{name: "stable tray shim case insensitive", tray: true, args: []string{" --RUN-CORE-TASK "}, want: true},
+		{name: "normal background tray", tray: true, args: []string{"--background"}},
+		{name: "tray task admin", tray: true, args: []string{"--task-admin", "prepare-elevated"}},
+		{name: "core status", args: []string{"service", "status"}},
+		{name: "core binary ignores tray-only argument", args: []string{"--run-core-task"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := shimChildRequiresParentLifetime(test.tray, test.args); got != test.want {
+				t.Fatalf("shimChildRequiresParentLifetime(tray=%v, args=%q) = %v, want %v", test.tray, test.args, got, test.want)
+			}
+		})
+	}
+}
+
 func TestPolicyRecoveryNeverAllowsRuntimeStartup(t *testing.T) {
 	for _, args := range [][]string{nil, {"service", "start"}, {"service", "launch-core"}, {"tunnel", "launch"}, {"tunnel", "start"}, {"--background"}, {"version", "--json", "--start-core"}, {"-port", "8765"}} {
 		if policyRecoveryCommand(args) {

@@ -592,6 +592,21 @@ func TestWindowsElevatedCoreHostUsesKillOnCloseJob(t *testing.T) {
 			t.Fatalf("RuntimeService.cs missing elevated Core host behavior %q", want)
 		}
 	}
+
+	shimData, err := os.ReadFile(filepath.Join("..", "..", "cmd", "agentdock-shim", "main_windows.go"))
+	if err != nil {
+		t.Fatalf("read stable Windows shim: %v", err)
+	}
+	shimSource := string(shimData)
+	for _, want := range []string{
+		"shimChildRequiresParentLifetime(tray, os.Args[1:])",
+		"--run-core-task",
+		"processctl.Attach(command)",
+	} {
+		if !strings.Contains(shimSource, want) {
+			t.Fatalf("stable Windows shim missing scheduled-task descendant supervision %q", want)
+		}
+	}
 }
 func TestWindowsSetupKeepsPublicAccessExplicitAndSecretsOffCommandLine(t *testing.T) {
 	var setupBuilder strings.Builder
