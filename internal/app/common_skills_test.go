@@ -21,7 +21,7 @@ func TestCommonSkillCapabilityIndexListsValidSkillsInStableOrder(t *testing.T) {
 	setUserHomeForTest(t, home)
 	root := filepath.Join(home, ".agents", "skills")
 	writeCommonSkillForTest(t, root, "z-dir", "z-skill", "Z skill description.")
-	writeCommonSkillForTest(t, root, "a-dir", "a-skill", strings.Repeat("A", commonSkillDescriptionBytes+40))
+	writeCommonSkillForTest(t, root, "a-dir", "a-skill", strings.Repeat("A", filesystemSkillDescriptionBytes+40))
 	writeCommonSkillFileForTest(t, filepath.Join(root, "invalid", "SKILL.md"), "---\nname: invalid\ndescription:\n---\n\n# Invalid\n")
 
 	index, err := commonSkillCapabilityIndex()
@@ -37,7 +37,7 @@ func TestCommonSkillCapabilityIndexListsValidSkillsInStableOrder(t *testing.T) {
 	if index.Items[0].File != filepath.Join(root, "a-dir", "SKILL.md") {
 		t.Fatalf("common Skill file path = %q", index.Items[0].File)
 	}
-	if len(index.Items[0].Description) > commonSkillDescriptionBytes {
+	if len(index.Items[0].Description) > filesystemSkillDescriptionBytes {
 		t.Fatalf("description was not truncated: %q", index.Items[0].Description)
 	}
 }
@@ -46,7 +46,7 @@ func TestCommonSkillCapabilityIndexTruncatesWithoutDroppingTotal(t *testing.T) {
 	home := t.TempDir()
 	setUserHomeForTest(t, home)
 	root := filepath.Join(home, ".agents", "skills")
-	for index := 0; index < commonSkillIndexLimit+3; index++ {
+	for index := 0; index < filesystemSkillIndexLimit+3; index++ {
 		name := fmt.Sprintf("skill-%02d", index)
 		writeCommonSkillForTest(t, root, name, name, "Common skill.")
 	}
@@ -55,7 +55,7 @@ func TestCommonSkillCapabilityIndexTruncatesWithoutDroppingTotal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Total != commonSkillIndexLimit+3 || !got.Truncated || len(got.Items) != commonSkillIndexLimit {
+	if got.Total != filesystemSkillIndexLimit+3 || !got.Truncated || len(got.Items) != filesystemSkillIndexLimit {
 		t.Fatalf("unexpected truncated index: %#v", got)
 	}
 	if got.Items[0].Name != "skill-00" || got.Items[len(got.Items)-1].Name != "skill-49" {
@@ -89,5 +89,44 @@ func writeCommonSkillFileForTest(t *testing.T, path, content string) {
 	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCommonSkillCapabilityIndexKeepsPackageDirectorySymlink(t *testing.T) {
+	home := t.TempDir()
+	setUserHomeForTest(t, home)
+	root := filepath.Join(home, ".agents", "skills")
+	targetRoot := t.TempDir()
+	writeCommonSkillForTest(t, targetRoot, "linked-skill", "linked-skill", "Linked common skill.")
+	target := filepath.Join(targetRoot, "linked-skill")
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, "linked")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	got, err := commonSkillCapabilityIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Items) != 1 || got.Items[0].Name != "linked-skill" {
+		t.Fatalf("common Skill package symlink disappeared: %#v", got.Items)
+	}
+}
+
+func TestCommonSkillCapabilityIndexKeepsLargeExistingSkillMetadata(t *testing.T) {
+	home := t.TempDir()
+	setUserHomeForTest(t, home)
+	root := filepath.Join(home, ".agents", "skills")
+	content := "---\nname: large-skill\ndescription: Large common skill.\n---\n\n# Large\n\n" + strings.Repeat("x", 70<<10)
+	writeCommonSkillFileForTest(t, filepath.Join(root, "large-skill", "SKILL.md"), content)
+
+	got, err := commonSkillCapabilityIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Items) != 1 || got.Items[0].Name != "large-skill" {
+		t.Fatalf("common Skill larger than AGENTS.md budget disappeared: %#v", got.Items)
 	}
 }

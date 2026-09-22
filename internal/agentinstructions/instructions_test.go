@@ -54,16 +54,13 @@ func TestLoadGlobalRootAndNestedInOrder(t *testing.T) {
 	if got != want {
 		t.Fatalf("ordered contents = %q, want %q", got, want)
 	}
-	if snapshot.Workdir != child || snapshot.WorkspaceRoot != root || !snapshot.AutoLoad {
+	if snapshot.Workdir != child || snapshot.WorkspaceRoot != root {
 		t.Fatalf("snapshot = %#v", snapshot)
 	}
 	for _, file := range snapshot.Files {
 		if len(file.SHA256) != 64 || file.SizeBytes == 0 {
 			t.Fatalf("missing provenance: %#v", file)
 		}
-	}
-	if !strings.Contains(snapshot.Text(), "does not override global safety") {
-		t.Fatal("workspace scope is not identified")
 	}
 }
 
@@ -97,34 +94,6 @@ func TestLoadRefreshesEvenWhenSizeAndModificationTimeAreUnchanged(t *testing.T) 
 	writeGuidance(t, root, "created again")
 	if got := strings.Join(loadedContents(loadGuidance(t, options)), ""); got != "created again" {
 		t.Fatalf("new file not detected: %s", got)
-	}
-}
-
-func TestExplicitGlobalOverrideAndDeduplication(t *testing.T) {
-	home, root := t.TempDir(), t.TempDir()
-	writeGuidance(t, home, "unused automatic global")
-	path := writeGuidance(t, root, "explicit rules")
-	snapshot := loadGuidance(t, Options{Home: home, DefaultDir: root, Workdir: root, GlobalFile: path})
-	if len(snapshot.Files) != 2 || snapshot.Files[0].Scope != "global" || snapshot.Files[1].Status != "duplicate" || snapshot.Files[1].DuplicateOf != path {
-		t.Fatalf("dedup = %#v", snapshot)
-	}
-	if snapshot.Files[1].Content != "" || strings.Count(snapshot.Text(), "explicit rules") != 1 {
-		t.Fatal("same file injected twice")
-	}
-}
-
-func TestDisableAutoLoadPreservesExplicitInstructions(t *testing.T) {
-	home, root := t.TempDir(), t.TempDir()
-	path := writeGuidance(t, home, "explicit global")
-	writeGuidance(t, root, "workspace rules")
-	options := Options{Home: home, DefaultDir: root, Workdir: root, DisableAutoLoad: true}
-	if snapshot := loadGuidance(t, options); snapshot.AutoLoad || len(snapshot.Files) != 0 {
-		t.Fatalf("autoload did not disable: %#v", snapshot)
-	}
-	options.GlobalFile = path
-	snapshot := loadGuidance(t, options)
-	if got := strings.Join(loadedContents(snapshot), "|"); got != "explicit global" {
-		t.Fatalf("explicit global not preserved: %s", got)
 	}
 }
 
@@ -207,7 +176,7 @@ func TestNonRegularFileIsSkipped(t *testing.T) {
 	}
 }
 
-func TestAutomaticSymlinkIsNotFollowedButExplicitGlobalIsSupported(t *testing.T) {
+func TestAutomaticSymlinkIsNotFollowed(t *testing.T) {
 	home, root, outside := t.TempDir(), t.TempDir(), t.TempDir()
 	target := writeGuidance(t, outside, "outside guidance")
 	link := filepath.Join(root, Filename)
@@ -217,10 +186,6 @@ func TestAutomaticSymlinkIsNotFollowedButExplicitGlobalIsSupported(t *testing.T)
 	snapshot := loadGuidance(t, Options{Home: home, DefaultDir: root, Workdir: root})
 	if len(loadedContents(snapshot)) != 0 || snapshot.Files[1].Reason != "not_regular_file" {
 		t.Fatalf("followed automatic symlink: %#v", snapshot)
-	}
-	snapshot = loadGuidance(t, Options{Home: home, DefaultDir: root, Workdir: root, GlobalFile: link})
-	if snapshot.Files[0].Status != "loaded" || snapshot.Files[0].Path != link {
-		t.Fatalf("explicit file semantics changed: %#v", snapshot)
 	}
 }
 
@@ -263,9 +228,6 @@ func TestLoadRejectsInvalidSelectionAndHonorsCancellation(t *testing.T) {
 		if _, err := Load(t.Context(), Options{Workdir: workdir}); err == nil {
 			t.Fatalf("accepted workdir %q", workdir)
 		}
-	}
-	if _, err := Load(t.Context(), Options{Workdir: root, GlobalFile: "relative.md"}); err == nil {
-		t.Fatal("accepted relative explicit file")
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()

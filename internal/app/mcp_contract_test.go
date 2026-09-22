@@ -1,7 +1,6 @@
 package app
 
 import (
-	"maps"
 	"reflect"
 	"testing"
 
@@ -26,12 +25,6 @@ func TestCanonicalToolDefinitionsMatchSharedContract(t *testing.T) {
 		}
 		wantInput, _ := mcpcontract.InputSchema(name)
 		actualInput, actualOutput := definition.InputSchema, definition.OutputSchema
-		if name == mcpcontract.ToolAgentDockContext {
-			// Standalone AgentDock adds only optional local context fields. Compare
-			// every remaining field against the unchanged shared protocol contract.
-			actualInput = withoutLocalContextProperty(t, actualInput, "workdir")
-			actualOutput = withoutLocalContextProperty(t, actualOutput, "instruction_files")
-		}
 		if !reflect.DeepEqual(actualInput, wantInput) {
 			t.Fatalf("%s input schema drifted from shared contract", name)
 		}
@@ -58,22 +51,4 @@ func TestCanonicalToolDefinitionsMatchSharedContract(t *testing.T) {
 			t.Fatalf("%s idempotentHint=%v want=%v", name, annotations.IdempotentHint, wantIdempotent)
 		}
 	}
-}
-
-func withoutLocalContextProperty(t *testing.T, schema map[string]any, name string) map[string]any {
-	t.Helper()
-	copy := maps.Clone(schema)
-	properties := maps.Clone(schema["properties"].(map[string]any))
-	if properties[name] == nil {
-		t.Fatalf("local context extension %q missing", name)
-	}
-	requiredFields, _ := schema["required"].([]string)
-	for _, required := range requiredFields {
-		if required == name {
-			t.Fatalf("local extension %q must remain optional", name)
-		}
-	}
-	delete(properties, name)
-	copy["properties"] = properties
-	return copy
 }
