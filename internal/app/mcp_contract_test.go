@@ -24,7 +24,8 @@ func TestCanonicalToolDefinitionsMatchSharedContract(t *testing.T) {
 			t.Fatalf("canonical tool %s missing", name)
 		}
 		wantInput, _ := mcpcontract.InputSchema(name)
-		if !reflect.DeepEqual(definition.InputSchema, wantInput) {
+		actualInput, actualOutput := definition.InputSchema, definition.OutputSchema
+		if !reflect.DeepEqual(actualInput, wantInput) {
 			t.Fatalf("%s input schema drifted from shared contract", name)
 		}
 		var wantOutput map[string]any
@@ -33,7 +34,7 @@ func TestCanonicalToolDefinitionsMatchSharedContract(t *testing.T) {
 		} else {
 			wantOutput, _ = mcpcontract.OutputSchema(name)
 		}
-		if !reflect.DeepEqual(definition.OutputSchema, wantOutput) {
+		if !reflect.DeepEqual(actualOutput, wantOutput) {
 			t.Fatalf("%s output schema drifted from shared contract", name)
 		}
 

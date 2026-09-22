@@ -33,8 +33,9 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 		Rules: []string{
 			"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
 			"先根据 Skill 索引的 name 和 description 选择相关 Skill，再用 read_file 读取其 file 指向的 SKILL.md；Skill 只提供流程与约束，实际操作使用命令、文件、浏览器或 MCP 工具。",
-			"选择 Skill 时优先使用 skills 中的 AgentDock Skill；common_skills 是低优先级通用 Skill 索引，同名时始终优先 skills。若 common_skills.truncated=true 且当前索引未命中，可直接 list_dir 查看 common_skills.root，再用 read_file 读取对应 SKILL.md。",
+			"选择 Skill 时，已调用 workspace_context 的当前项目优先使用其 workspace_skills；同名优先级为 workspace Skill > skills 中的 AgentDock Skill > common_skills 中的全局通用 Skill。若 common_skills.truncated=true 且当前索引未命中，可直接 list_dir 查看 common_skills.root，再用 read_file 读取对应 SKILL.md。",
 			"AgentDock 自带工具直接调用；动态 MCP 工具先用 mcp_tool_search 查找、mcp_tool_inspect 读取 schema，再用 mcp_tool_call 执行。",
+			"操作具体项目、切换工作区或工作区规则可能变化时，先调用 workspace_context 获取当前工作区上下文。",
 		},
 	}
 	if !nexusLocalOnly {
@@ -99,8 +100,14 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool) (Re
 	return result, nil
 }
 
-func (r *Runtime) agentDockContextTool(ctx context.Context, _ map[string]any) (Result, error) {
-	return r.AgentDockContext(ctx)
+type agentDockContextRequest struct{}
+
+func (r *Runtime) agentDockContextTool(ctx context.Context, args map[string]any) (Result, error) {
+	var request agentDockContextRequest
+	if err := decodeToolInput("agentdock_context", args, &request); err != nil {
+		return nil, err
+	}
+	return r.agentDockContext(ctx, false)
 }
 
 type capabilityContext struct {
