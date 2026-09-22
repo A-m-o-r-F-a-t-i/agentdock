@@ -6,7 +6,7 @@
 
 ### 手动候选构建
 
-　　在 GitHub Actions 中运行 **Windows Package**，保持 `publish=false`，并将 `ref` 设为需要验证的分支、提交或标签。工作流执行完整 Go 回归、静态分析、Windows 安装器契约测试、Windows x64 ZIP 和离线 Setup 构建，然后上传一个保留 30 天的 Actions Artifact，不修改 Git 标签或 Release。
+　　在 GitHub Actions 中运行 **Windows Package**，保持 `publish=false`，并将 `ref` 设为需要验证的分支、提交或标签。工作流执行完整 Go 回归、静态分析、Windows 安装器契约测试、Windows x64 ZIP 和离线 Setup 构建；产物通过版本与校验和验证后，还会在一次性 Windows Runner 上真实执行 Setup 安装、同版本修复、旧任务迁移、后台启动／停止和卸载，再上传一个保留 30 天的 Actions Artifact。该模式不修改 Git 标签或 Release。
 
 ### 标签自动发布
 
@@ -50,6 +50,7 @@ install.ps1.sha256
 - ZIP 内 `agentdock.exe` 的版本、12 位提交号和 `windows/amd64` 平台正确。
 - Setup 的 ProductVersion 与标签版本一致。
 - cloudflared 的 Authenticode 验证结果为有效。
+- 离线 Setup 能从完整旧布局迁移，创建由托盘 WinExe 托管的管理员 Core，保持健康检查通过且不弹出控制台窗口；重复修复、旧计划任务迁移、停止／重启和静默卸载均通过。
 - GitHub 上传后的资产名称、大小和服务器端 SHA-256 digest 与本地产物一致。
 
 　　发布阶段先创建 Draft Release，再上传和远端复核全部资产，最后才解除 Draft。中途失败时不会公开缺少文件的 Release。重复运行同一标签会使用 `--clobber` 更新同名 Windows 资产，并重新执行完整远端校验。

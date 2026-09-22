@@ -183,6 +183,15 @@ jobs:
           git diff --exit-code
           if ($LASTEXITCODE -ne 0) { throw 'Build modified tracked source.' }
 
+      - name: Verify offline Setup installation and uninstall
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\test\test-windows-setup-e2e.ps1 `
+            -SetupPath .\dist\windows-package\release\AgentDockSetup-amd64.exe `
+            -LegacyCorePath .\dist\windows-package\payload-amd64\agentdock.exe `
+            -LegacyTrayPath .\dist\windows-package\payload-amd64\agentdock-tray.exe `
+            -AllowLegacyTaskMutation
+
       - name: Upload verified Windows package
         uses: actions/upload-artifact@v7
         with:

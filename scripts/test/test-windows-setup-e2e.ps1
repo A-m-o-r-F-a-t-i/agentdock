@@ -102,25 +102,25 @@ function Assert-ElevatedAgentDockTask {
     $nativeActionMatch = @($task.Actions | Where-Object {
         $executeMatches = [string]::Equals(
             [IO.Path]::GetFullPath($_.Execute),
-            [IO.Path]::GetFullPath($binaryPath),
+            [IO.Path]::GetFullPath($trayPath),
             [StringComparison]::OrdinalIgnoreCase
         )
         $argumentsMatch = $_.Arguments -and
-            $_.Arguments.Contains('service launch-core') -and
+            $_.Arguments.Contains('--run-core-task') -and
             $_.Arguments.Contains('--runtime-root') -and
             $_.Arguments.Contains($InstallRoot)
         $executeMatches -and $argumentsMatch
     }).Count -eq 1
     if (-not $nativeActionMatch) {
         $actions = ($task.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -join '; '
-        throw "AgentDock task does not launch the stable CUI service entry: $actions"
+        throw "AgentDock task does not launch the tray WinExe core host: $actions"
     }
     if (@($task.Actions | Where-Object {
         $_.Execute.Contains('powershell.exe') -or
-        [string]::Equals($_.Execute, $trayPath, [StringComparison]::OrdinalIgnoreCase) -or
-        ($_.Arguments -and ($_.Arguments.Contains('--run-core-task') -or $_.Arguments.Contains('--start-core')))
+        [string]::Equals($_.Execute, $binaryPath, [StringComparison]::OrdinalIgnoreCase) -or
+        ($_.Arguments -and ($_.Arguments.Contains('service launch-core') -or $_.Arguments.Contains('--start-core')))
     }).Count -gt 0) {
-        throw 'AgentDock elevated task must use the stable CUI shim without PowerShell or the legacy tray host.'
+        throw 'AgentDock elevated task must use the tray WinExe host without PowerShell or a console-subsystem launcher.'
     }
 }
 
@@ -153,10 +153,10 @@ function Assert-CoreRunsWithoutConsole {
         throw "The expected generation Core does not own the runtime listener: core=$($core.ProcessId); owners=$($listenerOwners -join ', ')"
     }
     $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($core.ParentProcessId)" -ErrorAction Stop
-    if ($parent.Name -ne 'agentdock.exe' -or
+    if ($parent.Name -ne 'agentdock-tray.exe' -or
         [string]::IsNullOrWhiteSpace($parent.ExecutablePath) -or
-        -not [string]::Equals([IO.Path]::GetFullPath($parent.ExecutablePath), [IO.Path]::GetFullPath($binaryPath), [StringComparison]::OrdinalIgnoreCase)) {
-        throw "Elevated generation Core is not supervised by the stable CUI shim: $($parent.Name) $($parent.ExecutablePath)"
+        -not [string]::Equals([IO.Path]::GetFullPath($parent.ExecutablePath), [IO.Path]::GetFullPath($trayPath), [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Elevated generation Core is not supervised by the tray WinExe host: $($parent.Name) $($parent.ExecutablePath)"
     }
 
     $consoleHosts = @(Get-CimInstance Win32_Process | Where-Object {

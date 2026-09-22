@@ -76,22 +76,30 @@ func newExecutionHTTPFixture(t *testing.T) *executionHTTPFixture {
 }
 func (f *executionHTTPFixture) call(t *testing.T, host, name string, args map[string]any) app.Result {
 	t.Helper()
-	result, err := f.session.CallTool(context.Background(), &sdk.CallToolParams{Meta: sdk.Meta{"openai/session": host}, Name: name, Arguments: args})
+	body, err := f.callContext(context.Background(), host, name, args)
 	if err != nil {
 		t.Fatal(err)
+	}
+	return body
+}
+
+func (f *executionHTTPFixture) callContext(ctx context.Context, host, name string, args map[string]any) (app.Result, error) {
+	result, err := f.session.CallTool(ctx, &sdk.CallToolParams{Meta: sdk.Meta{"openai/session": host}, Name: name, Arguments: args})
+	if err != nil {
+		return nil, err
 	}
 	raw, err := json.Marshal(result.StructuredContent)
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 	var body app.Result
 	if err = json.Unmarshal(raw, &body); err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 	if result.IsError {
-		t.Fatalf("MCP %s failed: %+v", name, body)
+		return nil, fmt.Errorf("MCP %s failed: %+v", name, body)
 	}
-	return body
+	return body, nil
 }
 func (f *executionHTTPFixture) request(t *testing.T, method, path string, input any) (app.Result, int) {
 	t.Helper()

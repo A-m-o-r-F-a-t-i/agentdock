@@ -1050,9 +1050,13 @@ func TestWindowsSetupE2EStagesCompleteLegacyFixture(t *testing.T) {
 		"[string] $LegacyTrayPath",
 		"Copy-Item -LiteralPath $resolvedLegacyCore -Destination $binaryPath -Force",
 		"Copy-Item -LiteralPath $resolvedLegacyTray -Destination $trayPath -Force",
+		"[IO.Path]::GetFullPath($trayPath)",
+		"$_.Arguments.Contains('--run-core-task')",
+		"$parent.Name -ne 'agentdock-tray.exe'",
+		"Elevated generation Core is not supervised by the tray WinExe host",
 	} {
 		if !strings.Contains(testScript, want) {
-			t.Fatalf("Setup E2E must stage a complete migratable legacy installation; missing %q", want)
+			t.Fatalf("Setup E2E must stage a complete legacy fixture and validate the WinExe core host; missing %q", want)
 		}
 	}
 

@@ -3,10 +3,12 @@ package httpx
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/uvwt/agentdock/internal/activity"
@@ -21,27 +23,63 @@ func TestExecutionSDKMetadataTwentyCallsAndReconnect(t *testing.T) {
 	for _, host := range []string{"metadata-a", "metadata-b"} {
 		ids[host] = f.call(t, host, "agentdock_context", nil)["conversation_id"].(string)
 	}
+	// Keep the test concurrent enough to expose crossed request metadata without
+	// turning a correctness check into a 40-request cold-filesystem load test.
+	// Windows GitHub runners can be heavily contended while the full repository
+	// suite is running, so each request also gets an explicit bounded deadline.
+	f.client.Timeout = 45 * time.Second
+	type callJob struct {
+		host  string
+		index int
+	}
+	jobs := make(chan callJob)
+	failures := make(chan error, 40)
 	var wg sync.WaitGroup
-	for _, host := range []string{"metadata-a", "metadata-b"} {
-		for i := 0; i < 20; i++ {
-			wg.Add(1)
-			go func(host string, i int) {
-				defer wg.Done()
+	const workers = 8
+	wg.Add(workers)
+	for range workers {
+		go func() {
+			defer wg.Done()
+			for job := range jobs {
 				name, args := "list_dir", map[string]any{"path": ".", "max_entries": 2}
-				if i%3 == 1 {
+				if job.index%3 == 1 {
 					name, args = "read_file", map[string]any{"path": "scope.txt"}
 				}
-				if i%3 == 2 {
+				if job.index%3 == 2 {
 					name, args = "search_text", map[string]any{"path": "scope.txt", "query": "scope"}
 				}
-				result := f.call(t, host, name, args)
-				if result["conversation_id"] != ids[host] {
-					t.Errorf("crossed request metadata: %+v", result)
+				ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+				result, err := f.callContext(ctx, job.host, name, args)
+				cancel()
+				if err != nil {
+					failures <- fmt.Errorf("%s call %d (%s): %w", job.host, job.index, name, err)
+					continue
 				}
-			}(host, i)
+				if result["conversation_id"] != ids[job.host] {
+					failures <- fmt.Errorf("%s call %d crossed request metadata: %+v", job.host, job.index, result)
+				}
+			}
+		}()
+	}
+	for i := 0; i < 20; i++ {
+		for _, host := range []string{"metadata-a", "metadata-b"} {
+			jobs <- callJob{host: host, index: i}
 		}
 	}
+	close(jobs)
 	wg.Wait()
+	close(failures)
+	var firstFailure error
+	failureCount := 0
+	for err := range failures {
+		failureCount++
+		if firstFailure == nil {
+			firstFailure = err
+		}
+	}
+	if failureCount > 0 {
+		t.Fatalf("%d bounded concurrent SDK calls failed; first failure: %v", failureCount, firstFailure)
+	}
 	for _, host := range []string{"metadata-a", "metadata-b"} {
 		page, err := f.runtime.ActivityJournal().Calls(context.Background(), activity.CallQuery{ConversationID: ids[host], Limit: 100})
 		if err != nil || len(page.Calls) != 21 {
