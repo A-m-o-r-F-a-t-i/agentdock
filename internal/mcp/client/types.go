@@ -21,6 +21,11 @@ var (
 )
 
 type ServerConfig struct {
+	SourceType  string `json:"-"`
+	PluginName  string `json:"-"`
+	DisplayName string `json:"-"`
+	StorageKey  string `json:"-"`
+
 	PluginVersion   string `json:"-"`
 	revision        string
 	overrideSource  string
@@ -55,6 +60,8 @@ type Tool struct {
 }
 
 type ToolSummary struct {
+	SourceType    string `json:"source_type,omitempty"`
+	PluginName    string `json:"plugin_name,omitempty"`
 	Name          string `json:"name"`
 	QualifiedName string `json:"qualified_name"`
 	Title         string `json:"title,omitempty"`
@@ -63,6 +70,10 @@ type ToolSummary struct {
 }
 
 type ServerSummary struct {
+	SourceType  string `json:"source_type,omitempty"`
+	PluginName  string `json:"plugin_name,omitempty"`
+	DisplayName string `json:"display_name,omitempty"`
+
 	Revision          string `json:"revision"`
 	OverrideSource    string `json:"override_source"`
 	ToolCountKnown    bool   `json:"tool_count_known"`

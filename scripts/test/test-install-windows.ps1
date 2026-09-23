@@ -101,7 +101,79 @@ try {
         throw 'Early installer failure did not create ResultFile'
     }
     $earlyResult = [IO.File]::ReadAllText($earlyResultPath, [Text.Encoding]::Unicode)
-    foreach ($required in @('Success=false', 'Code=install-validation-failed', 'Message=Port must be between 1 and 65535.', 'Health=failed', 'ErrorType=')) {
+    $extractedFunctions = @{}
+foreach ($functionName in @(
+    'ConvertTo-InstallResultValue',
+    'Write-InstallResult',
+    'Get-InstallerEngineFailureMessage'
+)) {
+    $matches = @($installerAst.FindAll({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+            $node.Name -eq $functionName
+    }, $true))
+    if ($matches.Count -ne 1) {
+        throw "Expected exactly one $functionName function in $InstallerPath, found $($matches.Count)"
+    }
+    Invoke-Expression $matches[0].Extent.Text
+    $extractedFunctions[$functionName] = $true
+}
+
+$encodingProbeRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-install-encoding-' + [Guid]::NewGuid().ToString('N'))
+$engineResultDirectory = Join-Path $encodingProbeRoot 'install'
+$engineResultPath = Join-Path $engineResultDirectory 'result.json'
+$encodingResultPath = Join-Path $encodingProbeRoot 'result.ini'
+try {
+    New-Item -ItemType Directory -Path $engineResultDirectory -Force | Out-Null
+    $localizedMessage = [Text.Encoding]::UTF8.GetString(
+        [Convert]::FromBase64String('QWdlbnREb2NrIOWBpeW6t+ajgOafpeWksei0pQ==')
+    )
+    $engineResultJson = @{
+        failure = @{
+            message = $localizedMessage
+        }
+    } | ConvertTo-Json -Depth 4
+    [IO.File]::WriteAllText($engineResultPath, $engineResultJson, [Text.UTF8Encoding]::new($false))
+
+    $engineFailure = Get-InstallerEngineFailureMessage `
+        -RuntimeRoot $encodingProbeRoot `
+        -FallbackMessage 'fallback' `
+        -NotBeforeUtc ([DateTime]::UtcNow.AddSeconds(-5))
+    if ($engineFailure -ne $localizedMessage) {
+        throw "Structured UTF-8 Engine failure was not preserved: $engineFailure"
+    }
+
+    Write-InstallResult `
+        -Path $encodingResultPath `
+        -Success $false `
+        -Message $engineFailure `
+        -InstalledVersion '' `
+        -LocalMCPUrl '' `
+        -PublicMCPUrl '' `
+        -BearerToken '' `
+        -OAuthLoginPassword '' `
+        -HealthStatus 'failed' `
+        -PrivilegeMode 'standard' `
+        -ErrorCode 'encoding-probe'
+    $unicodeResult = [IO.File]::ReadAllText($encodingResultPath, [Text.Encoding]::Unicode)
+    if (-not $unicodeResult.Contains("Message=$localizedMessage")) {
+        throw "UTF-16 Setup ResultFile did not preserve the structured Engine failure: $unicodeResult"
+    }
+
+    [IO.File]::SetLastWriteTimeUtc($engineResultPath, [DateTime]::UtcNow.AddMinutes(-5))
+    $staleFailure = Get-InstallerEngineFailureMessage `
+        -RuntimeRoot $encodingProbeRoot `
+        -FallbackMessage 'fallback' `
+        -NotBeforeUtc ([DateTime]::UtcNow)
+    if ($staleFailure -ne 'fallback') {
+        throw "A stale install/result.json must not be reused for a new Engine failure: $staleFailure"
+    }
+} finally {
+    Remove-Item -LiteralPath $encodingProbeRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+
+foreach ($required in @('Success=false', 'Code=install-validation-failed', 'Message=Port must be between 1 and 65535.', 'Health=failed', 'ErrorType=')) {
         if (-not $earlyResult.Contains($required)) {
             throw "Early installer ResultFile is missing: $required"
         }

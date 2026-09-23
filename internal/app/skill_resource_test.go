@@ -11,6 +11,23 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 )
 
+func TestReadFileDescriptionUsesHostIssuedSkillURI(t *testing.T) {
+	definition, ok := toolDefinitionForConfig("read_file", config.Config{})
+	if !ok {
+		t.Fatal("read_file definition is missing")
+	}
+	for _, want := range []string{"host-issued skill://", "agentdock_context", "workspace_context", "do not construct"} {
+		if !strings.Contains(definition.Description, want) {
+			t.Fatalf("read_file description missing %q: %s", want, definition.Description)
+		}
+	}
+	for _, stale := range []string{"skill://<name>", "active Skill version"} {
+		if strings.Contains(definition.Description, stale) {
+			t.Fatalf("read_file description still contains stale Skill lifecycle text %q: %s", stale, definition.Description)
+		}
+	}
+}
+
 func TestReadFileSupportsSkillURI(t *testing.T) {
 	cfg := config.Config{
 		AgentDockDefaultDir: t.TempDir(),
@@ -32,12 +49,12 @@ func TestReadFileSupportsSkillURI(t *testing.T) {
 	}
 
 	result, err := rt.Call(context.Background(), "read_file", map[string]any{
-		"path": "skill://demo-skill/references/guide.md",
+		"path": "skill://managed/demo-skill/references/guide.md",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result["path"] != "skill://demo-skill/references/guide.md" {
+	if result["path"] != "skill://managed/demo-skill/references/guide.md" {
 		t.Fatalf("unexpected logical path: %#v", result["path"])
 	}
 	content, _ := result["content"].(string)
@@ -61,7 +78,7 @@ func TestReadFileRejectsSkillURITraversalAndSymlinkEscape(t *testing.T) {
 	packageDir := installDocumentSkillForTest(t, rt, "demo-skill", "1.0.0", "Reject escaping Skill resources.")
 
 	_, err = rt.Call(context.Background(), "read_file", map[string]any{
-		"path": "skill://demo-skill/../outside.txt",
+		"path": "skill://managed/demo-skill/../outside.txt",
 	})
 	assertToolErrorCode(t, err, "INVALID_SKILL_URI")
 
@@ -74,7 +91,7 @@ func TestReadFileRejectsSkillURITraversalAndSymlinkEscape(t *testing.T) {
 		t.Skipf("symlink unavailable: %v", err)
 	}
 	_, err = rt.Call(context.Background(), "read_file", map[string]any{
-		"path": "skill://demo-skill/escape.txt",
+		"path": "skill://managed/demo-skill/escape.txt",
 	})
 	assertToolErrorCode(t, err, "SKILL_PATH_ESCAPE")
 }

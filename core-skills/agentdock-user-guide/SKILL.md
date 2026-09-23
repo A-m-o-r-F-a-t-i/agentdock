@@ -53,7 +53,7 @@ AgentDock 的用户文档独立维护在 [uvwt/agentdock-docs](https://github.co
 
 ### AgentDock Skills
 
-[AgentDock Skills](https://github.com/uvwt/agentdock-skills) 是 AgentDock 官方与社区 Skill 的源码、测试和发布仓库。普通业务集成、个人效率工具和社区 Skill 在这里独立维护和版本化，避免与 AgentDock Core 版本强耦合。
+[AgentDock Skills](https://github.com/uvwt/agentdock-skills) 是 AgentDock 官方与社区 Skill 的源码与测试仓库。普通业务集成、个人效率工具和社区 Skill 在这里独立维护，内容演进由 Git 历史追踪，避免与 AgentDock Core 版本强耦合。
 
 AgentDock 主仓库的 `core-skills/` 只保留必须随 AgentDock 运行时一起安装和升级的内置核心 Skill；需要查找、阅读、贡献或发布其他 Skill 时，应优先查看 AgentDock Skills 仓库。安装第三方或社区 Skill 前仍应进行来源和安全审查。
 

@@ -2,6 +2,7 @@ package skill
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
@@ -25,6 +26,11 @@ type PluginSkillLookup func(string) (PluginSkill, bool, error)
 type PluginSkillsLookup func() ([]PluginSkill, error)
 
 type Service struct {
+	workspaceMu       sync.RWMutex
+	workspaceByID     map[string]string
+	workspaceIDByRoot map[string]string
+	workspaceIssued   map[string]map[string]struct{}
+
 	manager          *skills.Manager
 	state            *skillstate.Store
 	ws               *workspace.Workspace
@@ -47,7 +53,7 @@ func New(cfg config.Config, ws *workspace.Workspace, envs *envstore.Store) (*Ser
 	if err != nil {
 		return nil, err
 	}
-	return &Service{manager: manager, state: state, ws: ws, envs: envs}, nil
+	return &Service{manager: manager, state: state, ws: ws, envs: envs, workspaceByID: map[string]string{}, workspaceIDByRoot: map[string]string{}, workspaceIssued: map[string]map[string]struct{}{}}, nil
 }
 
 func (s *Service) SetPluginMembershipLookup(lookup PluginMembershipLookup) {
@@ -180,6 +186,9 @@ func (s *Service) scopedEnvAction(kind envstore.ScopeKind, name, action string, 
 		key := strings.TrimSpace(request.Key)
 		if key == "" || request.Value == nil {
 			return nil, toolErrorDetails("VALIDATION_ERROR", "key and value are required for env_set", "validation", map[string]any{"scope": scope.Name})
+		}
+		if config.IsReservedCommandEnvironmentKey(key) {
+			return nil, toolErrorDetails("VALIDATION_ERROR", "environment variable is reserved by the runtime", "validation", map[string]any{"key": key})
 		}
 		text := *request.Value
 		if err := s.envs.Set(scope, key, text); err != nil {

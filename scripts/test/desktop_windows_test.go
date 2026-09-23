@@ -138,6 +138,7 @@ func TestWindowsControlPanelCanSwitchCorePrivilegeMode(t *testing.T) {
 			"prepare-elevated",
 			"prepare-standard",
 			"RunTaskAdminTransitionAsync(\"restore\"",
+			`"--launcher-path", trayBinary`,
 			"WritePrivilegeModeAsync",
 			"SetStandardCoreStartup",
 			"snapshot.CoreStartupEnabled",
@@ -317,6 +318,45 @@ func TestDesktopTrayMenusUseNativeDismissalAndOmitCopyActions(t *testing.T) {
 		}
 	}
 }
+func TestWindowsUpdateProgressUsesCoreByteFields(t *testing.T) {
+	modelData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Models", "RuntimeModels.cs"))
+	if err != nil {
+		t.Fatalf("read RuntimeModels.cs: %v", err)
+	}
+	runtimeData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"))
+	if err != nil {
+		t.Fatalf("read RuntimeService.cs: %v", err)
+	}
+
+	models := string(modelData)
+	runtimeService := string(runtimeData)
+
+	// Core 的进度协议字段是 bytes/total_bytes；Windows 必须与 macOS 共用同一契约。
+	for _, want := range []string{
+		"[JsonPropertyName(\"bytes\")]",
+		"public long? Bytes",
+		"[JsonPropertyName(\"total_bytes\")]",
+		"public long? TotalBytes",
+	} {
+		if !strings.Contains(models, want) {
+			t.Fatalf("Windows update progress model missing %q", want)
+		}
+	}
+	if strings.Contains(models, "[JsonPropertyName(\"bytes_read\")]") {
+		t.Fatal("Windows update progress must not use the obsolete bytes_read field")
+	}
+
+	for _, want := range []string{
+		"updateEvent.Bytes is long bytesRead",
+		"UpdateDownloadingProgress",
+		"UpdateDownloadingUnknownSize",
+		"bytesRead * 100 / totalBytes",
+	} {
+		if !strings.Contains(runtimeService, want) {
+			t.Fatalf("Windows download progress rendering missing %q", want)
+		}
+	}
+}
 func TestWindowsUpdateFeedbackUsesUTF8AndImmediateStatus(t *testing.T) {
 	appData, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
 	if err != nil {
@@ -477,5 +517,33 @@ func TestWindowsControlPanelResolvesRuntimeRootFromExecutableDirectory(t *testin
 	}
 	if strings.Contains(service, "Directory.GetParent(baseDirectory)?.FullName") {
 		t.Fatal("RuntimeService must not resolve the parent from a trailing AppContext.BaseDirectory string")
+	}
+}
+
+func TestWindowsBackgroundTrayStartupDoesNotShowExistingControlPanel(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "desktop", "windows", "control-panel", "App.xaml.cs"))
+	if err != nil {
+		t.Fatalf("read App.xaml.cs: %v", err)
+	}
+	app := strings.ReplaceAll(string(data), "\r\n", "\n")
+	backgroundDeclaration := `var background = e.Args.Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));`
+	backgroundIndex := strings.Index(app, backgroundDeclaration)
+	singletonIndex := strings.Index(app, "if (!createdNew)")
+	if backgroundIndex < 0 || singletonIndex < 0 || backgroundIndex > singletonIndex {
+		t.Fatal("Windows tray must resolve --background before handling the singleton instance")
+	}
+	branchEnd := strings.Index(app[singletonIndex:], "Shutdown();")
+	if branchEnd < 0 {
+		t.Fatal("Windows tray singleton branch is incomplete")
+	}
+	singletonBranch := app[singletonIndex : singletonIndex+branchEnd]
+	if !strings.Contains(singletonBranch, "if (!background)") || !strings.Contains(singletonBranch, "existingEvent.Set();") {
+		t.Fatal("only an explicit foreground launch may ask an existing tray instance to show the control panel")
+	}
+	if strings.Count(app, backgroundDeclaration) != 1 {
+		t.Fatal("Windows tray should have one authoritative --background startup decision")
+	}
+	if !strings.Contains(app, "if (!background)\n        {\n            ShowControlPanel();") {
+		t.Fatal("an explicit foreground launch must still show the control panel")
 	}
 }

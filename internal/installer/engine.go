@@ -352,18 +352,17 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 		}
 	}
 
-	if request.StartService && (request.TunnelMode == "quick" || request.TunnelMode == "named") {
+	if shouldStartTunnelInTransaction(request) {
 		transaction.Phase = PhaseTunnel
 		if err := store.WriteTransaction(transaction); err != nil {
 			return fail(PhaseTunnel, err, staged)
 		}
+		// Core health 是安装/更新的提交边界。Tunnel 公网就绪依赖外部网络和 Cloudflare 状态，
+		// 不能因此回滚健康的 Core；但启动本地 Tunnel 宿主仍属于可控步骤，如果连宿主都无法
+		// 调度，应保留 warning，避免把“公网尚未真正启动”误报成完整成功。
 		if err := startTunnelServices(ctx, request, staged.Journal); err != nil {
-			return fail(PhaseTunnel, err, staged)
-		}
-		if err := waitTunnelReady(ctx, request, 45*time.Second); err != nil {
-			return fail(PhaseTunnel, err, staged)
-		}
-		if request.TunnelMode == "quick" {
+			result.Warnings = append(result.Warnings, "Tunnel startup could not be scheduled: "+err.Error())
+		} else if request.TunnelMode == "quick" {
 			if publicURL := readQuickTunnelURL(request.RuntimeRoot); publicURL != "" {
 				result.PublicURL = publicURL
 			}
@@ -395,7 +394,19 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 	if err := store.WriteTransaction(transaction); err != nil {
 		return fail(PhaseCommit, err, staged)
 	}
-	return commitPreparedInstall(store, transaction, result)
+	completed, err := commitPreparedInstall(store, transaction, result)
+	if err != nil {
+		return result, err
+	}
+
+	return completed, nil
+}
+
+func shouldStartTunnelInTransaction(request Request) bool {
+	if !request.StartService || request.DeferCommit {
+		return false
+	}
+	return request.TunnelMode == "quick" || request.TunnelMode == "named"
 }
 
 func installPhaseMayHaveMutatedFiles(phase Phase) bool {
@@ -711,10 +722,7 @@ func runtimeGOOS() string {
 }
 
 func bootstrapSkills(ctx context.Context, request Request, executable, bundleDir string) error {
-	home := strings.TrimSpace(request.AgentDockHome)
-	if home == "" && request.DataDir != "" {
-		home = filepath.Join(request.DataDir, ".agentdock")
-	}
+	home := skillStorageHome(request)
 	if home == "" {
 		return nil
 	}
@@ -743,6 +751,14 @@ func bootstrapSkills(ctx context.Context, request Request, executable, bundleDir
 	}
 	_, err = skillbundle.Bootstrap(ctx, state, manager, bundleDir)
 	return err
+}
+
+func skillStorageHome(request Request) string {
+	home := strings.TrimSpace(request.AgentDockHome)
+	if home == "" && strings.TrimSpace(request.DataDir) != "" {
+		home = filepath.Join(request.DataDir, ".agentdock")
+	}
+	return home
 }
 
 func verifyRequest(request Request) error {

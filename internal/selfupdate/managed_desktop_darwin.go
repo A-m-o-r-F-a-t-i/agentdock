@@ -31,10 +31,12 @@ func applyManagedDesktopOnlyUpdate(ctx context.Context, request applyRequest) (a
 	}
 
 	sourceArbiter := filepath.Join(request.DesktopTargetPath, "Contents", "Helpers", "agentdock-arbiter")
-	if !executableRegularFile(sourceArbiter) {
-		// A pre-Arbiter App cannot manufacture a known-good source Arbiter after the fact.
-		// Preserve the existing updater for exactly this bootstrap transition; the target App
-		// embeds the Arbiter, so every following update uses the durable engine below.
+	targetArbiter := filepath.Join(request.DesktopStagedPath, "Contents", "Helpers", "agentdock-arbiter")
+	if !executableRegularFile(sourceArbiter) || !executableRegularFile(targetArbiter) {
+		// Arbiter was introduced after the early 0.8.x App update protocol. If either side of
+		// the transition predates it, use the already-established legacy atomic App updater.
+		// New Release packages are required to embed Arbiter by the macOS packaging test, so
+		// this capability fallback cannot silently excuse a newly produced incomplete package.
 		return applyResult{}, false, nil
 	}
 
@@ -166,6 +168,10 @@ func applyManagedDesktopOnlyUpdate(ctx context.Context, request applyRequest) (a
 		return applyResult{}, true, errors.New(message)
 	}
 
+	targetCore := filepath.Join(request.DesktopTargetPath, "Contents", "Helpers", "agentdock")
+	if err := finalizeLegacySkillMigration(ctx, targetCore, request.Output); err != nil {
+		fmt.Fprintf(request.Output, "警告：legacy Skill migration 暂未收口，旧目录将继续保留用于回滚: %v\n", err)
+	}
 	fmt.Fprintf(request.Output, "macOS App 原子更新已提交：%s → %s\n", normalizeVersion(request.CurrentVersion), normalizeVersion(request.TargetVersion))
 	return applyResult{}, true, nil
 }

@@ -82,7 +82,7 @@ func TestRuntimeExposesSingleToolSet(t *testing.T) {
 	for _, name := range rt.ToolNames() {
 		seen[name] = true
 	}
-	for _, name := range []string{"agentdock_context", "session_observe", "session_act", "recall_read", "recall_write", "skill_package", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call"} {
+	for _, name := range []string{"agentdock_context", "workspace_context", "session_observe", "session_act", "recall_read", "recall_write", "skill_package", "mcp_manage", "mcp_tool_search", "mcp_tool_inspect", "mcp_tool_call"} {
 		if !seen[name] {
 			t.Fatalf("single tool set missing %s: %#v", name, seen)
 		}
@@ -141,6 +141,29 @@ func TestAgentDockContextSchemaIsStructuredEntrypoint(t *testing.T) {
 	required, ok := success["required"].([]string)
 	if !ok || !reflect.DeepEqual(required, []string{"runtime", "skills", "dynamic_mcp", "workflow_templates", "rules"}) {
 		t.Fatalf("agentdock_context output schema required = %#v", output["required"])
+	}
+}
+
+func TestWorkspaceContextSchemaIsRequestLocalWorkspaceEntrypoint(t *testing.T) {
+	def, ok := toolDefinition("workspace_context")
+	if !ok {
+		t.Fatal("workspace_context definition missing")
+	}
+	if !strings.Contains(def.Description, "workspace AGENTS.md") {
+		t.Fatalf("workspace_context description should explain workspace rules: %q", def.Description)
+	}
+	inputProps := schemaProperties(t, "workspace_context")
+	if len(inputProps) != 1 || inputProps["workdir"] == nil {
+		t.Fatalf("workspace_context should expose only optional workdir: %#v", inputProps)
+	}
+	if required, _ := inputSchema("workspace_context")["required"].([]string); len(required) != 0 {
+		t.Fatalf("workspace_context must accept empty arguments: %#v", required)
+	}
+	outputProps := outputSchema("workspace_context")["properties"].(map[string]any)
+	for _, name := range []string{"workdir", "workspace_root", "instructions", "workspace_skills", "warnings"} {
+		if _, ok := outputProps[name]; !ok {
+			t.Fatalf("workspace_context output missing %q: %#v", name, outputProps)
+		}
 	}
 }
 
@@ -224,7 +247,6 @@ func TestSkillPackageSchemaAndRemovedRuntimeTools(t *testing.T) {
 		}
 	}
 }
-
 func assertObjectSchema(t *testing.T, name, kind string, schema map[string]any) {
 	t.Helper()
 	if schema == nil {

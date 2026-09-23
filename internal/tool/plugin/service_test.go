@@ -147,7 +147,10 @@ func TestManageValidatesAndUpdatesDirectPlugin(t *testing.T) {
 		t.Fatal(err)
 	}
 	v2 := writeToolPluginPackageVersion(t, t.TempDir(), "domain", "2.0.0", []string{"workflow", "review"}, nil)
-	updated, err := service.Manage(context.Background(), ManageRequest{Action: "update", Name: "domain", Source: v2})
+	if _, err := service.Manage(t.Context(), ManageRequest{Action: "update", Name: "domain", Source: v2}); err == nil {
+		t.Fatal("source rebinding without confirmation was accepted")
+	}
+	updated, err := service.Manage(context.Background(), ManageRequest{Action: "update", Name: "domain", Source: v2, ConfirmedSourceChange: true})
 	if err != nil {
 		t.Fatal(err)
 	}

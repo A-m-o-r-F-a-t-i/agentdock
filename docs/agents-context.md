@@ -79,3 +79,7 @@ go build -o ./bin/agentdock-context.exe ./cmd/agentdock
 ```
 
 内存受限环境为命令进程设置 `GOMAXPROCS=2` 并给 Go 命令添加 `-p 1`，不要为运行测试关闭用户应用或更改系统配置。全局和工作区测试均使用临时目录，不读取测试机真实全局规则。
+
+## 定向工作区入口
+
+`workspace_context` 接收同样的可选 `workdir`，返回工作区规则与 `.agents/skills/*/SKILL.md` 摘要及可直接读取的精确来源引用。它是定向入口，不替代当前 fork 的完整 `agentdock_context`，也不要求同一规则作用域内每一步同时调用两者。共享或工作区 Skill 与已安装同名 Skill 保持不同身份，不合并正文或借用已安装 Skill 的凭据。

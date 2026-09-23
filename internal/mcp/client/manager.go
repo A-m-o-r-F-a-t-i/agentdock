@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
 )
 
@@ -426,7 +428,12 @@ func (m *Manager) Refresh(ctx context.Context, name string) (ServerSummary, []To
 	if err != nil {
 		return summary, nil, err
 	}
-	return summary, summarizeTools(cfg.Name, tools), nil
+	items := summarizeTools(cfg.Name, tools)
+	for i := range items {
+		items[i].SourceType = cfg.SourceType
+		items[i].PluginName = cfg.PluginName
+	}
+	return summary, items, nil
 }
 
 func (m *Manager) Search(ctx context.Context, query, server string, limit int) ([]ToolSummary, error) {
@@ -512,7 +519,7 @@ func (m *Manager) SearchFiltered(ctx context.Context, query, server string, limi
 			if score == 0 {
 				continue
 			}
-			matches = append(matches, scoredTool{score: score, item: toolSummary(cfg.Name, tool)})
+			matches = append(matches, scoredTool{score: score, item: toolSummaryForConfig(cfg, tool)})
 		}
 	}
 	if len(matches) == 0 && firstErr != nil {
@@ -674,15 +681,44 @@ func (m *Manager) ensureOpenLocked() error {
 }
 
 func (m *Manager) runtimeConfig(cfg ServerConfig) (ServerConfig, error) {
-	values, err := m.envs.Load(envstore.Scope{Kind: envstore.ScopeMCP, Name: cfg.Name})
+	key := cfg.StorageKey
+	if key == "" {
+		key = cfg.Name
+	}
+	values, err := m.envs.Load(envstore.Scope{Kind: envstore.ScopeMCP, Name: key})
 	if err != nil {
-		return ServerConfig{}, newError(
-			"MCP_ENV_READ_FAILED",
-			"read dynamic MCP environment",
-			false,
-			map[string]any{"server": cfg.Name},
-			err,
-		)
+		return ServerConfig{}, newError("MCP_ENV_READ_FAILED", "read dynamic MCP environment", false, map[string]any{"server": cfg.Name}, err)
+	}
+	if cfg.PluginRoot != "" {
+		for key := range values {
+			if config.IsReservedPluginEnvironmentKey(key) {
+				return ServerConfig{}, newError("MCP_ENV_READ_FAILED", "Plugin environment overrides a reserved variable", false, map[string]any{"server": cfg.Name, "key": key}, nil)
+			}
+		}
+		cfg.SourceType = "plugin"
+		if values == nil {
+			values = map[string]string{}
+		}
+		// Only explicitly declared bindings may read a host value; scoped credentials
+		// override those host bindings and are never written into Plugin provenance.
+		for _, name := range cfg.HeaderEnv {
+			if _, ok := values[name]; !ok {
+				if value, exists := os.LookupEnv(name); exists {
+					values[name] = value
+				}
+			}
+		}
+		for child, name := range cfg.EnvFromEnv {
+			value, ok := values[name]
+			if !ok {
+				value, ok = os.LookupEnv(name)
+			}
+			if !ok {
+				return ServerConfig{}, newError("MCP_AUTH_REQUIRED", "required Plugin environment binding is missing", false, map[string]any{"server": cfg.Name, "env": name}, nil)
+			}
+			values[child] = value
+		}
+		values[config.PluginDataDirEnvKey] = cfg.PluginData
 	}
 	cfg.RuntimeEnv = values
 	return cfg, nil
@@ -923,4 +959,11 @@ func (m *Manager) SetCallObserver(observer func(context.Context, string, func(co
 	} else {
 		m.callObserver.Store(&toolCallObserver{call: observer})
 	}
+}
+
+func toolSummaryForConfig(cfg ServerConfig, tool Tool) ToolSummary {
+	item := toolSummary(cfg.Name, tool)
+	item.SourceType = cfg.SourceType
+	item.PluginName = cfg.PluginName
+	return item
 }

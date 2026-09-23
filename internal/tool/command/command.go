@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/tool/command/session"
 )
 
@@ -31,15 +32,14 @@ const (
 )
 
 func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, error) {
+	if request.SkillRef == "" {
+		request.SkillRef = request.Skill
+	}
 	if request.Cmd == "" {
 		return nil, toolError("INVALID_ARGUMENT", "cmd is required", "validation")
 	}
 	if err := request.Binding.Validate(); err != nil {
 		return nil, toolError("INVALID_ACTIVITY_BINDING", err.Error(), "validation")
-	}
-	invocation, err := svc.prepareCommandInvocation(request)
-	if err != nil {
-		return nil, err
 	}
 	timeout, err := commandTimeout(request.TimeoutMS)
 	if err != nil {
@@ -58,6 +58,18 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 	if err != nil {
 		return nil, err
 	}
+	prepareCtx, prepareCancel := context.WithTimeout(ctx, timeout)
+	invocation, err := svc.prepareCommandInvocation(prepareCtx, request)
+	prepareCancel()
+	if err != nil {
+		return nil, err
+	}
+	skillReleaseHandled := false
+	defer func() {
+		if !skillReleaseHandled && invocation.skillRelease != nil {
+			invocation.skillRelease()
+		}
+	}()
 
 	if !svc.sessions.TryReserve(maxConcurrentCommandSessions) {
 		if svc.sessions.Closing() {
@@ -94,6 +106,10 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 	if err != nil {
 		svc.sessions.FinishStart()
 		return nil, err
+	}
+	if invocation.skillRelease != nil {
+		skillReleaseHandled = true
+		go func() { <-s.Done; invocation.skillRelease() }()
 	}
 	s.SetExecutionContext(invocation.execution)
 	s.SetActivityBinding(request.Binding)
@@ -453,6 +469,10 @@ func (svc *Service) listSessions() (Result, error) {
 }
 
 func (svc *Service) commandEnv(skillName string, extra map[string]string) ([]string, error) {
+	return svc.commandEnvWithRuntime(skillName, extra, nil)
+}
+
+func (svc *Service) commandEnvWithRuntime(skillName string, extra, runtime map[string]string) ([]string, error) {
 	env, err := svc.baseCommandEnv()
 	if err != nil {
 		return nil, err
@@ -462,6 +482,10 @@ func (svc *Service) commandEnv(skillName string, extra map[string]string) ([]str
 		return nil, err
 	}
 	for key, value := range overrides {
+		setPlatformCommandEnv(env, key, value)
+	}
+	// 运行时保留变量最后写入，确保 Skill env、请求 env 和宿主映射都不能覆盖。
+	for key, value := range runtime {
 		setPlatformCommandEnv(env, key, value)
 	}
 	return formatCommandEnv(env), nil
@@ -512,6 +536,9 @@ func (svc *Service) baseCommandEnv() (map[string]string, error) {
 // applyHostEnvMapping 只复制部署者显式声明的宿主变量；未配置的宿主环境继续保持隔离。
 func (svc *Service) applyHostEnvMapping(env map[string]string) {
 	for childKey, hostKey := range svc.config().CommandEnvFromEnv {
+		if config.IsReservedCommandEnvironmentKey(childKey) {
+			continue
+		}
 		if value, ok := os.LookupEnv(hostKey); ok {
 			setPlatformCommandEnv(env, childKey, value)
 		}

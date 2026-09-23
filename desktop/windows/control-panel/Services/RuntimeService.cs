@@ -863,11 +863,6 @@ public sealed partial class RuntimeService : IDisposable
         };
         if (action == "prepare-elevated")
         {
-            var stableTrayEntry = ResolveTrayBinary(manifest);
-            if (!File.Exists(stableTrayEntry))
-            {
-                throw new FileNotFoundException(UiText.Format("ManagementBinaryMissing", stableTrayEntry), stableTrayEntry);
-            }
             using var identity = WindowsIdentity.GetCurrent();
             var userSid = identity.User?.Value;
             if (string.IsNullOrWhiteSpace(userSid) || string.IsNullOrWhiteSpace(identity.Name))
@@ -875,7 +870,7 @@ public sealed partial class RuntimeService : IDisposable
                 throw new InvalidOperationException(UiText.Get("CurrentWindowsIdentityUnavailable"));
             }
             arguments.AddRange([
-                "--launcher-path", stableTrayEntry,
+                "--launcher-path", trayBinary,
                 "--user-sid", userSid,
                 "--user-name", identity.Name
             ]);
@@ -1217,7 +1212,7 @@ public sealed partial class RuntimeService : IDisposable
         {
             return new UpdateProgress(null, false, string.IsNullOrWhiteSpace(updateEvent.Error) ? UiText.Get("UpdateFailed") : updateEvent.Error);
         }
-        if (string.Equals(updateEvent.Stage, "downloading", StringComparison.Ordinal) && updateEvent.BytesRead is long bytesRead)
+        if (string.Equals(updateEvent.Stage, "downloading", StringComparison.Ordinal) && updateEvent.Bytes is long bytesRead)
         {
             var totalBytes = updateEvent.TotalBytes.GetValueOrDefault(-1);
             if (totalBytes > 0)

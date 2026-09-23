@@ -1140,6 +1140,42 @@ func TestDeferCommitStaysTrialUntilCommit(t *testing.T) {
 	}
 }
 
+// A caller flag is not health evidence. Keep the fork's independent startup check.
+func TestCommittedInstallDoesNotPromoteUnverifiedMarkHealthy(t *testing.T) {
+	root := t.TempDir()
+	installRoot := filepath.Join(root, "install")
+	runtimeRoot := filepath.Join(root, "runtime")
+	store, err := NewStore(runtimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	transaction := Transaction{SchemaVersion: SchemaVersion, TransactionID: "unverified-health", Platform: runtime.GOOS, Action: ActionInstall, TargetVersion: "v1.0.0", ActiveVersion: "v1.0.0", State: updateengine.StateCommitted, Phase: PhaseCommit, InstallRoot: installRoot, RuntimeRoot: runtimeRoot, StartedAt: now, UpdatedAt: now, CompletedAt: &now}
+	if err := store.WriteTransaction(transaction); err != nil {
+		t.Fatal(err)
+	}
+	result := resultFromTransaction(transaction)
+	result.Healthy = false
+	if err := store.WriteResult(result); err != nil {
+		t.Fatal(err)
+	}
+	repeated, err := (Engine{}).Run(context.Background(), Request{Action: ActionCommit, InstallRoot: installRoot, RuntimeRoot: runtimeRoot, TransactionID: transaction.TransactionID, MarkHealthy: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repeated.Healthy {
+		t.Fatal("idempotent commit promoted an unverified health flag")
+	}
+
+	persisted, readErr := store.ReadResult(transaction.TransactionID)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if persisted.Healthy {
+		t.Fatal("unverified health was persisted")
+	}
+}
+
 func TestAbandonTrialAndRollbackFailed(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("abandon is exercised on Unix CI")
@@ -1502,6 +1538,27 @@ func TestExistingVersionReadsCommittedGenerationPointer(t *testing.T) {
 	got := existingVersion(Request{InstallRoot: installRoot, RuntimeRoot: filepath.Join(root, "missing-installer-store")})
 	if got != "v0.8.3" {
 		t.Fatalf("existingVersion=%s, want v0.8.3 from active-version.json", got)
+	}
+}
+
+func TestShouldStartTunnelInTransaction(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		req  Request
+		want bool
+	}{
+		{name: "quick direct", req: Request{StartService: true, TunnelMode: "quick"}, want: true},
+		{name: "named direct", req: Request{StartService: true, TunnelMode: "named"}, want: true},
+		{name: "deferred quick belongs to adapter", req: Request{StartService: true, TunnelMode: "quick", DeferCommit: true}, want: false},
+		{name: "deferred named belongs to adapter", req: Request{StartService: true, TunnelMode: "named", DeferCommit: true}, want: false},
+		{name: "core only", req: Request{StartService: true, TunnelMode: "none"}, want: false},
+		{name: "service not started", req: Request{TunnelMode: "quick"}, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := shouldStartTunnelInTransaction(test.req); got != test.want {
+				t.Fatalf("shouldStartTunnelInTransaction()=%v, want %v", got, test.want)
+			}
+		})
 	}
 }
 

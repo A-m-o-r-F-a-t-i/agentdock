@@ -34,6 +34,11 @@ func readPackage(root string, installed bool) (packageRecord, error) {
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return record, err
 		}
+		if state.Source != nil {
+			for name, cfg := range configs {
+				configs[name] = applySourceEnvironmentBindings(cfg)
+			}
+		}
 		hostPath := filepath.Join(filepath.Dir(root), ".config", manifest.Name+".json")
 		if _, err := os.Lstat(hostPath); err == nil {
 			if _, err := containedPath(filepath.Dir(root), hostPath, false); err != nil {
@@ -49,8 +54,8 @@ func readPackage(root string, installed bool) (packageRecord, error) {
 				if !exists {
 					continue
 				}
-				config.HeaderEnv = local.HeaderEnv
-				config.EnvFromEnv = local.EnvFromEnv
+				config.HeaderEnv = mergeStringValues(config.HeaderEnv, local.HeaderEnv)
+				config.EnvFromEnv = mergeStringValues(config.EnvFromEnv, local.EnvFromEnv)
 				if local.Description != "" {
 					config.Description = local.Description
 				}
@@ -83,6 +88,7 @@ func readPackage(root string, installed bool) (packageRecord, error) {
 		heavy = *state.Heavy
 	}
 	record.definition = Definition{
+		Source: state.Source, Compatibility: state.Compatibility,
 		Name: manifest.Name, Description: manifest.Description, Version: manifest.Version,
 		Path: root, Enabled: state.Enabled, Heavy: heavy, Skills: sortedKeys(skillPaths), MCPServers: sortedKeys(configs), Diagnostics: diagnostics,
 	}
@@ -137,4 +143,15 @@ func discoverPortableSkills(root string) (map[string]string, []string) {
 
 func hostStatePath(root string) string {
 	return filepath.Join(filepath.Dir(root), ".state", filepath.Base(root)+".json")
+}
+
+func mergeStringValues(base, overlay map[string]string) map[string]string {
+	out := make(map[string]string, len(base)+len(overlay))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range overlay {
+		out[k] = v
+	}
+	return out
 }

@@ -76,7 +76,7 @@ func TestHeavyPluginProgressiveDisclosureAndAvailabilityOverlay(t *testing.T) {
 	if err := remarshal(loaded, &expanded); err != nil {
 		t.Fatal(err)
 	}
-	if len(expanded.Skills) != 1 || expanded.Skills[0].Name != "pcb-layout" || expanded.Skills[0].File != "skill://pcb-layout/SKILL.md" {
+	if len(expanded.Skills) != 1 || expanded.Skills[0].Name != "pcb-layout" || expanded.Skills[0].File != "skill://plugin/pcb/pcb-layout/SKILL.md" {
 		t.Fatalf("expanded Skills = %#v", expanded.Skills)
 	}
 	if len(expanded.MCPServers) != 1 || expanded.MCPServers[0].Name != "easyeda-test" ||
@@ -84,8 +84,10 @@ func TestHeavyPluginProgressiveDisclosureAndAvailabilityOverlay(t *testing.T) {
 		expanded.MCPServers[0].Tools[0].Description != "Route PCB traces" || len(expanded.Unavailable) != 0 {
 		t.Fatalf("expanded MCP/unavailable = %#v / %#v", expanded.MCPServers, expanded.Unavailable)
 	}
-	if _, _, err := rt.skills.ResolveResource("skill://pcb-layout/SKILL.md"); err != nil {
+	if _, _, release, err := rt.skills.ResolveResource(t.Context(), "skill://pcb-layout/SKILL.md"); err != nil {
 		t.Fatalf("resolve enabled plugin Skill: %v", err)
+	} else {
+		release()
 	}
 
 	genericSearch, err := rt.Call(context.Background(), "mcp_tool_search", map[string]any{"query": "anything", "limit": 10})
@@ -111,7 +113,10 @@ func TestHeavyPluginProgressiveDisclosureAndAvailabilityOverlay(t *testing.T) {
 		t.Fatalf("disabled plugin leaked capabilities: %#v", disabled)
 	}
 	assertToolErrorCode(t, callPluginLoad(rt, "pcb"), "PLUGIN_DISABLED")
-	_, _, resolveErr := rt.skills.ResolveResource("skill://pcb-layout/SKILL.md")
+	_, _, release, resolveErr := rt.skills.ResolveResource(t.Context(), "skill://pcb-layout/SKILL.md")
+	if release != nil {
+		release()
+	}
 	assertToolErrorCode(t, resolveErr, "PLUGIN_MEMBER_DISABLED")
 	_, searchErr := rt.Call(context.Background(), "mcp_tool_search", map[string]any{"query": "anything", "server": "easyeda-test"})
 	assertToolErrorCode(t, searchErr, "PLUGIN_DISABLED")
@@ -119,8 +124,10 @@ func TestHeavyPluginProgressiveDisclosureAndAvailabilityOverlay(t *testing.T) {
 	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{"action": "enable", "name": "pcb"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := rt.skills.ResolveResource("skill://pcb-layout/SKILL.md"); err != nil {
+	if _, _, release, err := rt.skills.ResolveResource(t.Context(), "skill://pcb-layout/SKILL.md"); err != nil {
 		t.Fatalf("resolve re-enabled plugin Skill: %v", err)
+	} else {
+		release()
 	}
 	if _, err := rt.Call(context.Background(), "plugin_manage", map[string]any{
 		"action": "member_disable", "name": "pcb", "member_type": "skill", "member": "pcb-layout",
@@ -141,7 +148,10 @@ func TestHeavyPluginProgressiveDisclosureAndAvailabilityOverlay(t *testing.T) {
 	if len(baseDisabled.Skills) != 0 || len(baseDisabled.Unavailable) != 1 || baseDisabled.Unavailable[0]["reason"] != "disabled" {
 		t.Fatalf("base-disabled plugin load = %#v", baseDisabled)
 	}
-	_, _, resolveErr = rt.skills.ResolveResource("skill://pcb-layout/SKILL.md")
+	_, _, release, resolveErr = rt.skills.ResolveResource(t.Context(), "skill://pcb-layout/SKILL.md")
+	if release != nil {
+		release()
+	}
 	assertToolErrorCode(t, resolveErr, "PLUGIN_MEMBER_DISABLED")
 }
 

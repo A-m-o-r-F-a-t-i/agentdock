@@ -6,10 +6,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let service = ServiceController()
     private let menuLoginAgent = MenuLoginAgentController()
     private let launchedInBackground = CommandLine.arguments.contains("--background")
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private var statusItem: NSStatusItem?
     private var currentStatus = ServiceStatus.missing
     private var timer: Timer?
     private var isUpdating = false
+    private var isCheckingForUpdate = false
     private var trayServiceActionInProgress = false
     private lazy var updateProgressWindow = UpdateProgressWindowController()
     private lazy var setupWindow = SetupWindowController(
@@ -25,9 +26,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let recoveryReady = DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: service.paths)
-        let pendingUpdateResult = DesktopUpdateResult.load(from: service.paths.updateResult)
-        let updateResultExists = FileManager.default.fileExists(atPath: service.paths.updateResult.path)
-        configureStatusItem()
+        var pendingUpdateResult = DesktopUpdateResult.load(from: service.paths.updateResult)
+        var updateResultExists = FileManager.default.fileExists(atPath: service.paths.updateResult.path)
+
+        // 旧 0.8.x 更新结果没有 transaction id。若用户在更新完成后又手动替换/恢复了 App，
+        // 结果文件记录的 target 已不再代表当前磁盘状态；继续按“更新收尾”处理只会永久锁住 UI。
+        if recoveryReady,
+           let pendingResult = pendingUpdateResult,
+           pendingResult.ok,
+           pendingResult.transactionID?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true,
+           AppVersion.display(pendingResult.targetVersion) != AppVersion.current {
+            NSLog(
+                "AgentDock found a legacy update result that no longer matches the active App; reconciling the current installation."
+            )
+            _ = DesktopUpdateResult.consume(from: service.paths.updateResult)
+            DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
+            DesktopUpdateHandoff.remove(at: service.paths.updateHandoff)
+            pendingUpdateResult = nil
+            updateResultExists = false
+        }
+
         if !recoveryReady {
             // Do not acknowledge or clear any pending transaction when crash recovery itself
             // could not establish a safe state. The journal remains intact for repair/retry.
@@ -56,13 +74,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             refreshStatus()
         } else {
             // 没有 pending result 时，更新协调文件只能是上一次已结束流程留下的临时状态。
+            // 正常启动到这里才允许显示托盘；更新接管分支始终保持隐藏。
+            setUpdateInProgress(false)
             configureMenuLoginAgentIfNeeded()
             DesktopUpdateServiceState.remove(at: service.paths.updateServiceState)
             DesktopUpdateHandoff.remove(at: service.paths.updateHandoff)
             refreshStatus(showWindow: !launchedInBackground)
             Task {
                 do {
-                    try await service.reconcileTunnelRegistrationFromConfiguration()
+                    try service.reconcileTunnelRegistrationFromConfiguration()
                 } catch {
                     NSLog("AgentDock 启动时 Tunnel 状态收敛失败：%@", error.localizedDescription)
                 }
@@ -80,10 +100,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timer?.invalidate()
     }
 
-    private func setUpdateInProgress(_ inProgress: Bool) {
+    private func setUpdateInProgress(_ inProgress: Bool, checking: Bool = false) {
         isUpdating = inProgress
+        isCheckingForUpdate = inProgress && checking
+        setStatusItemVisible(UpdateStatusItemVisibility.shouldShow(
+            isUpdating: isUpdating,
+            isCheckingForUpdate: isCheckingForUpdate
+        ))
         ApplicationMenu.setQuitEnabled(!inProgress)
-        setupWindow.setUpdateInProgress(inProgress)
+        setupWindow.setUpdateInProgress(
+            inProgress,
+            status: checking ? L10n.text("Checking for updates…") : nil
+        )
         rebuildMenu()
     }
 
@@ -132,24 +160,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     handoffAcknowledged = true
                 }
 
-                let recoveryWarnings = await service.recoverBackgroundServicesAfterUpdate(
-                    coreEnabled: serviceState.coreEnabled,
-                    tunnelEnabled: serviceState.tunnelEnabled
-                )
-
-                // 更新事务恢复的是升级前的瞬时注册状态；公网 mode 才是 Tunnel 的长期意图。
-                // 注册已恢复但服务仍在启动时只提示，不把正常的 macOS 启动延迟升级成回滚。
-                var warnings = recoveryWarnings
+                let hasTransaction = !(transactionID?.isEmpty ?? true)
+                // Transaction-aware updates already gate commit on Core health + target version in
+                // the Arbiter. Repeating a shorter GUI health probe can only create stale warnings
+                // after a transaction that has already proved Core healthy. The legacy path keeps
+                // its bounded Core readiness warning because it has no external Arbiter.
+                var warnings: [String] = []
+                if !hasTransaction {
+                    warnings = await service.recoverBackgroundServicesAfterUpdate(
+                        coreEnabled: serviceState.coreEnabled,
+                        tunnelEnabled: serviceState.tunnelEnabled
+                    )
+                }
                 if registration.core == "requires_approval" {
                     warnings.append(L10n.text("AgentDock Core needs background-item approval in System Settings."))
                 }
-                if registration.tunnel == "requires_approval" {
-                    warnings.append(L10n.text("AgentDock Tunnel needs background-item approval in System Settings."))
-                }
+
+                // Tunnel/public access is a soft dependency. Reconcile it best-effort, but surface
+                // readiness only in logs and the control panel; it must not gate or decorate an
+                // otherwise successful install/update result.
                 do {
-                    try await service.reconcileTunnelRegistrationFromConfiguration()
+                    try service.reconcileTunnelRegistrationFromConfiguration()
                 } catch {
-                    warnings.append(L10n.format("Tunnel could not be restored for the current public access mode: %@", error.localizedDescription))
                     NSLog("AgentDock 更新后 Tunnel 状态收敛失败：%@", error.localizedDescription)
                 }
 
@@ -368,12 +400,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func configureStatusItem() {
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: "AgentDock")
-            button.image?.isTemplate = true
+    private func setStatusItemVisible(_ visible: Bool) {
+        if visible {
+            guard statusItem == nil else { return }
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            // NSStatusItem.visible 会按 autosaveName 持久化。更新阶段不能用 visible=false
+            // 做临时隐藏，否则 App 在替换期间退出时会把“临时隐藏”永久写进用户偏好。
+            item.autosaveName = "AgentDockMenuBarItem"
+            item.isVisible = true
+            if let button = item.button {
+                button.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: "AgentDock")
+                button.image?.isTemplate = true
+            }
+            statusItem = item
+            return
         }
-        rebuildMenu()
+
+        guard let item = statusItem else { return }
+        NSStatusBar.system.removeStatusItem(item)
+        statusItem = nil
     }
 
     private func refreshStatus(showWindow: Bool = false) {
@@ -393,7 +438,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if isUpdating {
-            updateProgressWindow.present()
+            if isCheckingForUpdate {
+                setupWindow.present(status: currentStatus)
+            } else {
+                updateProgressWindow.present()
+            }
             return true
         }
         setupWindow.present(status: currentStatus)
@@ -403,19 +452,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
         if isUpdating {
+            let activity = isCheckingForUpdate ? L10n.text("Checking for updates…") : L10n.text("Updating…")
             let statusMenuItem = NSMenuItem(
-                title: L10n.format("AgentDock: %@", L10n.text("Updating…")),
+                title: L10n.format("AgentDock: %@", activity),
                 action: nil,
                 keyEquivalent: ""
             )
             statusMenuItem.isEnabled = false
             menu.addItem(statusMenuItem)
             menu.addItem(.separator())
-            menu.addItem(item(L10n.text("Show update progress"), #selector(showUpdateProgress)))
+            if !isCheckingForUpdate {
+                menu.addItem(item(L10n.text("Show update progress"), #selector(showUpdateProgress)))
+            }
             if currentStatus.installed {
                 menu.addItem(item(L10n.text("Open logs folder"), #selector(openLogs)))
             }
-            statusItem.menu = menu
+            statusItem?.menu = menu
             return
         }
 
@@ -465,7 +517,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(item(L10n.text("Open documentation"), #selector(openDocumentation)))
         menu.addItem(.separator())
         menu.addItem(item(L10n.text("Exit menu bar app"), #selector(quit)))
-        statusItem.menu = menu
+        statusItem?.menu = menu
     }
 
     private func item(_ title: String, _ action: Selector) -> NSMenuItem {
@@ -497,7 +549,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startUpdate() {
         guard !isUpdating else {
-            updateProgressWindow.present()
+            if isCheckingForUpdate {
+                setupWindow.present(status: currentStatus)
+            } else {
+                updateProgressWindow.present()
+            }
             return
         }
         guard !trayServiceActionInProgress, !setupWindow.hasActiveServiceOperation else {
@@ -507,11 +563,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
             return
         }
-        setUpdateInProgress(true)
-        updateProgressWindow.presentChecking()
+
+        // “检查更新”只做版本检查。下载、停服务和 App 替换必须等用户明确确认。
+        setUpdateInProgress(true, checking: true)
         Task {
             do {
-                _ = try await service.update { [weak self] event in
+                let check = try await service.checkForUpdates()
+                let shouldApply = await MainActor.run {
+                    guard check.updateAvailable else {
+                        self.setUpdateInProgress(false)
+                        self.presentAlert(
+                            title: L10n.text("AgentDock is up to date"),
+                            message: check.message
+                        )
+                        self.refreshStatus()
+                        return false
+                    }
+                    guard self.confirmUpdate(check) else {
+                        self.setUpdateInProgress(false)
+                        self.refreshStatus()
+                        return false
+                    }
+                    self.setUpdateInProgress(true)
+                    self.updateProgressWindow.presentChecking()
+                    return true
+                }
+                guard shouldApply else { return }
+
+                _ = try await service.applyUpdate { [weak self] event in
                     Task { @MainActor in
                         self?.updateProgressWindow.apply(event)
                     }
@@ -522,12 +601,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             } catch {
                 await MainActor.run {
+                    let failedWhileChecking = self.isCheckingForUpdate
                     self.setUpdateInProgress(false)
-                    self.updateProgressWindow.showFailure(error.localizedDescription)
+                    if failedWhileChecking {
+                        self.presentAlert(
+                            title: L10n.text("Check for updates"),
+                            message: error.localizedDescription,
+                            style: .warning
+                        )
+                    } else {
+                        self.updateProgressWindow.showFailure(error.localizedDescription)
+                    }
                     self.refreshStatus()
                 }
             }
         }
+    }
+
+    private func confirmUpdate(_ check: DesktopUpdateCheck) -> Bool {
+        let currentVersion = check.currentVersion ?? L10n.text("Unknown version")
+        let latestVersion = check.latestVersion ?? L10n.text("Unknown version")
+        let alert = NSAlert()
+        alert.messageText = L10n.text("AgentDock Update")
+        alert.informativeText = L10n.format(
+            "A new AgentDock version is available.\n\nCurrent version: %@\nLatest version: %@\n\nUpdate now?",
+            currentVersion,
+            latestVersion
+        )
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: L10n.text("Update"))
+        alert.addButton(withTitle: L10n.text("Cancel"))
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     private func performServiceAction(_ action: String, operation: @escaping () async throws -> Void) {

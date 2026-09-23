@@ -23,7 +23,27 @@ import (
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
+const (
+	setupRuntimeHostFlag = "--setup-runtime-host"
+	taskCoreHostFlag     = "--task-core-host"
+)
+
 func main() {
+	if len(os.Args) > 1 && strings.EqualFold(strings.TrimSpace(os.Args[1]), taskCoreHostFlag) {
+		code, err := runTaskCoreHost(os.Args[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		os.Exit(code)
+	}
+	if len(os.Args) > 1 && strings.EqualFold(strings.TrimSpace(os.Args[1]), setupRuntimeHostFlag) {
+		code, err := runSetupRuntimeHost(os.Args[2:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
+		os.Exit(code)
+	}
+
 	if len(os.Args) == 3 && os.Args[1] == "--setup-exec" {
 		code, err := desktopruntime.RunSetupExecutor(os.Args[2])
 		if err != nil {
@@ -194,9 +214,7 @@ func resolveActiveWithRecovery(root string, store *updateengine.Store, layout up
 	transaction, transactionErr := store.ReadTransaction()
 	if transactionErr != nil {
 		if active.State == updateengine.StateTrial {
-			// Installer fresh bootstrap 把 pointer 停在 trial，直到 install commit。
-			// shim 恢复只认 update/transaction.json；没有这份 journal 就不能把未完成安装当 committed 启动。
-			return updateengine.ActiveVersion{}, fmt.Errorf("active generation is still a trial and no update transaction is present; refusing to launch an uncommitted installer generation: %w", transactionErr)
+			return updateengine.ActiveVersion{}, fmt.Errorf("active generation is still a trial without an authorized live installer host; refusing ordinary launch: %w", transactionErr)
 		}
 		return active, nil
 	}
@@ -314,4 +332,10 @@ func liveInstallerTrial(root string, active updateengine.ActiveVersion) (bool, e
 		return false, lock.Release()
 	}
 	return true, nil
+}
+
+func sameWindowsPath(left, right string) bool {
+	left, leftErr := filepath.Abs(strings.TrimSpace(left))
+	right, rightErr := filepath.Abs(strings.TrimSpace(right))
+	return leftErr == nil && rightErr == nil && strings.EqualFold(filepath.Clean(left), filepath.Clean(right))
 }

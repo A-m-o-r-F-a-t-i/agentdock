@@ -55,6 +55,13 @@ func digestDirectory(root string, packageContent bool) (string, error) {
 		if entry.IsDir() {
 			return nil
 		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("special file is not allowed: %s", path)
+		}
 		rel, err := filepath.Rel(rootAbs, path)
 		if err != nil {
 			return err
@@ -178,3 +185,6 @@ func extractZip(src, dest string, maxBytes int64) error {
 	}
 	return nil
 }
+
+// DigestPackageContent is used by explicit source review, not capability enumeration.
+func DigestPackageContent(root string) (string, error) { return digestPackageContent(root) }

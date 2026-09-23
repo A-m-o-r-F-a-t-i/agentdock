@@ -5,10 +5,12 @@ package selfupdate
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 
@@ -29,24 +31,59 @@ func RepairDesktopRuntimeIfNeeded(_ context.Context, output io.Writer) error {
 	if opts.DesktopTargetPath == "" || normalizeVersion(opts.CurrentVersion) == "vdev" {
 		return nil
 	}
-	if normalizeVersion(opts.DesktopCurrentVersion) == normalizeVersion(opts.CurrentVersion) {
+	desktopRepairNeeded := normalizeVersion(opts.DesktopCurrentVersion) != normalizeVersion(opts.CurrentVersion)
+	legacyMigrationNeeded := windowsLegacyMigrationNeeded(opts)
+	if legacyMigrationNeeded {
+		migrationInProgress, probeErr := windowsLegacyMigrationInProgress()
+		if probeErr != nil {
+			return probeErr
+		}
+		if migrationInProgress {
+			// 失败恢复会在 helper 仍持有迁移 mutex 时重启 known-good Core。
+			// 当前启动只负责恢复服务，不立即递归发起另一轮迁移。
+			return nil
+		}
+	}
+	if !desktopRepairNeeded && !legacyMigrationNeeded {
 		return nil
 	}
 
-	// 首个修复版本会由旧 updater 先替换 core；旧 helper 随即等待新 core 的健康端点。
-	// 因此这里只启动独立修复进程，不能在 core 启动路径同步下载 Release，否则慢网络会触发旧 helper 回滚。
+	// 首个修复/迁移版本会由旧 updater 先替换 flat Core；旧 helper 随即等待新 Core
+	// 的健康端点。因此这里只启动独立后台进程，不能在 Core 启动路径同步下载 Release，
+	// 否则慢网络或 generation 切换会让旧 helper 误判健康失败并回滚。
 	if windows.GetCurrentProcessToken().IsElevated() {
 		return launchWindowsDesktopRepairViaShell(opts.ExecutablePath)
 	}
 	return launchWindowsDesktopRepair(opts.ExecutablePath)
 }
 
-func runDesktopRepair(ctx context.Context, output io.Writer) error {
-	opts, inspection, err := inspectDesktopRepair(ctx, output)
-	if err != nil || opts.DesktopTargetPath == "" || !inspection.Result.DesktopUpdateAvailable {
+func runDesktopRepair(ctx context.Context, output io.Writer, localArchivePath, localChecksumPath string) error {
+	opts, err := runtimeOptions(output)
+	if err != nil {
 		return err
 	}
-	return runDesktopOnlyUpdate(ctx, opts, inspection)
+	if normalizeVersion(opts.DesktopCurrentVersion) != normalizeVersion(opts.CurrentVersion) {
+		// 更老的已发布 updater 可能只替换 Core、没有同步 Tray。不能把这种混合版本
+		// flat 状态固化成 source generation；先补齐同版本桌面组件，再重新读取运行态，
+		// 只有 Core/Tray 对齐后才进入一次性 generation 迁移。
+		inspection, inspectErr := inspectDesktopRepairWithOptions(ctx, opts)
+		if inspectErr != nil {
+			return inspectErr
+		}
+		if opts.DesktopTargetPath != "" && inspection.Result.DesktopUpdateAvailable {
+			if err := runDesktopOnlyUpdate(ctx, opts, inspection); err != nil {
+				return err
+			}
+			opts, err = runtimeOptions(output)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if windowsLegacyMigrationReady(opts) {
+		return runWindowsLegacyLayoutMigration(ctx, opts, output, localArchivePath, localChecksumPath)
+	}
+	return nil
 }
 
 func inspectDesktopRepair(ctx context.Context, output io.Writer) (options, updateInspection, error) {
@@ -54,23 +91,28 @@ func inspectDesktopRepair(ctx context.Context, output io.Writer) (options, updat
 	if err != nil {
 		return options{}, updateInspection{}, err
 	}
+	inspection, err := inspectDesktopRepairWithOptions(ctx, opts)
+	return opts, inspection, err
+}
+
+func inspectDesktopRepairWithOptions(ctx context.Context, opts options) (updateInspection, error) {
 	if opts.DesktopTargetPath == "" || normalizeVersion(opts.CurrentVersion) == "vdev" {
-		return opts, updateInspection{}, nil
+		return updateInspection{}, nil
 	}
 	if normalizeVersion(opts.DesktopCurrentVersion) == normalizeVersion(opts.CurrentVersion) {
-		return opts, updateInspection{}, nil
+		return updateInspection{}, nil
 	}
 
 	repairCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	inspection, err := inspectUpdate(repairCtx, opts)
 	if err != nil {
-		return options{}, updateInspection{}, err
+		return updateInspection{}, err
 	}
 	if normalizeVersion(inspection.Result.CurrentVersion) != normalizeVersion(inspection.Result.LatestVersion) {
-		return opts, updateInspection{}, nil
+		return updateInspection{}, nil
 	}
-	return opts, inspection, nil
+	return inspection, nil
 }
 
 func launchWindowsDesktopRepair(executable string) error {
@@ -115,8 +157,21 @@ func launchWindowsDesktopRepairViaShell(executable string) error {
 }
 
 func handleWindowsDesktopRepairCommand(ctx context.Context, args []string) (bool, error) {
-	if len(args) != 1 || args[0] != windowsDesktopRepairCommand {
+	if len(args) == 0 || args[0] != windowsDesktopRepairCommand {
 		return false, nil
+	}
+	flags := flag.NewFlagSet(windowsDesktopRepairCommand, flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	localArchivePath := flags.String("local-archive", "", "本地 Windows Release ZIP，仅用于维护/E2E")
+	localChecksumPath := flags.String("checksum", "", "本地 Windows Release checksum，仅用于维护/E2E")
+	if err := flags.Parse(args[1:]); err != nil {
+		return true, err
+	}
+	if flags.NArg() != 0 {
+		return true, errors.New("Windows 控制面板修复命令参数无效")
+	}
+	if (strings.TrimSpace(*localArchivePath) == "") != (strings.TrimSpace(*localChecksumPath) == "") {
+		return true, errors.New("Windows 控制面板修复本地归档必须同时提供 --local-archive 与 --checksum")
 	}
 	mutexName, err := windows.UTF16PtrFromString(windowsDesktopRepairMutexName)
 	if err != nil {
@@ -136,5 +191,5 @@ func handleWindowsDesktopRepairCommand(ctx context.Context, args []string) (bool
 		_ = windows.ReleaseMutex(mutex)
 		_ = windows.CloseHandle(mutex)
 	}()
-	return true, runDesktopRepair(ctx, os.Stdout)
+	return true, runDesktopRepair(ctx, os.Stdout, *localArchivePath, *localChecksumPath)
 }

@@ -29,6 +29,9 @@ func publishStateLocked(state *serverState) {
 
 // Summary reads do not wait for a long-running MCP tools/call that owns state.mu.
 func summaryForSnapshot(cfg ServerConfig, snapshot indexSnapshot) ServerSummary {
+	if cfg.SourceType == "" {
+		cfg.SourceType = "standalone"
+	}
 	status := "idle"
 	if !cfg.Enabled {
 		status = "disabled"
@@ -37,7 +40,7 @@ func summaryForSnapshot(cfg ServerConfig, snapshot indexSnapshot) ServerSummary 
 	} else if snapshot.Ready {
 		status = "ready"
 	}
-	summary := ServerSummary{Name: cfg.Name, Description: cfg.Description, Transport: cfg.Transport, Enabled: cfg.Enabled, Status: status,
+	summary := ServerSummary{SourceType: cfg.SourceType, PluginName: cfg.PluginName, DisplayName: cfg.DisplayName, Plugin: cfg.PluginName, Name: cfg.Name, Description: cfg.Description, Transport: cfg.Transport, Enabled: cfg.Enabled, Status: status,
 		ToolCount: snapshot.Count, ToolCountKnown: snapshot.Known, ServerVersion: snapshot.Version, LastError: snapshot.LastError, LastErrorCode: snapshot.LastErrorCode,
 		Revision: fmt.Sprintf("%s:%d", cfg.revision, snapshot.Revision), OverrideSource: cfg.overrideSource, LastGoodAvailable: snapshot.Ready && snapshot.LastError != ""}
 	if !snapshot.RefreshedAt.IsZero() {

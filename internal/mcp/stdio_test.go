@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -60,25 +61,14 @@ func TestServeStdioRejectsUninitializedServer(t *testing.T) {
 	}
 }
 
-func TestServeStdioAdvertisesContextAwareInstructions(t *testing.T) {
+func TestServeStdioAdvertisesStableContextInstructions(t *testing.T) {
 	tests := []struct {
-		name       string
-		cfg        config.Config
-		wantPrefix string
+		name string
+		cfg  config.Config
+		want string
 	}{
-		{
-			name:       "without Nexus",
-			cfg:        config.Config{Instructions: "Use absolute paths under /srv."},
-			wantPrefix: baseServerInstructions,
-		},
-		{
-			name: "with Nexus",
-			cfg: config.Config{
-				NexusEndpoint: "http://127.0.0.1:18777",
-				Instructions:  "Use absolute paths under /srv.",
-			},
-			wantPrefix: nexusServerInstructions,
-		},
+		{name: "without Nexus", cfg: config.Config{}, want: baseServerInstructions},
+		{name: "with Nexus", cfg: config.Config{NexusEndpoint: "http://127.0.0.1:18777"}, want: nexusServerInstructions},
 	}
 
 	for _, test := range tests {
@@ -102,11 +92,13 @@ func TestServeStdioAdvertisesContextAwareInstructions(t *testing.T) {
 				t.Fatalf("Connect() error = %v", err)
 			}
 			result := session.InitializeResult()
-			if result == nil || !strings.HasPrefix(result.Instructions, test.wantPrefix) {
-				t.Fatalf("InitializeResult() = %#v, want %q first", result, test.wantPrefix)
+			if result == nil || !strings.HasPrefix(result.Instructions, test.want) {
+				t.Fatalf("InitializeResult() = %#v, want stable instructions %q", result, test.want)
 			}
-			if !strings.Contains(result.Instructions, "Additional operator instructions:\nUse absolute paths under /srv.") {
-				t.Fatalf("InitializeResult() = %#v, want operator instructions appended", result)
+			for _, want := range []string{"AGENTDOCK_USER_INSERT_V1", "transport-managed", "workdir"} {
+				if !strings.Contains(result.Instructions, want) {
+					t.Fatalf("fork guidance missing %q", want)
+				}
 			}
 			if err := session.Close(); err != nil {
 				t.Fatalf("Close() error = %v", err)
@@ -120,6 +112,67 @@ func TestServeStdioAdvertisesContextAwareInstructions(t *testing.T) {
 				t.Fatal("ServeStdio() did not stop after client close")
 			}
 		})
+	}
+}
+
+func TestServeStdioPreservesScopedStartupAGENTSContent(t *testing.T) {
+	root := t.TempDir()
+	cfg := config.Config{
+		AgentDockHome:       filepath.Join(root, "state"),
+		AgentDockDefaultDir: filepath.Join(root, "workspace"),
+	}
+	if err := cfg.Normalize(); err != nil {
+		t.Fatal(err)
+	}
+	for path, marker := range map[string]string{
+		filepath.Join(cfg.AgentDockHome, "AGENTS.md"):       "GLOBAL-AGENTS-MARKER",
+		filepath.Join(cfg.AgentDockDefaultDir, "AGENTS.md"): "WORKSPACE-AGENTS-MARKER",
+	} {
+		if err := os.WriteFile(path, []byte(marker), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runtime, err := app.NewRuntime(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = runtime.Close() }()
+
+	server := NewServer(runtime, cfg)
+	clientInput, serverOutput := io.Pipe()
+	serverInput, clientOutput := io.Pipe()
+	serverDone := make(chan error, 1)
+	go func() { serverDone <- server.ServeStdio(serverInput, serverOutput) }()
+
+	client := mcpsdk.NewClient(
+		&mcpsdk.Implementation{Name: "agentdock-instructions-test", Version: "1.0.0"},
+		&mcpsdk.ClientOptions{Capabilities: &mcpsdk.ClientCapabilities{}},
+	)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	session, err := client.Connect(ctx, &mcpsdk.IOTransport{Reader: clientInput, Writer: clientOutput}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.InitializeResult()
+	if result == nil || !strings.HasPrefix(result.Instructions, baseServerInstructions) {
+		t.Fatalf("InitializeResult() = %#v, want stable instructions only", result)
+	}
+	for _, marker := range []string{"GLOBAL-AGENTS-MARKER", "WORKSPACE-AGENTS-MARKER"} {
+		if !strings.Contains(result.Instructions, marker) {
+			t.Fatalf("MCP initialize lost scoped AGENTS.md content %q", marker)
+		}
+	}
+	if err := session.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-serverDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("ServeStdio() did not stop after client close")
 	}
 }
 

@@ -262,22 +262,22 @@ func jsonObject(value any) (map[string]any, error) {
 func stdioEnvironment(cfg ServerConfig) ([]string, error) {
 	environment := envstore.MinimalSystemEnv()
 	for childName, hostName := range cfg.EnvFromEnv {
-		value, ok := os.LookupEnv(hostName)
+		value, ok := cfg.RuntimeEnv[hostName]
 		if !ok {
-			return nil, newError(
-				"MCP_AUTH_REQUIRED",
-				"required MCP stdio environment variable is missing",
-				false,
-				map[string]any{"server": cfg.Name, "env": hostName},
-				nil,
-			)
+			value, ok = os.LookupEnv(hostName)
 		}
-		environment[childName] = value
+		if !ok {
+			return nil, newError("MCP_AUTH_REQUIRED", "required MCP stdio environment variable is missing", false, map[string]any{"server": cfg.Name, "env": hostName}, nil)
+		}
+		setProcessEnvironmentValue(environment, childName, value)
 	}
-	// 独立 MCP 环境文件属于该服务的明确配置，覆盖最小系统环境和 env_from_env 映射。
+	// Scoped values override the minimal inherited environment.
 	for key, value := range cfg.RuntimeEnv {
-		environment[key] = value
+		setProcessEnvironmentValue(environment, key, value)
 	}
+	// Preserve the raw portable package precedence used by the fork. Explicit
+	// adapter bindings have already been removed from PackageEnv, so scoped
+	// secrets are resolved separately and never replaced by placeholder text.
 	for key, value := range cfg.PackageEnv {
 		setProcessEnvironmentValue(environment, key, value)
 	}
@@ -300,7 +300,7 @@ func resolveHTTPHeaders(cfg ServerConfig) (http.Header, error) {
 	headers.Set("User-Agent", config.ServerName+"/"+buildinfo.Version)
 	for header, envName := range cfg.HeaderEnv {
 		value, ok := cfg.RuntimeEnv[envName]
-		if !ok {
+		if !ok && cfg.SourceType != "plugin" {
 			value, ok = os.LookupEnv(envName)
 		}
 		if !ok || value == "" {

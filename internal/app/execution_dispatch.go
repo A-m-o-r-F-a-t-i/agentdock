@@ -301,7 +301,7 @@ func (r *Runtime) describeExecution(name string, args map[string]any, state exec
 	if name == "mcp_tool_call" {
 		return r.executionRedactor(args).Text(stringArg(args, "name"), 512)
 	}
-	descriptions := map[string]string{"agentdock_context": "加载上下文", "read_file": "读取文件", "list_dir": "列出目录", "search_text": "搜索文本", "exec_command": "运行命令", "file_edit": "EDIT_FILE", "task_manage": "任务管理", "workspace_manage": "工作区管理", "mcp_tool_search": "发现动态工具", "mcp_tool_inspect": "加载工具 Schema", "mcp_tool_call": "调用动态工具", "plugin_load": "展开插件", "session_observe": "查看命令会话", "session_act": "控制命令会话"}
+	descriptions := map[string]string{"agentdock_context": "加载上下文", "workspace_context": "读取工作区规则", "read_file": "读取文件", "list_dir": "列出目录", "search_text": "搜索文本", "exec_command": "运行命令", "file_edit": "EDIT_FILE", "task_manage": "任务管理", "workspace_manage": "工作区管理", "mcp_tool_search": "发现动态工具", "mcp_tool_inspect": "加载工具 Schema", "mcp_tool_call": "调用动态工具", "plugin_load": "展开插件", "session_observe": "查看命令会话", "session_act": "控制命令会话"}
 	title := descriptions[name]
 	if title == "" {
 		title = name
@@ -358,7 +358,7 @@ func (r *Runtime) executionScope(p *preparedExecution) string {
 func (r *Runtime) executionFacts(name string, args map[string]any, state executionObservation) permission.Facts {
 	f := permission.Facts{Binding: state.binding, Tool: name, Action: stringArg(args, "action")}
 	switch name {
-	case "agentdock_context", "read_file", "list_dir", "search_text", "view_image", "mcp_tool_search", "mcp_tool_inspect", "plugin_load", "session_observe", "browser_snapshot":
+	case "agentdock_context", "workspace_context", "read_file", "list_dir", "search_text", "view_image", "mcp_tool_search", "mcp_tool_inspect", "plugin_load", "session_observe", "browser_snapshot":
 		f.ReadOnly = true
 	case "task_manage":
 		switch f.Action {

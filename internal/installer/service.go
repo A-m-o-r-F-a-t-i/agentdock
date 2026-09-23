@@ -365,17 +365,15 @@ func startWindowsServices(ctx context.Context, request Request, journal *rollbac
 	})
 }
 
-func startWindowsTunnel(ctx context.Context, request Request, journal *rollbackJournal) error {
-	binary := windowsServiceBinary(request)
-	if binary == "" {
-		return fmt.Errorf("Windows Tunnel 启动找不到 agentdock 二进制")
-	}
+func startWindowsTunnel(_ context.Context, request Request, journal *rollbackJournal) error {
 	if !journal.hasService("agentdock-tunnel") {
 		if err := journal.NoteService(journalService{Manager: "windows", Name: "agentdock-tunnel"}); err != nil {
 			return err
 		}
 	}
-	if err := runCmd(ctx, binary, "tunnel", "start", "--runtime-root", request.RuntimeRoot); err != nil {
+	// Windows Tunnel startup is intentionally detached. The WinExe proxy owns the potentially
+	// slow Cloudflare readiness loop; Installer Engine must not block Core commit on it.
+	if err := launchWindowsTunnelProxy(request.RuntimeRoot); err != nil {
 		return err
 	}
 	return journal.updateService("agentdock-tunnel", func(service *journalService) {
@@ -389,7 +387,9 @@ func windowsServiceBinary(request Request) string {
 		filepath.Join(request.InstallRoot, "bin", "agentdock.exe"),
 	}
 	if request.PayloadDir != "" {
-		candidates = append([]string{filepath.Join(request.PayloadDir, "agentdock.exe")}, candidates...)
+		// stable entry 已存在时必须优先走它，让 service/task 解析 active generation；
+		// payload 只用于首次发布尚未建立 stable entry 的兜底。
+		candidates = append(candidates, filepath.Join(request.PayloadDir, "agentdock.exe"))
 	}
 	for _, candidate := range candidates {
 		if fileExists(candidate) {

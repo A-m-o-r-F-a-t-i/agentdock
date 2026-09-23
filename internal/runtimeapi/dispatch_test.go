@@ -12,22 +12,33 @@ import (
 )
 
 type runtimeStub struct {
-	taskStatus string
-	taskLimit  int
-	skillArgs  map[string]any
-	pluginArgs map[string]any
-	mcpArgs    map[string]any
+	skillTarget   string
+	skillFilePath string
+	taskStatus    string
+	taskLimit     int
+	skillArgs     map[string]any
+	pluginArgs    map[string]any
+	mcpArgs       map[string]any
 }
 
-func (r *runtimeStub) RuntimeStatus() app.Result               { return app.Result{"status": "ok"} }
-func (r *runtimeStub) RuntimeSkills() (app.Result, error)      { return app.Result{}, nil }
-func (r *runtimeStub) RuntimeSkill(string) (app.Result, error) { return app.Result{}, nil }
+func (r *runtimeStub) RuntimeStatus() app.Result          { return app.Result{"status": "ok"} }
+func (r *runtimeStub) RuntimeSkills() (app.Result, error) { return app.Result{}, nil }
+func (r *runtimeStub) RuntimeSkill(skill string) (app.Result, error) {
+	r.skillTarget = skill
+	return app.Result{}, nil
+}
 func (r *runtimeStub) RuntimeSkillManage(_ context.Context, args map[string]any) (app.Result, error) {
 	r.skillArgs = args
 	return app.Result{"changed": true}, nil
 }
-func (r *runtimeStub) RuntimeSkillFiles(string) (app.Result, error)        { return app.Result{}, nil }
-func (r *runtimeStub) RuntimeSkillFile(string, string) (app.Result, error) { return app.Result{}, nil }
+func (r *runtimeStub) RuntimeSkillFiles(skill string) (app.Result, error) {
+	r.skillTarget = skill
+	return app.Result{}, nil
+}
+func (r *runtimeStub) RuntimeSkillFile(skill, filePath string) (app.Result, error) {
+	r.skillTarget, r.skillFilePath = skill, filePath
+	return app.Result{}, nil
+}
 func (r *runtimeStub) RuntimeTasks(status string, limit int) (app.Result, error) {
 	r.taskStatus, r.taskLimit = status, limit
 	return app.Result{"status": status, "limit": limit}, nil
@@ -189,5 +200,33 @@ func TestDispatchKeepsRouteSpecificValidationErrors(t *testing.T) {
 				t.Fatalf("error = %#v, want ToolError code %s", err, test.code)
 			}
 		})
+	}
+}
+
+func TestDispatchSkillRefQueryUsesExactRuntimeReference(t *testing.T) {
+	runtime := &runtimeStub{}
+	ref := "skill://plugin/demo.plugin/plugin-skill"
+	_, err := Dispatch(context.Background(), runtime, Request{
+		Method: "GET",
+		Path:   "/internal/runtime/skills/plugin-skill/files/references/guide.md",
+		Query:  url.Values{"skill_ref": {ref}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.skillTarget != ref || runtime.skillFilePath != "references/guide.md" {
+		t.Fatalf("captured Skill target = %q file=%q", runtime.skillTarget, runtime.skillFilePath)
+	}
+
+	runtime = &runtimeStub{}
+	_, err = Dispatch(context.Background(), runtime, Request{
+		Method: "GET",
+		Path:   "/internal/runtime/skills/demo-skill",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.skillTarget != "demo-skill" {
+		t.Fatalf("legacy Skill target = %q", runtime.skillTarget)
 	}
 }

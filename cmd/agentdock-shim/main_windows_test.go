@@ -3,11 +3,13 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"github.com/uvwt/agentdock/internal/fs/processlock"
 	"github.com/uvwt/agentdock/internal/updateengine"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -169,5 +171,64 @@ func TestInstallerTrialRequiresLiveMatchingOwner(t *testing.T) {
 	}
 	if got, err := resolveActiveWithRecovery(root, store, layout, true); err != nil || got.TransactionID != active.TransactionID {
 		t.Fatalf("live service host: %+v %v", got, err)
+	}
+}
+
+func TestSetupRuntimeHostPreservesExitCodeAndDiagnostics(t *testing.T) {
+	comspec := os.Getenv("COMSPEC")
+	if strings.TrimSpace(comspec) == "" {
+		comspec = `C:\Windows\System32\cmd.exe`
+	}
+	stdoutPath := filepath.Join(t.TempDir(), "stdout.log")
+	stderrPath := filepath.Join(t.TempDir(), "stderr.log")
+	errorPath := filepath.Join(t.TempDir(), "launcher-error.log")
+	encode := func(value string) string {
+		return base64.StdEncoding.EncodeToString([]byte(value))
+	}
+
+	exitCode, err := runSetupRuntimeHost([]string{
+		"--file-b64", encode(comspec),
+		"--args-b64", encode(`/d /s /c "echo runtime-host-stdout & echo runtime-host-stderr 1>&2 & exit 7"`),
+		"--wait",
+		"--stdout-b64", encode(stdoutPath),
+		"--stderr-b64", encode(stderrPath),
+		"--error-b64", encode(errorPath),
+	})
+	if err != nil {
+		t.Fatalf("runSetupRuntimeHost() error = %v", err)
+	}
+	if exitCode != 7 {
+		t.Fatalf("runSetupRuntimeHost() exit code = %d, want 7", exitCode)
+	}
+	stdout, err := os.ReadFile(stdoutPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr, err := os.ReadFile(stderrPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(stdout), "runtime-host-stdout") {
+		t.Fatalf("stdout = %q", stdout)
+	}
+	if !strings.Contains(string(stderr), "runtime-host-stderr") {
+		t.Fatalf("stderr = %q", stderr)
+	}
+	if _, err := os.Stat(errorPath); !os.IsNotExist(err) {
+		t.Fatalf("launcher error file exists after a normal child exit: %v", err)
+	}
+}
+func TestReplaceWindowsEnvironmentIsCaseInsensitive(t *testing.T) {
+	environment := replaceWindowsEnvironment(
+		[]string{"Path=C:\\Windows", "agentdock_home=old", "OTHER=value"},
+		"AGENTDOCK_HOME",
+		`C:\Users\Test\.agentdock`,
+	)
+	joined := strings.Join(environment, "\n")
+	if strings.Contains(strings.ToLower(joined), "agentdock_home=old") {
+		t.Fatalf("old environment value survived: %q", environment)
+	}
+	if !strings.Contains(joined, `AGENTDOCK_HOME=C:\Users\Test\.agentdock`) {
+		t.Fatalf("replacement environment value missing: %q", environment)
 	}
 }

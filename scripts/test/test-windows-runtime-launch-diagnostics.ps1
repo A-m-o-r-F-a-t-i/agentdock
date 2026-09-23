@@ -31,10 +31,16 @@ $longChildScript = Join-Path $testRoot 'long-lived-child.ps1'
 
 try {
     New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+    $localizedDiagnosticBase64 = 'QWdlbnREb2NrIOWBpeW6t+ajgOafpeWksei0pQ=='
+    $localizedDiagnostic = [Text.Encoding]::UTF8.GetString(
+        [Convert]::FromBase64String($localizedDiagnosticBase64)
+    )
     [IO.File]::WriteAllText(
         $childScript,
-        "[Console]::Out.WriteLine('runtime-diagnostic-stdout')`r`n" +
-            "[Console]::Error.WriteLine('runtime-diagnostic-stderr')`r`n" +
+        "[Console]::OutputEncoding = [Text.UTF8Encoding]::new(`$false)`r`n" +
+            "`$localizedDiagnostic = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$localizedDiagnosticBase64'))`r`n" +
+            "[Console]::Out.WriteLine('runtime-diagnostic-stdout')`r`n" +
+            "[Console]::Error.WriteLine(`$localizedDiagnostic)`r`n" +
             "exit -1`r`n",
         [Text.UTF8Encoding]::new($false)
     )
@@ -58,7 +64,7 @@ try {
     foreach ($expected in @(
         'Runtime process exited with exit code -1',
         'Child exit status (unsigned): 4294967295',
-        'stderr: runtime-diagnostic-stderr',
+        "stderr: $localizedDiagnostic",
         'stdout: runtime-diagnostic-stdout'
     )) {
         if (-not $failureMessage.Contains($expected)) {
@@ -138,6 +144,37 @@ try {
         $retryError = $stderrTask.GetAwaiter().GetResult()
         if ($retry.ExitCode -eq 0 -or -not $retryError.Contains('exit code 23')) { throw "A stale receipt masked the current child failure: $retryError" }
     } finally { $retry.Dispose() }
+
+    # The non-wait path is used for Tray/background launch. The child must survive after the
+    # temporary Task action exits and must not own a console window of its own.
+    $detachedMarker = Join-Path $testRoot 'detached-marker.txt'
+    $encodedMarker = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($detachedMarker))
+    [IO.File]::WriteAllText(
+        $childScript,
+        "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class AgentDockConsoleProbe { [DllImport(`"kernel32.dll`")] public static extern IntPtr GetConsoleWindow(); }'`r`n" +
+            "`$marker = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('$encodedMarker'))`r`n" +
+            "`$state = if ([AgentDockConsoleProbe]::GetConsoleWindow() -eq [IntPtr]::Zero) { 'hidden' } else { 'visible' }`r`n" +
+            "[IO.File]::WriteAllText(`$marker, `$state, [Text.UTF8Encoding]::new(`$false))`r`n" +
+            "Start-Sleep -Milliseconds 750`r`nexit 0`r`n",
+        [Text.UTF8Encoding]::new($false)
+    )
+    & $resolvedLauncher `
+        -FilePath (Join-Path $PSHOME 'powershell.exe') `
+        -AgentDockBinary $resolvedAgentDockBinary `
+        -Arguments $arguments `
+        -TimeoutSeconds 30
+
+    $markerDeadline = [DateTime]::UtcNow.AddSeconds(5)
+    while (-not (Test-Path -LiteralPath $detachedMarker -PathType Leaf) -and [DateTime]::UtcNow -lt $markerDeadline) {
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not (Test-Path -LiteralPath $detachedMarker -PathType Leaf)) {
+        throw 'Detached runtime child did not survive the temporary Task host.'
+    }
+    $detachedState = (Get-Content -LiteralPath $detachedMarker -Raw).Trim()
+    if ($detachedState -ne 'hidden') {
+        throw "Detached runtime child unexpectedly owns a console window: $detachedState"
+    }
 
     $afterTasks = @(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName.StartsWith($taskPrefix) } | ForEach-Object TaskName)
     $newTasks = @($afterTasks | Where-Object { $_ -notin $beforeTasks })

@@ -131,6 +131,10 @@ func (s *Store) Install(source string, replace bool) (Definition, error) {
 	if err != nil {
 		return Definition{}, err
 	}
+	return s.installPrepared(root, replace, nil, false)
+}
+
+func (s *Store) installPrepared(root string, replace bool, candidate *PreparedSource, confirmSourceChange bool) (Definition, error) {
 	sourceRecord, err := readPackage(root, false)
 	if err != nil {
 		return Definition{}, err
@@ -177,6 +181,18 @@ func (s *Store) Install(source string, replace bool) (Definition, error) {
 	if existing, ok := installed[sourceRecord.manifest.Name]; ok {
 		oldRecord, hadOld = existing, true
 		state = mergeState(existing.state, sourceRecord)
+	}
+	if candidate != nil {
+		if candidate.Enabled != nil {
+			state.Enabled = *candidate.Enabled
+		}
+		if hadOld && oldRecord.state.Source != nil && !samePluginSourceBinding(*oldRecord.state.Source, candidate.Source) && !confirmSourceChange {
+			return Definition{}, pluginError("PLUGIN_SOURCE_CHANGE_CONFIRMATION_REQUIRED", "update.source", errors.New("Plugin source binding changed; set confirmed_source_change=true to rebind"))
+		}
+		source := candidate.Source
+		compatibility := candidate.Compatibility
+		state.Source = &source
+		state.Compatibility = &compatibility
 	}
 	if _, err := readPackage(staged, false); err != nil {
 		return Definition{}, err
@@ -576,6 +592,8 @@ func mergeState(previous State, next packageRecord) State {
 	state := defaultState(next)
 	state.Enabled = previous.Enabled
 	state.Heavy = previous.Heavy
+	state.Source = previous.Source
+	state.Compatibility = previous.Compatibility
 	for name := range state.Skills {
 		if enabled, ok := previous.Skills[name]; ok {
 			state.Skills[name] = enabled
@@ -791,6 +809,17 @@ func sortedKeys[V any](values map[string]V) []string {
 }
 
 func cloneDefinition(value Definition) Definition {
+	if value.Source != nil {
+		copy := *value.Source
+		value.Source = &copy
+	}
+	if value.Compatibility != nil {
+		copy := *value.Compatibility
+		copy.Supported = append([]string(nil), copy.Supported...)
+		copy.Unsupported = append([]string(nil), copy.Unsupported...)
+		copy.Warnings = append([]string(nil), copy.Warnings...)
+		value.Compatibility = &copy
+	}
 	value.Diagnostics = append([]string(nil), value.Diagnostics...)
 	value.Skills = append([]string(nil), value.Skills...)
 	value.MCPServers = append([]string(nil), value.MCPServers...)

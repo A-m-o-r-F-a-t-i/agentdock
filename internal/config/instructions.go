@@ -9,6 +9,8 @@ import (
 	"unicode/utf8"
 )
 
+const maxInstructionsFileBytes = 64 << 10
+
 // ReadInstructionsFile validates explicit instructions identically for runtime
 // startup and desktop configuration, without modifying storage or environment.
 func ReadInstructionsFile(path string) (string, error) {

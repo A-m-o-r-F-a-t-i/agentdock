@@ -524,6 +524,39 @@ function Write-InstallResult {
     [IO.File]::WriteAllLines($Path, $lines, [Text.Encoding]::Unicode)
 }
 
+function Get-InstallerEngineFailureMessage {
+    param(
+        [string] $RuntimeRoot,
+        [string] $FallbackMessage,
+        [DateTime] $NotBeforeUtc = [DateTime]::MinValue
+    )
+
+    $engineResultPath = Join-Path $RuntimeRoot 'install\result.json'
+    if (-not (Test-Path -LiteralPath $engineResultPath -PathType Leaf)) {
+        return $FallbackMessage
+    }
+
+    try {
+        $engineResultInfo = Get-Item -LiteralPath $engineResultPath -ErrorAction Stop
+        if ($NotBeforeUtc -ne [DateTime]::MinValue -and
+            $engineResultInfo.LastWriteTimeUtc -lt $NotBeforeUtc) {
+            return $FallbackMessage
+        }
+
+        # Engine results are UTF-8 JSON. Read failure text from the structured file instead of
+        # letting Windows PowerShell 5.1 reinterpret native UTF-8 stderr through an OEM code page.
+        $engineResultText = [IO.File]::ReadAllText($engineResultPath, [Text.Encoding]::UTF8)
+        $engineResult = $engineResultText | ConvertFrom-Json
+        if ($null -ne $engineResult.failure -and
+            -not [string]::IsNullOrWhiteSpace([string] $engineResult.failure.message)) {
+            return [string] $engineResult.failure.message
+        }
+    } catch {
+        Write-Warning "Unable to read Installer Engine failure result: $($_.Exception.Message)"
+    }
+    return $FallbackMessage
+}
+
 function Get-ProcessesByPath {
     param(
         [string] $ProcessName,
@@ -929,69 +962,6 @@ function Wait-AgentDockHealth {
         }
     } while ([DateTime]::UtcNow -lt $deadline)
     throw "AgentDock was installed, but health check failed at $healthUrl"
-}
-
-function Wait-CloudflaredRunning {
-    param([string] $BinaryPath)
-
-    $deadline = [DateTime]::UtcNow.AddSeconds(20)
-    do {
-        Start-Sleep -Milliseconds 500
-        if (@(Get-CloudflaredProcesses -BinaryPath $BinaryPath).Count -gt 0) {
-            return
-        }
-    } while ([DateTime]::UtcNow -lt $deadline)
-    throw "cloudflared did not stay running: $BinaryPath"
-}
-
-function Wait-QuickTunnelUrl {
-    param([string[]] $LogPaths)
-
-    $deadline = [DateTime]::UtcNow.AddSeconds(30)
-    do {
-        Start-Sleep -Milliseconds 500
-        foreach ($logPath in $LogPaths) {
-            try {
-                if (Test-Path -LiteralPath $logPath -PathType Leaf) {
-                    $content = Get-Content -LiteralPath $logPath -Raw -ErrorAction Stop
-                    # Provisioning failures also print the trycloudflare API URL; require the creation marker first.
-                    $match = [Regex]::Match(
-                        $content,
-                        '(?s)Your quick Tunnel has been created! Visit it at.*?(https://[A-Za-z0-9-]+\.trycloudflare\.com)'
-                    )
-                    if ($match.Success) {
-                        return $match.Groups[1].Value
-                    }
-                }
-            } catch {
-            }
-        }
-    } while ([DateTime]::UtcNow -lt $deadline)
-    throw "cloudflared started, but no temporary trycloudflare.com URL appeared in: $($LogPaths -join ', ')"
-}
-
-function Wait-QuickTunnelReady {
-    param(
-        [string] $Path,
-        [string] $ExpectedUrl
-    )
-
-    $deadline = [DateTime]::UtcNow.AddSeconds(35)
-    do {
-        Start-Sleep -Milliseconds 500
-        try {
-            if ((Test-Path -LiteralPath $Path -PathType Leaf) -and
-                [string]::Equals(
-                    [IO.File]::ReadAllText($Path).Trim(),
-                    $ExpectedUrl,
-                    [StringComparison]::OrdinalIgnoreCase
-                )) {
-                return
-            }
-        } catch {
-        }
-    } while ([DateTime]::UtcNow -lt $deadline)
-    throw "Quick Tunnel generated $ExpectedUrl, but AgentDock did not finish adopting it."
 }
 
 function Backup-FileState {
@@ -1764,6 +1734,21 @@ try {
         New-Item -ItemType Directory -Path $directory -Force | Out-Null
     }
 
+    # Windows Tunnel has a long-lived supervisor that will immediately restart cloudflared after
+    # an external process kill. Stop that supervisor through the currently committed generation
+    # before replacing cloudflared or changing its protected Token. Legacy installs without a
+    # supervisor PID keep the old process-only migration path below.
+    $tunnelSupervisorPidPath = Join-Path $runtimeDir 'tunnel-supervisor.pid'
+    if ($generationLayoutDetected -and
+        (Test-Path -LiteralPath $tunnelSupervisorPidPath -PathType Leaf) -and
+        (Test-Path -LiteralPath $existingGenerationCore -PathType Leaf)) {
+        $tunnelStopOutput = @(& $existingGenerationCore tunnel stop --runtime-root $runtimeDir 2>&1)
+        if ($LASTEXITCODE -ne 0) {
+            $tunnelStopDetail = ($tunnelStopOutput | Out-String).Trim()
+            throw "Unable to stop the existing AgentDock Tunnel supervisor before update. $tunnelStopDetail"
+        }
+    }
+
     $cloudflaredProcessWasRunning = @(Get-CloudflaredProcesses -BinaryPath $cloudflaredBinary).Count -gt 0
     $cloudflaredStopAttempted = $true
     [void] (Stop-CloudflaredForUpgrade -BinaryPath $cloudflaredBinary)
@@ -1936,6 +1921,8 @@ exit `$LASTEXITCODE
             $engineArgs += @('--task-name', 'AgentDock')
         }
         if ((-not $RegisterStartup) -or ($InstallChannel -eq 'setup' -and -not $existingInstallDetected)) {
+            # Setup always leaves Core activation to the Windows adapter below so fresh, repair,
+            # and upgrade launches all happen outside the Inno RedirectionGuard process tree.
             $engineArgs += @('--no-start', '--skip-health')
         }
         if (-not [string]::IsNullOrWhiteSpace($payloadVersion)) {
@@ -1950,6 +1937,7 @@ exit `$LASTEXITCODE
         # Engine may replace stable shim/icon before returning an error; mark this before invocation so catch can restore them.
         $stableFilesMayBeReplaced = $true
         $engineInvoked = $true
+        $engineInvocationStartedAt = [DateTime]::UtcNow
         if ($InstallChannel -eq 'setup' -and $existingInstallDetected -and $RegisterStartup) {
             # The upgrade Engine starts and verifies Core/Tunnel during its trial.
             # Use the native GUI worker while retaining the Engine transaction
@@ -1962,7 +1950,10 @@ exit `$LASTEXITCODE
             $engineJson = (& $sourceBinary @engineArgs 2>$engineErrorPath | Out-String).Trim()
             if ($LASTEXITCODE -ne 0) {
                 $engineDetails = (Get-Content -LiteralPath $engineErrorPath -Raw -ErrorAction SilentlyContinue)
-                throw "Installer Engine failed to write the runtime generation and manifest. $engineDetails"
+                $engineFailureMessage = Get-InstallerEngineFailureMessage -RuntimeRoot $runtimeDir `
+                    -FallbackMessage "Installer Engine failed to write the runtime generation and manifest. $engineDetails" `
+                    -NotBeforeUtc $engineInvocationStartedAt
+                throw $engineFailureMessage
             }
         }
         # Engine already left a trial. Catch must abandon even if the JSON handshake is unreadable.
@@ -2010,10 +2001,9 @@ exit `$LASTEXITCODE
         if ($engineOwnsActivation -and $RegisterStartup) {
             $healthStatus = 'healthy'
             if ($resolvedTunnelMode -eq 'quick') {
+                # Tunnel/public readiness is a soft dependency. Record a URL only if it is already
+                # available; the control panel will show eventual readiness after install/update.
                 $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
-                if ([string]::IsNullOrWhiteSpace($publicUrl)) {
-                    throw 'Installer Engine finished trial without a Quick Tunnel public address.'
-                }
             } elseif ($resolvedTunnelMode -eq 'named') {
                 $publicUrl = $ServerUrl
             }
@@ -2034,29 +2024,10 @@ exit `$LASTEXITCODE
             Wait-AgentDockHealth -HealthPort $Port
             $healthStatus = 'healthy'
 
-            if ($resolvedTunnelMode -ne 'none') {
-                if ($InstallChannel -eq 'setup') {
-                    Invoke-SetupRuntimeProcess `
-                        -FilePath $sourceBinary `
-                        -Arguments "tunnel start --runtime-root `"$runtimeDir`"" `
-                        -WaitForExit
-                } else {
-                    & $destinationBinary tunnel start --runtime-root $runtimeDir
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "AgentDock native Tunnel start failed with exit code $LASTEXITCODE."
-                    }
-                }
-
-                if ($resolvedTunnelMode -eq 'quick') {
-                    $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
-                    if ([string]::IsNullOrWhiteSpace($publicUrl)) {
-                        $publicUrl = Wait-QuickTunnelUrl -LogPaths @($cloudflaredStdoutLogPath, $cloudflaredStderrLogPath)
-                    }
-                    Wait-QuickTunnelReady -Path $quickTunnelUrlPath -ExpectedUrl $publicUrl
-                } else {
-                    $publicUrl = $ServerUrl
-                    Wait-CloudflaredRunning -BinaryPath $cloudflaredBinary
-                }
+            if ($resolvedTunnelMode -eq 'quick') {
+                $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
+            } elseif ($resolvedTunnelMode -eq 'named') {
+                $publicUrl = $ServerUrl
             }
         } elseif ($mustRestartExistingProcess) {
             if ($InstallChannel -eq 'setup') {
@@ -2115,6 +2086,45 @@ exit `$LASTEXITCODE
         $engineCommitted = $true
     }
 
+    # Core is authoritative for install/update success. Start Tunnel only after commit and do it
+    # asynchronously through the existing WinExe startup proxy so Cloudflare/network readiness
+    # cannot hold the transaction or its success UI open.
+    if ($RegisterStartup -and $resolvedTunnelMode -ne 'none') {
+        try {
+            $tunnelStartupArguments = "--start-tunnel --runtime-root `"$runtimeDir`""
+            if ($InstallChannel -eq 'setup') {
+                Invoke-SetupRuntimeProcess `
+                    -FilePath $destinationTrayBinary `
+                    -Arguments $tunnelStartupArguments
+            } else {
+                Start-Process `
+                    -FilePath $destinationTrayBinary `
+                    -ArgumentList $tunnelStartupArguments `
+                    -WindowStyle Hidden | Out-Null
+            }
+        } catch {
+            # Network/public readiness stays a soft dependency, but failure to schedule the local
+            # Tunnel host is actionable. Keep Core committed and surface the degraded public state.
+            $tunnelWarningMessage = 'AgentDock was installed successfully, but public access could not be started in the background. Open the control panel or sign in again to retry.'
+            if ([string]::IsNullOrWhiteSpace($installWarningMessage)) {
+                $installWarningMessage = $tunnelWarningMessage
+            } else {
+                $installWarningMessage = ($installWarningMessage + ' ' + $tunnelWarningMessage).Trim()
+            }
+            if ([string]::IsNullOrWhiteSpace($installWarningCode)) {
+                $installWarningCode = 'tunnel-start-deferred'
+            } else {
+                $installWarningCode = "$installWarningCode,tunnel-start-deferred"
+            }
+            Write-Warning "$tunnelWarningMessage Details: $($_.Exception.Message)"
+        }
+        if ($resolvedTunnelMode -eq 'quick') {
+            $publicUrl = Read-TextFile -Path $quickTunnelUrlPath
+        } elseif ($resolvedTunnelMode -eq 'named') {
+            $publicUrl = $ServerUrl
+        }
+    }
+
     $taskTransactionCommitted = $taskTransactionStarted
     if ($preserveTailscale) { $publicUrl = $preservedTailscaleOrigin }
     $publicMCPUrl = ''
@@ -2143,10 +2153,15 @@ exit `$LASTEXITCODE
     }
     if ($resolvedTunnelMode -ne 'none') {
         Write-Host ''
-        Write-Host 'AgentDock public installation complete'
+        Write-Host 'AgentDock public access configured'
         Write-Host "Public mode: $resolvedTunnelMode"
-        Write-Host "Public address: $publicUrl"
-        Write-Host "MCP address: $publicUrl/mcp"
+        if (-not [string]::IsNullOrWhiteSpace($publicUrl)) {
+            Write-Host "Public address: $publicUrl"
+            Write-Host "MCP address: $publicUrl/mcp"
+        } else {
+            Write-Host 'Public access is starting in the background.'
+            Write-Host 'Open the AgentDock control panel to view the public address when it is ready.'
+        }
         Write-Host "Bearer Token: $AuthToken"
         Write-Host "OAuth login password: $OAuthPassword"
         Write-Host 'Authentication: Bearer Token and OAuth are both enabled.'
@@ -2154,9 +2169,9 @@ exit `$LASTEXITCODE
         Write-Host "cloudflared stderr log: $cloudflaredStderrLogPath"
         if ($resolvedTunnelMode -eq 'quick') {
             Write-Host 'The temporary address changes after cloudflared restarts.'
-            Write-Host 'Run the same installer command again to refresh the address; credentials are preserved.'
-            Write-Host 'Then replace the MCP URL in the client and complete OAuth again.'
+            Write-Host 'The control panel reports the current address after background startup completes.'
         } else {
+            Write-Host 'Tunnel startup continues in the background; readiness is shown in the control panel and logs.'
             Write-Host "Cloudflare Public Hostname service target: http://127.0.0.1:$Port"
         }
     }
@@ -2326,22 +2341,30 @@ exit `$LASTEXITCODE
             Wait-AgentDockHealth -HealthPort $rollbackHealthPort
         }
         if ($cloudflaredProcessWasRunning) {
-            if (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
-                # Native tunnel start has authoritative Quick/Named readiness. Wait for it before
-                # abandon so a regenerated Quick URL is projected into the final rollback result.
-                if ($InstallChannel -eq 'setup') {
-                    Invoke-SetupRuntimeProcess `
-                        -FilePath $sourceBinary `
-                        -Arguments "tunnel start --runtime-root `"$runtimeDir`"" `
-                        -WaitForExit
-                } else {
-                    & $sourceBinary tunnel start --runtime-root $runtimeDir
-                    if ($LASTEXITCODE -ne 0) {
-                        throw "AgentDock rollback Tunnel start failed with exit code $LASTEXITCODE."
+            # Rollback success is anchored to the restored source Core + local health. Tunnel/public
+            # recovery is best-effort and must not turn Cloudflare/network delay into rollback_failed.
+            if (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf) {
+                try {
+                    $rollbackTunnelArguments = "--start-tunnel --runtime-root `"$runtimeDir`""
+                    if ($InstallChannel -eq 'setup') {
+                        Invoke-SetupRuntimeProcess `
+                            -FilePath $destinationTrayBinary `
+                            -Arguments $rollbackTunnelArguments
+                    } else {
+                        Start-Process `
+                            -FilePath $destinationTrayBinary `
+                            -ArgumentList $rollbackTunnelArguments `
+                            -WindowStyle Hidden | Out-Null
                     }
+                } catch {
+                    # Tunnel diagnostics remain available through panel/runtime logs.
                 }
             } elseif (Test-Path -LiteralPath $cloudflaredLauncherPath -PathType Leaf) {
-                Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath
+                try {
+                    Start-CloudflaredLauncher -LauncherPath $cloudflaredLauncherPath
+                } catch {
+                    # Legacy launcher recovery is also a soft dependency.
+                }
             }
         }
         if ($trayProcessWasRunning -and (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf)) {

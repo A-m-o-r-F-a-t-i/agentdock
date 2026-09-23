@@ -138,6 +138,9 @@ func HandleInternalCommand(ctx context.Context, args []string) (bool, error) {
 	if handled, err := handleWindowsDesktopRepairCommand(ctx, args); handled {
 		return true, err
 	}
+	if handled, err := handleWindowsLegacyMigrationCommand(ctx, args); handled {
+		return true, err
+	}
 	if len(args) == 0 || args[0] != "__update-finalize" {
 		return false, nil
 	}
@@ -303,6 +306,9 @@ func finalizeWindowsUpdate(ctx context.Context, plan windowsUpdatePlan) error {
 		if err := desktopUpdate.Commit(); err != nil {
 			fmt.Printf("警告：清理 Windows 控制面板更新备份失败: %v\n", err)
 		}
+	}
+	if err := finalizeLegacySkillMigration(ctx, plan.TargetPath, os.Stdout); err != nil {
+		fmt.Printf("警告：legacy Skill migration 暂未收口，旧目录将继续保留用于回滚: %v\n", err)
 	}
 	recoveryPending = false
 	if plan.RestartMode == "none" {
@@ -546,11 +552,26 @@ func moveFileReplace(sourcePath, targetPath string) error {
 	if err != nil {
 		return err
 	}
-	return windows.MoveFileEx(
-		source,
-		target,
-		windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH,
-	)
+
+	// Defender、索引器或刚退出的进程可能在极短窗口内仍持有目标文件。
+	// 只对 Windows 明确的共享/锁冲突做短时有界重试；权限或路径等真实错误立即返回。
+	for attempt := 0; attempt < 16; attempt++ {
+		err = windows.MoveFileEx(
+			source,
+			target,
+			windows.MOVEFILE_REPLACE_EXISTING|windows.MOVEFILE_WRITE_THROUGH,
+		)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, windows.ERROR_ACCESS_DENIED) &&
+			!errors.Is(err, windows.ERROR_SHARING_VIOLATION) &&
+			!errors.Is(err, windows.ERROR_LOCK_VIOLATION) {
+			return err
+		}
+		time.Sleep(time.Duration(attempt+1) * 5 * time.Millisecond)
+	}
+	return err
 }
 
 func scheduleWindowsCleanup(directory string) {

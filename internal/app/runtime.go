@@ -186,7 +186,17 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		_ = mcpClients.Close()
 		return nil, fmt.Errorf("initialize plugin Skill provider: %w", err)
 	}
-	runtime.command = toolcommand.New(func() config.Config { return runtime.cfg }, ws, envs, skills.ResolveActive, runtime.commandExecutionContext)
+	runtime.command = toolcommand.New(func() config.Config { return runtime.cfg }, ws, envs, func(ctx context.Context, ref string) (toolcommand.SkillLease, error) {
+		resolved, release, err := skills.Acquire(ctx, ref)
+		if err != nil {
+			return toolcommand.SkillLease{}, err
+		}
+		envName := ""
+		if resolved.SourceType == "managed" {
+			envName = resolved.Name
+		}
+		return toolcommand.SkillLease{PluginName: resolved.PluginName, Name: resolved.Name, Root: resolved.Root, EnvName: envName, Release: release}, nil
+	}, runtime.commandExecutionContext)
 	runtime.command.SetActivityStore(activityStore)
 	runtime.files = toolfile.New(ws, skills.ResolveResource, runtime.command.CommandEnv)
 	mcpClients.SetCallObserver(runtime.observeRemoteTool)

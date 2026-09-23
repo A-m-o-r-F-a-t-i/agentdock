@@ -140,7 +140,8 @@ func parseMCPServer(root, pluginName, rawName string, value any) (mcpclient.Serv
 		return mcpclient.ServerConfig{}, err
 	}
 	name := nativeServerName(pluginName, rawName)
-	config := mcpclient.ServerConfig{Name: name, Description: rawName, Enabled: true, TimeoutMS: 30000, PluginRoot: resolvedRoot, PluginData: dataRoot}
+	config := mcpclient.ServerConfig{
+		SourceType: "plugin", PluginName: pluginName, DisplayName: rawName, StorageKey: nativeServerName(pluginName, rawName), Name: name, Description: rawName, Enabled: true, TimeoutMS: 30000, PluginRoot: resolvedRoot, PluginData: dataRoot}
 	if config.Description == "" {
 		config.Description = pluginName + " MCP"
 	}
@@ -239,4 +240,28 @@ func validHeaderValue(value string) bool {
 		}
 	}
 	return true
+}
+
+// applySourceEnvironmentBindings is used only after an explicitly reviewed
+// source adapter installation. Legacy raw packages retain opaque text values.
+func applySourceEnvironmentBindings(cfg mcpclient.ServerConfig) mcpclient.ServerConfig {
+	for key, value := range cfg.PackageEnv {
+		if name, ok := exactEnvironmentReference(value); ok && name != "PLUGIN_ROOT" && name != "PLUGIN_DATA" {
+			if cfg.EnvFromEnv == nil {
+				cfg.EnvFromEnv = map[string]string{}
+			}
+			cfg.EnvFromEnv[key] = name
+			delete(cfg.PackageEnv, key)
+		}
+	}
+	for key, value := range cfg.PackageHeaders {
+		if name, ok := exactEnvironmentReference(value); ok {
+			if cfg.HeaderEnv == nil {
+				cfg.HeaderEnv = map[string]string{}
+			}
+			cfg.HeaderEnv[key] = name
+			delete(cfg.PackageHeaders, key)
+		}
+	}
+	return cfg
 }

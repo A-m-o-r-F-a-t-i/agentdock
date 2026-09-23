@@ -16,6 +16,10 @@ func contextToolSpecs() []ToolSpec {
 		Name: "agentdock_context", Contract: contextToolContract, Title: "AgentDock context",
 		Description: "Return structured AgentDock bootstrap context including capabilities, integrations, rules, and automatically loaded global/workspace AGENTS.md content. Call before project operations; pass workdir when selecting another workspace or refreshing changed rules. Selection is request-local and never changes command defaults.",
 		Handler:     ctxToolHandler((*Runtime).agentDockContextTool),
+	}, {
+		Name: "workspace_context", Contract: canonicalToolContract, Title: "Workspace context",
+		Description: "Read only the selected workspace AGENTS.md rules and workspace-local Skill index. Use for a changed scope, not as a required second bootstrap. Selection is request-local and does not change command defaults.",
+		Handler:     ctxToolHandler((*Runtime).workspaceContextTool),
 	}}
 }
 
@@ -49,6 +53,12 @@ func contextToolContract(name string, cfg config.Config) (ToolContract, bool) {
 					properties["revision"] = map[string]any{"type": "string"}
 					properties["server_version"] = map[string]any{"type": "string"}
 					properties["tool_count_known"] = map[string]any{"type": "boolean"}
+					if _, exists := properties["source_type"]; !exists {
+						properties["source_type"] = map[string]any{"type": "string"}
+					}
+					if _, exists := properties["plugin_name"]; !exists {
+						properties["plugin_name"] = map[string]any{"type": "string"}
+					}
 					item["properties"] = properties
 					index["items"] = item
 					output["dynamic_mcp"] = index

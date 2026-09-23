@@ -80,7 +80,7 @@ func (s *Service) MCPMembership(name string) (registry.Membership, bool, error) 
 	return s.store.MCPMembership(name)
 }
 
-func (s *Service) Manage(_ context.Context, request ManageRequest) (Result, error) {
+func (s *Service) Manage(ctx context.Context, request ManageRequest) (Result, error) {
 	action := strings.ToLower(strings.TrimSpace(request.Action))
 	if action == "" {
 		action = "list"
@@ -98,33 +98,42 @@ func (s *Service) Manage(_ context.Context, request ManageRequest) (Result, erro
 			return nil, pluginToolError(err)
 		}
 		return Result{"action": action, "plugin": definition}, nil
-	case "validate":
-		definition, err := s.store.Validate(request.Source)
+	case "catalog":
+		catalog, err := s.store.LoadCatalog(ctx, sourceRequest(request))
 		if err != nil {
 			return nil, pluginToolError(err)
 		}
-		return Result{"action": action, "valid": true, "plugin": definition}, nil
-	case "install", "update":
-		candidate, validateErr := s.store.Validate(request.Source)
-		if validateErr != nil {
-			return nil, pluginToolError(validateErr)
+		return Result{"action": action, "catalog": catalog, "count": len(catalog.Entries)}, nil
+	case "validate":
+		candidate, err := s.store.PrepareSource(ctx, sourceRequest(request))
+		if err != nil {
+			return nil, pluginToolError(err)
 		}
+		defer candidate.Cleanup()
+		return Result{"action": action, "valid": candidate.Review.Valid, "plugin": candidate.Definition, "review": candidate.Review}, nil
+	case "install", "update":
+		candidate, err := s.store.PrepareSource(ctx, sourceRequest(request))
+		if err != nil {
+			return nil, pluginToolError(err)
+		}
+		defer candidate.Cleanup()
 		if action == "update" {
 			if strings.TrimSpace(request.Name) == "" {
 				return nil, toolErrorDetails("PLUGIN_NAME_REQUIRED", "plugin name is required for update", "validation", nil)
 			}
-			if candidate.Name != strings.TrimSpace(request.Name) {
-				return nil, toolErrorDetails("PLUGIN_UPDATE_NAME_MISMATCH", "selected package does not match the plugin being updated", "validation", map[string]any{"expected": strings.TrimSpace(request.Name), "actual": candidate.Name})
+			if candidate.Definition.Name != strings.TrimSpace(request.Name) {
+				return nil, toolErrorDetails("PLUGIN_UPDATE_NAME_MISMATCH", "selected package does not match the plugin being updated", "validation", map[string]any{"expected": strings.TrimSpace(request.Name), "actual": candidate.Definition.Name})
 			}
 		}
-		if ownershipErr := s.validateInstallOwnership(candidate); ownershipErr != nil {
-			return nil, ownershipErr
+		if err := s.validateInstallOwnership(ctx, candidate.Definition); err != nil {
+			return nil, err
 		}
-		definition, err := s.store.Install(request.Source, action == "update")
+		candidate.Enabled = request.Enabled
+		definition, err := s.store.InstallPrepared(ctx, candidate, action == "update", request.ConfirmedSourceChange)
 		if err != nil {
 			return nil, pluginToolError(err)
 		}
-		return Result{"action": action, "plugin": definition}, nil
+		return Result{"action": action, "plugin": definition, "review": candidate.Review}, nil
 	case "remove":
 		if err := s.store.Remove(request.Name); err != nil {
 			return nil, pluginToolError(err)
@@ -156,7 +165,7 @@ func (s *Service) Manage(_ context.Context, request ManageRequest) (Result, erro
 	}
 }
 
-func (s *Service) validateInstallOwnership(candidate registry.Definition) error {
+func (s *Service) validateInstallOwnership(ctx context.Context, candidate registry.Definition) error {
 	for _, name := range candidate.Skills {
 		item, found, err := s.skillLookup(name)
 		if err != nil {
@@ -167,7 +176,7 @@ func (s *Service) validateInstallOwnership(candidate registry.Definition) error 
 		}
 	}
 	for _, name := range candidate.MCPServers {
-		item, found, err := s.mcpLookup(context.Background(), name, false)
+		item, found, err := s.mcpLookup(ctx, name, false)
 		if err != nil {
 			return toolErrorCause("PLUGIN_MEMBER_LOOKUP_FAILED", "check MCP ownership before plugin install", "runtime", map[string]any{"mcp_server": name}, err)
 		}
@@ -261,4 +270,8 @@ func pluginToolError(err error) error {
 		message = fmt.Sprintf("plugin operation failed: %s", registryErr.Code)
 	}
 	return toolErrorCause(registryErr.Code, message, category, registryErr.Details, err)
+}
+
+func sourceRequest(request ManageRequest) registry.SourceRequest {
+	return registry.SourceRequest{Type: request.SourceType, Ref: request.Source, GitRef: request.GitRef, GitCommit: request.GitCommit, Subdir: request.Subdir, SHA256: request.SHA256, Adapter: request.SourceAdapter, Version: request.SourceVersion, Catalog: request.Catalog, CatalogItem: request.CatalogItem}
 }

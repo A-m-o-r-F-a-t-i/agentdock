@@ -166,6 +166,9 @@ func (m *Manager) prepareSource(ctx context.Context, source, work string, maxByt
 		return "", "", packageError(ErrInvalidPackage, "source", err)
 	}
 	if info.IsDir() {
+		if err := ValidatePackage(source); err != nil {
+			return "", "", err
+		}
 		digest, err := DigestDirectory(source)
 		if err != nil {
 			return "", "", packageError(ErrInvalidPackage, "digest", err)
@@ -225,6 +228,9 @@ func copyPackage(source, destination string) error {
 		info, err := entry.Info()
 		if err != nil {
 			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("special file is not allowed: %s", path)
 		}
 		mode := info.Mode().Perm() & 0o755
 		if mode == 0 {

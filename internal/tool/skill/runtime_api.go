@@ -8,6 +8,12 @@ import (
 )
 
 type CapabilityItem struct {
+	SkillRef      string
+	SourceType    string
+	SourceID      string
+	PluginName    string
+	ContentDigest string
+
 	Name        string
 	Description string
 	File        string
@@ -67,8 +73,9 @@ func (s *Service) CapabilityItem(name string) (CapabilityItem, bool, error) {
 				return CapabilityItem{}, false, nil
 			}
 			return CapabilityItem{
-				Name: name, Description: strings.TrimSpace(doc.Description), File: "skill://" + name + "/SKILL.md",
+				Name: name, Description: strings.TrimSpace(doc.Description), File: PluginSkillRef(member.Plugin, name) + "/SKILL.md",
 				Bundled: false, Enabled: member.Enabled, Plugin: member.Plugin,
+				SkillRef: PluginSkillRef(member.Plugin, name), SourceType: pluginSourceType, SourceID: member.Plugin, PluginName: member.Plugin,
 			}, true, nil
 		}
 	}
@@ -89,8 +96,8 @@ func (s *Service) CapabilityItem(name string) (CapabilityItem, bool, error) {
 		return CapabilityItem{}, false, err
 	}
 	return CapabilityItem{
-		Name: name, Description: strings.TrimSpace(doc.Description), File: "skill://" + name + "/SKILL.md",
-		Bundled: bundled, Enabled: enabled,
+		Name: name, Description: strings.TrimSpace(doc.Description), File: ManagedSkillRef(name) + "/SKILL.md",
+		Bundled: bundled, Enabled: enabled, SkillRef: ManagedSkillRef(name), SourceType: managedSourceType, SourceID: name,
 	}, true, nil
 }
 
@@ -132,6 +139,16 @@ func (s *Service) runtimeSkillInventory(includeFiles bool) (Result, error) {
 		_, owned := item["plugin"]
 		if strings.TrimSpace(skill) == "" || (!owned && strings.TrimSpace(version) == "") {
 			continue
+		}
+		if member, found := memberByName[skill]; found {
+			item["skill_ref"] = PluginSkillRef(member.Plugin, skill)
+			item["source_type"] = pluginSourceType
+			item["source_id"] = member.Plugin
+			item["plugin_name"] = member.Plugin
+		} else {
+			item["skill_ref"] = ManagedSkillRef(skill)
+			item["source_type"] = managedSourceType
+			item["source_id"] = skill
 		}
 		packageDir := ""
 		if member, found := memberByName[skill]; found {
@@ -178,27 +195,37 @@ func (s *Service) runtimeSkillInventory(includeFiles bool) (Result, error) {
 }
 
 func (s *Service) RuntimeSkill(skill string) (Result, error) {
-	result, err := s.inspect(InspectRequest{Skill: skill})
+	selected, release, err := s.runtimeSelection(skill)
+	if err != nil {
+		if !strings.HasPrefix(skill, "skill://") {
+			result, inspectErr := s.inspect(InspectRequest{Skill: skill})
+			if inspectErr == nil && result["version"] == nil {
+				result["source"] = runtimeAPISource
+				result["files"] = []runtimeSkillFile{}
+				result["file_count"] = 0
+				return result, nil
+			}
+		}
+		return nil, err
+	}
+	defer release()
+	var result Result
+	if selected.SourceType == managedSourceType || selected.SourceType == pluginSourceType {
+		result, err = s.inspect(InspectRequest{Skill: selected.Name})
+	} else {
+		doc, loadErr := skills.LoadPortableSkillDocument(selected.Root)
+		err = loadErr
+		result = Result{"action": "inspect", "skill": selected.Name, "version": doc.Version, "document": doc, "enabled": true, "bundled": false}
+	}
+	if err != nil {
+		return nil, err
+	}
+	files, err := collectRuntimeSkillFiles(selected.Root)
 	if err != nil {
 		return nil, err
 	}
 	result["source"] = runtimeAPISource
-	result["files"] = []runtimeSkillFile{}
-	result["file_count"] = 0
-	version, _ := result["version"].(string)
-	_, owned := result["plugin"]
-	if !owned && strings.TrimSpace(version) == "" {
-		return result, nil
-	}
-	packageDir, _, err := s.runtimeSkillPackageDir(skill)
-	if err != nil {
-		return nil, skillToolError(err)
-	}
-	files, err := collectRuntimeSkillFiles(packageDir)
-	if err != nil {
-		return nil, err
-	}
 	result["files"] = files
 	result["file_count"] = len(files)
-	return result, nil
+	return addRuntimeSelection(result, selected), nil
 }

@@ -72,6 +72,7 @@ func TestTypedToolRequestFieldsMatchPublishedSchemas(t *testing.T) {
 		allowExtra []string
 	}{
 		{name: "agentdock_context", request: contextRequest{}, exact: true},
+		{name: "workspace_context", request: workspaceContextRequest{}, exact: true},
 		{name: toolfile.ToolReadFile, request: toolfile.ReadRequest{}, exact: true, allowExtra: []string{"runtime", "wsl_distribution"}},
 		{name: toolfile.ToolListDir, request: toolfile.ListRequest{}, exact: true, allowExtra: []string{"runtime", "wsl_distribution"}},
 		{name: toolfile.ToolSearchText, request: toolfile.SearchRequest{}, exact: true, allowExtra: []string{"runtime", "wsl_distribution"}},

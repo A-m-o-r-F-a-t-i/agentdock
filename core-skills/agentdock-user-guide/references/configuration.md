@@ -38,6 +38,8 @@
 
 Coding Agent 的发现、Codex / Claude Adapter 安装、Grok stdio 模式、平台配置和验证流程见 `acp.md`。
 
+全局规则默认来自 `~/.agentdock/AGENTS.md`，显式 `AGENTDOCK_INSTRUCTIONS_FILE` 可替代该来源。`agentdock_context` 的 workdir 选择正确项目规则；仅定向读取工作区规则与 `.agents/skills` 索引时可使用 `workspace_context`，不要求每个步骤重复调用两个入口。
+
 ## 重要边界
 
 Windows 原生 Tailscale 的 provider 状态保存在 `runtime.json` 的可选 `public_access_provider`、`public_access_mode`、`public_access_url` 和 `tailscale_binary` 字段，不是额外环境变量。Tailscale 投影保持 `schema_version=1`、旧 `tunnel_mode=none` 和空旧 `public_url`，Core 的 OAuth Origin 仍由 `server-url.txt` 生成。不要手工写入 `.ts.net` 域名来冒充设备检测，也不要传入 Cloudflare Tunnel Token。详见 [Tailscale](tailscale.md)。

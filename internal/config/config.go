@@ -21,8 +21,6 @@ const (
 	PathModel       = "host"
 	RecallTimeoutMS = 30000
 
-	maxInstructionsFileBytes = 64 << 10
-
 	defaultOAuthAccessTokenTTLSeconds = int64(time.Hour / time.Second)
 	maxOAuthAccessTokenTTLSeconds     = int64(999999 * 24 * 60 * 60)
 )

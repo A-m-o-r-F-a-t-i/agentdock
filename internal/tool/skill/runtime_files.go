@@ -30,27 +30,31 @@ type runtimeSkillFile struct {
 // RuntimeSkillFiles 返回当前激活 Skill 包的安全文件清单。
 // 隐藏文件、安装元数据和符号链接不会暴露给控制面。
 func (s *Service) RuntimeSkillFiles(skill string) (Result, error) {
-	packageDir, version, err := s.runtimeSkillPackageDir(skill)
+	selected, release, err := s.runtimeSelection(skill)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
+	packageDir, version := selected.Root, selected.Version
 	files, err := collectRuntimeSkillFiles(packageDir)
 	if err != nil {
 		return nil, err
 	}
-	return Result{
+	return addRuntimeSelection(Result{
 		"action": "files", "skill": skill, "version": version,
 		"files": files, "count": len(files), "source": runtimeAPISource,
-	}, nil
+	}, selected), nil
 }
 
 // RuntimeSkillFile 只读取当前激活 Skill 包内的普通 UTF-8 文本文件。
 // 路径解析和符号链接校验都在 AgentDock 内完成，调用方无需挂载宿主机目录。
 func (s *Service) RuntimeSkillFile(skill, relativePath string) (Result, error) {
-	packageDir, version, err := s.runtimeSkillPackageDir(skill)
+	selected, release, err := s.runtimeSelection(skill)
 	if err != nil {
 		return nil, err
 	}
+	defer release()
+	packageDir, version := selected.Root, selected.Version
 	cleanPath, err := cleanRuntimeSkillFilePath(relativePath)
 	if err != nil {
 		return nil, err
@@ -99,7 +103,7 @@ func (s *Service) RuntimeSkillFile(skill, relativePath string) (Result, error) {
 		return nil, toolErrorDetails("SKILL_FILE_NOT_TEXT", "skill file is not UTF-8 text", "validation", map[string]any{"path": cleanPath})
 	}
 
-	return Result{
+	return addRuntimeSelection(Result{
 		"action": "file", "skill": skill, "version": version,
 		"file": map[string]any{
 			"path": cleanPath, "kind": runtimeSkillFileKind(cleanPath),
@@ -107,7 +111,7 @@ func (s *Service) RuntimeSkillFile(skill, relativePath string) (Result, error) {
 			"content": string(buffer), "truncated": truncated,
 		},
 		"source": runtimeAPISource,
-	}, nil
+	}, selected), nil
 }
 
 func (s *Service) runtimeSkillPackageDir(skill string) (string, string, error) {

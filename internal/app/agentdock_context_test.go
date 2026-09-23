@@ -18,7 +18,7 @@ import (
 func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 	home := t.TempDir()
 	setUserHomeForTest(t, home)
-	writeCommonSkillForTest(t, filepath.Join(home, ".agents", "skills"), "demo-common", "demo-skill", "Lower-priority common Skill.")
+	writeCommonSkillForTest(t, filepath.Join(home, ".agents", "skills"), "demo-skill", "demo-skill", "Lower-priority common Skill.")
 
 	cfg := config.Config{
 		AgentDockDefaultDir: t.TempDir(),
@@ -51,14 +51,18 @@ func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 			break
 		}
 	}
-	if demo == nil || demo.Description != "Use this Skill for context index tests." || demo.File != "skill://demo-skill/SKILL.md" {
+	if demo == nil || demo.Description != "Use this Skill for context index tests." ||
+		demo.File != "skill://managed/demo-skill/SKILL.md" || demo.SkillRef != "skill://managed/demo-skill" ||
+		demo.SourceType != "managed" {
 		t.Fatalf("structured Skill index missing demo-skill: %#v", got.Skills)
 	}
 	if got.CommonSkills == nil || got.CommonSkills.Total != 1 || len(got.CommonSkills.Items) != 1 {
 		t.Fatalf("common Skill index = %#v", got.CommonSkills)
 	}
 	commonDemo := got.CommonSkills.Items[0]
-	if commonDemo.Name != "demo-skill" || commonDemo.Description != "Lower-priority common Skill." || commonDemo.File != filepath.Join(home, ".agents", "skills", "demo-common", "SKILL.md") {
+	if commonDemo.Name != "demo-skill" || commonDemo.Description != "Lower-priority common Skill." ||
+		commonDemo.File != "skill://shared/demo-skill/SKILL.md" || commonDemo.SkillRef != "skill://shared/demo-skill" ||
+		commonDemo.SourceType != "shared" {
 		t.Fatalf("common Skill index missing duplicate demo-skill: %#v", got.CommonSkills)
 	}
 	if got.DynamicMCP == nil || got.WorkflowTemplates == nil || got.Rules == nil {
@@ -71,7 +75,7 @@ func TestAgentDockContextToolReturnsStructuredRuntimeIndex(t *testing.T) {
 		t.Fatalf("runtime paths = %#v", got.Runtime)
 	}
 	rules := strings.Join(got.Rules, "\n")
-	for _, want := range []string{"AgentDock 自带工具直接调用", "同名时始终优先 skills", "common_skills.truncated=true", "task_manage checkpoint"} {
+	for _, want := range []string{"AgentDock 自带工具直接调用", "同名项是不同来源候选", "skill_ref", "common_skills.truncated=true", "task_manage checkpoint"} {
 		if !strings.Contains(rules, want) {
 			t.Fatalf("context rules missing %q: %s", want, rules)
 		}
@@ -285,16 +289,19 @@ func TestAgentDockLocalContextSkipsSharedNexusLookups(t *testing.T) {
 
 func TestCapabilitySkillItemExposesOnlyLightweightIndexFields(t *testing.T) {
 	data, err := json.Marshal(capabilitySkillItem{
-		Name:        "desktop",
-		Description: "Desktop automation.",
-		File:        "skill://desktop/SKILL.md",
-		Bundled:     true,
+		Name:          "desktop",
+		Description:   "Desktop automation.",
+		File:          "skill://managed/desktop/SKILL.md",
+		SkillRef:      "skill://managed/desktop",
+		SourceType:    "managed",
+		SourceID:      "desktop",
+		ContentDigest: "abc123",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, want := range []string{`"name"`, `"description"`, `"file"`, `"bundled"`} {
+	for _, want := range []string{`"name"`, `"description"`, `"file"`, `"skill_ref"`, `"source_type"`, `"source_id"`, `"content_digest"`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("Skill index JSON missing %s: %s", want, text)
 		}

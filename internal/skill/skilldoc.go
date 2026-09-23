@@ -156,6 +156,15 @@ func ValidatePackage(packageDir string) error {
 		if entry.Type()&os.ModeSymlink != 0 {
 			return packageError(ErrInvalidPackage, "package.symlink", errors.New("symlinks are not allowed in Skill packages"))
 		}
+		if !entry.IsDir() {
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			if !info.Mode().IsRegular() {
+				return packageError(ErrInvalidPackage, "package.file_type", errors.New("special files are not allowed in Skill packages"))
+			}
+		}
 		if !entry.IsDir() && entry.Name() == ".env" {
 			return packageError(ErrInvalidPackage, "package.secret_file", errors.New(".env files are not allowed in Skill packages; store credentials under skill-data"))
 		}

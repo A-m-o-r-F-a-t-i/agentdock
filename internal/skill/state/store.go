@@ -699,49 +699,7 @@ func (s *Store) save(skill string, selection Selection) error {
 }
 
 func (s *Store) acquire(ctx context.Context, skill string) (func(), error) {
-	if err := validateIdentifier("skill", skill); err != nil {
-		return nil, err
-	}
-	owner, err := newLockOwner()
-	if err != nil {
-		return nil, fmt.Errorf("create skill lock owner: %w", err)
-	}
-	lockPath := filepath.Join(s.root, locksDirectory, skill+".lock")
-	ticker := time.NewTicker(lockRetryInterval)
-	defer ticker.Stop()
-	var transientErrorSince time.Time
-	for {
-		err := os.Mkdir(lockPath, 0o700)
-		if err == nil {
-			ownerPath := filepath.Join(lockPath, lockOwnerPrefix+owner)
-			if err := os.WriteFile(ownerPath, nil, 0o600); err != nil {
-				cleanupErr := cleanupOwnedLockInitialization(lockPath, ownerPath)
-				return nil, errors.Join(fmt.Errorf("write skill lock owner: %w", err), cleanupErr)
-			}
-			return func() { releaseOwnedLock(lockPath, owner) }, nil
-		}
-		if os.IsExist(err) {
-			transientErrorSince = time.Time{}
-		} else if isTransientLockContention(err) {
-			if transientErrorSince.IsZero() {
-				transientErrorSince = time.Now()
-			} else if time.Since(transientErrorSince) >= transientLockErrorRetryTime {
-				return nil, fmt.Errorf("acquire skill lock: %w", err)
-			}
-		} else {
-			return nil, fmt.Errorf("acquire skill lock: %w", err)
-		}
-		if info, statErr := os.Stat(lockPath); statErr == nil && time.Since(info.ModTime()) > 10*time.Minute {
-			if removeStaleOwnedLock(lockPath) {
-				continue
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("acquire skill lock: %w", ctx.Err())
-		case <-ticker.C:
-		}
-	}
+	return s.acquireWrite(ctx, skill)
 }
 
 func newLockOwner() (string, error) {

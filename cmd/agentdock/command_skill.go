@@ -16,13 +16,22 @@ import (
 )
 
 func runSkillCommand(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	if len(args) == 0 || args[0] != "bootstrap" {
+	if len(args) == 0 {
 		return errors.New("用法：agentdock skill bootstrap --bundle <目录>")
 	}
+	switch args[0] {
+	case "bootstrap":
+		return runSkillBootstrapCommand(ctx, args[1:], stdout, stderr)
+	default:
+		return errors.New("用法：agentdock skill bootstrap --bundle <目录>")
+	}
+}
+
+func runSkillBootstrapCommand(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("agentdock skill bootstrap", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	bundleDir := flags.String("bundle", "", "Release 随附 Skill Bundle 目录")
-	if err := flags.Parse(args[1:]); err != nil {
+	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 || strings.TrimSpace(*bundleDir) == "" {
