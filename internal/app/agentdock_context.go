@@ -10,6 +10,8 @@ import (
 	"github.com/uvwt/agentdock/internal/agentinstructions"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
+	"github.com/uvwt/agentdock/internal/contextguide"
+	pluginregistry "github.com/uvwt/agentdock/internal/plugin"
 	"github.com/uvwt/agentdock/internal/taskstate"
 	tooltask "github.com/uvwt/agentdock/internal/tool/task"
 	"github.com/uvwt/agentdock/internal/workspace"
@@ -26,18 +28,37 @@ func (r *Runtime) AgentDockLocalContext(ctx context.Context) (Result, error) {
 }
 
 func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, workdir string) (Result, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.cfg.ContextBudget())
+	defer cancel()
+	started := time.Now()
+	ruleStarted := time.Now()
+
 	instructions, err := r.InstructionFiles(ctx, workdir)
 	if err != nil {
 		return nil, err
 	}
-	skills, skillErr := r.skillCapabilityIndex(nexusLocalOnly)
-	dynamicMCP, dynamicMCPErr := r.dynamicMCPCapabilityIndex(nexusLocalOnly)
-	plugins := []capabilityPluginItem{}
-	var pluginErr error
-	if !nexusLocalOnly {
-		plugins, pluginErr = r.pluginCapabilityIndex()
+	ruleElapsed := time.Since(ruleStarted)
+	pluginStarted := time.Now()
+	directory, pluginInfo, directoryErr := r.pluginStore.Snapshot(ctx)
+	if directoryErr != nil {
+		return nil, toolErrorDetails("CONTEXT_PREPARATION_FAILED", directoryErr.Error(), "runtime", map[string]any{"stage": "plugins", "budget_ms": r.cfg.ContextBudget().Milliseconds()})
 	}
-	commonSkills, commonSkillErr := commonSkillCapabilityIndex()
+	pluginElapsed := time.Since(pluginStarted)
+	skillStarted := time.Now()
+	skills, skillInfo, skillErr := r.contextSkillIndex(ctx, directory, nexusLocalOnly)
+	skillElapsed := time.Since(skillStarted)
+	mcpStarted := time.Now()
+
+	dynamicMCP, dynamicMCPErr := r.dynamicMCPCapabilityIndexContext(ctx, nexusLocalOnly, directory)
+	mcpElapsed := time.Since(mcpStarted)
+	plugins := []capabilityPluginItem{}
+	if !nexusLocalOnly {
+		plugins = pluginCapabilityIndexFromDirectory(directory)
+	}
+	commonStarted := time.Now()
+	commonSkills, commonInfo, commonSkillErr := r.cachedCommonSkillIndex(ctx)
+	commonElapsed := time.Since(commonStarted)
+	var taskElapsed time.Duration
 	contextResult := capabilityContext{
 		Skills:            skills,
 		CommonSkills:      commonSkills,
@@ -45,11 +66,12 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 		DynamicMCP:        dynamicMCP,
 		WorkflowTemplates: []capabilityTemplateItem{},
 		Rules: []string{
+			contextguide.Reuse,
 			"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
 			"先根据 Skill 索引的 name、description 和来源选择相关 Skill，再用 read_file 读取宿主返回的 file；需要绑定命令时直接使用宿主返回的 skill_ref，不自行按名称拼接或重新解析。",
 			"workspace_skills、skills 和 common_skills 中的同名项是不同来源候选，不静默覆盖；当前项目通常优先考虑 workspace Skill，但必须使用所选候选自己的 skill_ref/file。若 common_skills.truncated=true 且当前索引未命中，可 list_dir 查看 common_skills.root 后再通过 workspace/共享 Skill 索引取得精确引用。",
 			"AgentDock 自带工具直接调用；动态 MCP 工具先用 mcp_tool_search 查找、mcp_tool_inspect 读取 schema，再用 mcp_tool_call 执行。",
-			"操作具体项目、切换工作区或工作区规则可能变化时，先调用 workspace_context 获取当前工作区上下文。",
+			"已取得本项目规则时直接继续操作，不另做 workspace_context；仅工作区规则或项目级 Skill 作用域变化时定向刷新。",
 		},
 	}
 	if r.cfg.InstructionsFile == "" && strings.TrimSpace(r.cfg.Instructions) != "" {
@@ -77,9 +99,11 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 			AgentDockHome: r.cfg.AgentDockHome, AgentDockDefaultDir: r.cfg.AgentDockDefaultDir,
 			DefaultCWD: r.ws.DefaultDisplay(), PathModel: config.PathModel,
 		}
+		taskStarted := time.Now()
 		indexCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		index, indexErr := r.taskTools.ContextIndex(indexCtx)
 		cancel()
+		taskElapsed = time.Since(taskStarted)
 		contextResult.Tasks = &index
 		selectedWorkspace, workspaceErr := r.workspaceRegistry.Select(ctx, "", "")
 		if strings.TrimSpace(workdir) != "" {
@@ -106,9 +130,6 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 	}
 	if dynamicMCPErr != nil {
 		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "dynamic_mcp", Message: "动态 MCP 索引暂不可用。"})
-	}
-	if pluginErr != nil {
-		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "plugins", Message: "插件索引暂不可用。"})
 	}
 	if commonSkillErr != nil {
 		contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "common_skills", Message: "通用 Skill 索引暂不可用；需要时可直接检查 ~/.agents/skills。"})
@@ -153,9 +174,25 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 		)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, toolErrorDetails("CONTEXT_DEADLINE_EXCEEDED", err.Error(), "runtime", map[string]any{"budget_ms": r.cfg.ContextBudget().Milliseconds()})
+	}
+	serializeStarted := time.Now()
 	var result Result
 	if err := remarshal(contextResult, &result); err != nil {
 		return nil, err
+	}
+	if !nexusLocalOnly {
+		result["context_diagnostics"] = map[string]any{
+			"complete": instructionSnapshotComplete(instructions) && skillErr == nil && dynamicMCPErr == nil,
+			"rules_ms": float64(ruleElapsed) / float64(time.Millisecond), "plugins_ms": float64(pluginElapsed) / float64(time.Millisecond),
+			"skills_ms": float64(skillElapsed) / float64(time.Millisecond), "mcp_catalog_ms": float64(mcpElapsed) / float64(time.Millisecond),
+			"serialization_ms": float64(time.Since(serializeStarted)) / float64(time.Millisecond), "context_ms": float64(time.Since(started)) / float64(time.Millisecond),
+			"plugin_snapshot": pluginInfo, "skill_snapshot": skillInfo, "plugin_build": directory.Metrics,
+			"plugin_revision":  directory.Revision,
+			"common_skills_ms": float64(commonElapsed) / float64(time.Millisecond), "common_snapshot": commonInfo,
+			"task_index_ms": float64(taskElapsed) / float64(time.Millisecond),
+		}
 	}
 	return result, nil
 }
@@ -304,14 +341,26 @@ type capabilityRecallIndexItem struct {
 }
 
 func (r *Runtime) dynamicMCPCapabilityIndex(includePluginMembers bool) ([]capabilityDynamicMCPItem, error) {
-	servers := r.dynamicMCP.CapabilityItems()
+	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.ContextBudget())
+	defer cancel()
+	directory, _, err := r.pluginStore.Snapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.dynamicMCPCapabilityIndexContext(ctx, includePluginMembers, directory)
+}
+func (r *Runtime) dynamicMCPCapabilityIndexContext(ctx context.Context, includePluginMembers bool, directory *pluginregistry.Directory) ([]capabilityDynamicMCPItem, error) {
+	servers, err := r.dynamicMCP.CapabilityItems(ctx, directory)
+	if err != nil {
+		return []capabilityDynamicMCPItem{}, err
+	}
 	items := make([]capabilityDynamicMCPItem, 0, len(servers))
 	for _, server := range servers {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if !includePluginMembers {
-			membership, owned, err := r.plugins.MCPMembership(server.Name)
-			if err != nil {
-				return []capabilityDynamicMCPItem{}, err
-			}
+			membership, owned := directory.MCPMembership(server.Name)
 			if owned && membership.Heavy {
 				continue
 			}
@@ -339,48 +388,39 @@ func (r *Runtime) dynamicMCPCapabilityIndex(includePluginMembers bool) ([]capabi
 }
 
 func (r *Runtime) skillCapabilityIndex(includePluginMembers bool) ([]capabilitySkillItem, error) {
-	skillItems, err := r.skills.CapabilityItems()
+	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.ContextBudget())
+	defer cancel()
+	directory, _, err := r.pluginStore.Snapshot(ctx)
 	if err != nil {
 		return []capabilitySkillItem{}, err
 	}
-	items := make([]capabilitySkillItem, 0, len(skillItems))
-	for _, skill := range skillItems {
-		if !includePluginMembers {
-			membership, owned, membershipErr := r.plugins.SkillMembership(skill.Name)
-			if membershipErr != nil {
-				return []capabilitySkillItem{}, membershipErr
-			}
-			if owned && membership.Heavy {
-				continue
-			}
-		}
-		items = append(items, capabilitySkillItem{
-			Name:          skill.Name,
-			Description:   truncateString(strings.TrimSpace(skill.Description), 160),
-			File:          skill.File,
-			SkillRef:      skill.SkillRef,
-			SourceType:    skill.SourceType,
-			SourceID:      skill.SourceID,
-			PluginName:    skill.PluginName,
-			ContentDigest: skill.ContentDigest,
-		})
-	}
-	return items, nil
+	items, _, err := r.contextSkillIndex(ctx, directory, includePluginMembers)
+	return items, err
 }
 
 func (r *Runtime) pluginCapabilityIndex() ([]capabilityPluginItem, error) {
-	definitions, err := r.plugins.CapabilityItems()
+	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.ContextBudget())
+	defer cancel()
+	directory, _, err := r.pluginStore.Snapshot(ctx)
 	if err != nil {
 		return []capabilityPluginItem{}, err
 	}
+	return pluginCapabilityIndexFromDirectory(directory), nil
+}
+
+func pluginCapabilityIndexFromDirectory(directory *pluginregistry.Directory) []capabilityPluginItem {
+	definitions := directory.Definitions()
 	items := make([]capabilityPluginItem, 0, len(definitions))
 	for _, definition := range definitions {
+		if !definition.Enabled || !definition.Heavy {
+			continue
+		}
 		items = append(items, capabilityPluginItem{
 			Name: definition.Name, Description: truncateString(strings.TrimSpace(definition.Description), 240),
 			SkillCount: len(definition.Skills), MCPServerCount: len(definition.MCPServers),
 		})
 	}
-	return items, nil
+	return items
 }
 
 func (r *Runtime) templateCapabilityIndex(ctx context.Context) ([]capabilityTemplateItem, error) {
@@ -474,4 +514,16 @@ func capabilitySourceType(plugin string) string {
 		return "plugin"
 	}
 	return "standalone"
+}
+
+func instructionSnapshotComplete(value agentinstructions.Snapshot) bool {
+	if !value.AutoLoad {
+		return true
+	}
+	for _, file := range value.Files {
+		if file.Status == "error" || file.Status == "skipped" {
+			return false
+		}
+	}
+	return true
 }

@@ -7,6 +7,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/envstore"
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
+	"github.com/uvwt/agentdock/internal/plugin"
 )
 
 type Service struct {
@@ -52,21 +53,28 @@ type CapabilityToolItem struct {
 	Server        string
 }
 
-func (s *Service) CapabilityItems() []CapabilityItem {
-	servers := s.mcpClients.EnabledIndex()
+func (s *Service) CapabilityItems(ctx context.Context, directory *plugin.Directory) ([]CapabilityItem, error) {
+	servers, err := s.mcpClients.EnabledIndexContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	items := make([]CapabilityItem, 0, len(servers))
 	for _, server := range servers {
-		if err := s.ensureAvailable(server.Name); err != nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		member, owned := directory.MCPMembership(server.Name)
+		if owned && !member.Enabled {
 			continue
 		}
 		items = append(items, CapabilityItem{
-			Name: server.Name, Description: server.Description, Plugin: s.pluginName(server.Name),
+			Name: server.Name, Description: server.Description, Plugin: member.Plugin,
 			Revision: server.Revision, ServerVersion: server.ServerVersion, ToolCountKnown: server.ToolCountKnown,
 			Enabled: server.Enabled, Status: server.Status,
 			ToolCount: server.ToolCount, LastErrorCode: server.LastErrorCode,
 		})
 	}
-	return items
+	return items, nil
 }
 
 func (s *Service) CapabilityItem(name string) (CapabilityItem, bool, error) {

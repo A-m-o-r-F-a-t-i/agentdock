@@ -383,12 +383,12 @@ func TestGitSourceSelectorChangeRequiresExplicitRebind(t *testing.T) {
 
 	manager, err := New(filepath.Join(t.TempDir(), ".agentdock"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v; cause=%v", err, errors.Unwrap(err))
 	}
 	if _, err := manager.InstallSource(context.Background(), SourceRequest{
 		Type: "git", Ref: repo, GitRef: "track-a", Adapter: "portable",
 	}, false, false); err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v; cause=%v", err, errors.Unwrap(err))
 	}
 	_, err = manager.InstallSource(context.Background(), SourceRequest{
 		Type: "git", Ref: repo, GitRef: "track-b", Adapter: "portable",
@@ -399,28 +399,28 @@ func TestGitSourceSelectorChangeRequiresExplicitRebind(t *testing.T) {
 	}
 	previous, err := manager.Get("selector-demo")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v; cause=%v", err, errors.Unwrap(err))
 	}
 	previousPackage, err := LoadPackage(previous.Path)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v; cause=%v", err, errors.Unwrap(err))
 	}
 	result, err := manager.InstallSource(context.Background(), SourceRequest{
 		Type: "git", Ref: repo, GitRef: "track-b", Adapter: "portable",
 	}, true, true)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v; cause=%v", err, errors.Unwrap(err))
 	}
 	currentPackage, err := LoadPackage(result.Path)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v; cause=%v", err, errors.Unwrap(err))
 	}
 	if currentPackage.PackageDigest != previousPackage.PackageDigest {
 		t.Fatalf("source selector rebind changed package bytes: %q != %q", currentPackage.PackageDigest, previousPackage.PackageDigest)
 	}
 	installed, err := manager.Get("selector-demo")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("%v; cause=%v", err, errors.Unwrap(err))
 	}
 	if installed.Source.Selector != "track-b" {
 		t.Fatalf("persisted selector = %#v", installed.Source)

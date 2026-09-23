@@ -87,10 +87,12 @@ type Membership struct {
 }
 
 type SkillMember struct {
-	Name    string `json:"name"`
-	Plugin  string `json:"plugin"`
-	Path    string `json:"path"`
-	Enabled bool   `json:"enabled"`
+	Heavy       bool   `json:"heavy,omitempty"`
+	Description string `json:"description,omitempty"`
+	Name        string `json:"name"`
+	Plugin      string `json:"plugin"`
+	Path        string `json:"path"`
+	Enabled     bool   `json:"enabled"`
 }
 
 type MCPMember struct {

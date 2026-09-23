@@ -1,0 +1,23 @@
+File: context-profile.test.exe
+Build ID: synthetic isolated test executable (local build path redacted)
+Type: delay
+Time: 2026-09-23 21:10:41 CST
+Showing nodes accounting for 129.34s, 100% of 129.34s total
+Dropped 104 nodes (cum <= 0.65s)
+Showing top 15 nodes out of 44
+      flat  flat%   sum%        cum   cum%
+    84.04s 64.98% 64.98%     84.04s 64.98%  runtime.selectgo
+    25.94s 20.06% 85.04%     25.94s 20.06%  runtime.chanrecv1
+    14.20s 10.98% 96.02%     14.20s 10.98%  sync.(*Mutex).Lock (inline)
+     5.15s  3.98%   100%      5.15s  3.98%  sync.(*WaitGroup).Wait
+         0     0%   100%     12.77s  9.87%  github.com/uvwt/agentdock/internal/activity.(*Store).Append
+         0     0%   100%     12.77s  9.87%  github.com/uvwt/agentdock/internal/activity.(*Store).lock
+         0     0%   100%     45.95s 35.53%  github.com/uvwt/agentdock/internal/app.(*Runtime).Call
+         0     0%   100%     32.77s 25.34%  github.com/uvwt/agentdock/internal/app.(*Runtime).agentDockContext
+         0     0%   100%     32.77s 25.34%  github.com/uvwt/agentdock/internal/app.(*Runtime).agentDockContextTool
+         0     0%   100%     12.77s  9.87%  github.com/uvwt/agentdock/internal/app.(*Runtime).appendExecution
+         0     0%   100%     45.95s 35.53%  github.com/uvwt/agentdock/internal/app.(*Runtime).callObserved
+         0     0%   100%      1.86s  1.44%  github.com/uvwt/agentdock/internal/app.(*Runtime).callObserved.func1
+         0     0%   100%     38.57s 29.82%  github.com/uvwt/agentdock/internal/app.(*Runtime).executePrepared
+         0     0%   100%      1.91s  1.48%  github.com/uvwt/agentdock/internal/app.(*Runtime).finishPrepared
+         0     0%   100%      1.86s  1.44%  github.com/uvwt/agentdock/internal/app.(*Runtime).recordRPCReturn

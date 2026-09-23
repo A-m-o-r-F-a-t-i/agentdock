@@ -551,7 +551,7 @@ func TestPluginOwnedStdioUsesStableEnvAndRuntimeProvenance(t *testing.T) {
 	pluginRoot := t.TempDir()
 	pluginData := t.TempDir()
 	runtimeName := "plugin.demo.plugin.local"
-	if err := manager.SetExternalServerProvider(func() (map[string]ServerConfig, error) {
+	if err := manager.SetExternalServerProvider(func(context.Context) (map[string]ServerConfig, error) {
 		return map[string]ServerConfig{runtimeName: {
 			Name: runtimeName, DisplayName: "local", Description: "Plugin stdio MCP",
 			Transport: TransportStdio, Command: os.Args[0],

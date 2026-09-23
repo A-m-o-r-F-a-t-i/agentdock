@@ -83,3 +83,7 @@ go build -o ./bin/agentdock-context.exe ./cmd/agentdock
 ## 定向工作区入口
 
 `workspace_context` 接收同样的可选 `workdir`，返回工作区规则与 `.agents/skills/*/SKILL.md` 摘要及可直接读取的精确来源引用。它是定向入口，不替代当前 fork 的完整 `agentdock_context`，也不要求同一规则作用域内每一步同时调用两者。共享或工作区 Skill 与已安装同名 Skill 保持不同身份，不合并正文或借用已安装 Skill 的凭据。
+
+## 上下文复用
+
+首次缺少规则时调用一次 `agentdock_context`。同一规则作用域后续直接使用业务工具，无新增 AGENTS.md 的子目录操作不重载。后台命令继续观察原 session；普通失败或短暂网络错误先核对原调用；MCP 变化只定向刷新该服务。工作区/规则变化或模型压缩后缺少必要内容时可以再次请求，返回完整有效快照，不需要每次填写 conversation_id/task_id。

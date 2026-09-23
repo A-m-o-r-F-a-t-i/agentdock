@@ -24,5 +24,19 @@ Check(Sort(new[] { new Row("A", now), new Row("B", now.AddSeconds(60)) })[0].Id 
 Check(Sort(new[] { new Row("A", now), new Row("B", now.AddMilliseconds(59999)) })[0].Id == "A", "threshold not respected");
 Check(Sort(new[] { new Row("A", now), new Row("B", now.AddDays(-1), true) })[0].Id == "B", "explicit pin ignored");
 Check(Sort(new[] { new Row("B", now) }).Count == 1, "removed row retained");
+foreach (var legacy in new long[] { 520989, 355618, 354854, 353098, 96203, 71028 })
+{
+    using var json = System.Text.Json.JsonDocument.Parse($$"""{"call_id":"legacy-{{legacy}}","tool_name":"agentdock_context","elapsed_ms":{{legacy}}} """);
+    var row = new ExecutionCallRow(json.RootElement);
+    Check(row.TotalElapsedMs == legacy && row.DurationSource == "legacy", "legacy timing source " + legacy);
+    Check(row.TotalTimingDetails.Contains(row.Duration) && row.TotalTimingDetails.Contains("历史总耗时"), "same row/detail duration");
+    Check(row.ExecutionDuration == "未记录" && row.WaitDuration == "未记录", "do not fabricate old timing stages");
+}
+foreach (var test in new[] { ("{\"rpc_elapsed_ms\":0,\"elapsed_ms\":99}", "rpc", (long?)0), ("{}", "unknown", (long?)null), ("{\"operation_elapsed_ms\":123}", "operation", (long?)123), ("{\"rpc_elapsed_ms\":-1,\"elapsed_ms\":15}", "legacy", (long?)15) })
+{
+    using var json = System.Text.Json.JsonDocument.Parse(test.Item1);
+    var row = new ExecutionCallRow(json.RootElement);
+    Check(row.DurationSource == test.Item2 && row.TotalElapsedMs == test.Item3, "zero/unknown/source distinction");
+}
 Console.WriteLine($"Desktop pure-policy regression passed: {assertions} assertions. No UI or installer was launched.");
 internal sealed record Row(string Id, DateTimeOffset At, bool Pinned = false);

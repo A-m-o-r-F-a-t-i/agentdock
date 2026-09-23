@@ -43,6 +43,10 @@ func TestCanonicalToolDefinitionsMatchSharedContract(t *testing.T) {
 			actualOutput = withoutLocalContextProperty(t, actualOutput, "plugins")
 			actualOutput = withoutLocalContextProperty(t, actualOutput, "tasks")
 			actualOutput = withoutLocalContextProperty(t, actualOutput, "workspace")
+			if diagnostic := actualOutput["properties"].(map[string]any)["context_diagnostics"]; !reflect.DeepEqual(diagnostic, contextDiagnosticsSchema()) {
+				t.Fatalf("context diagnostics schema drifted: %#v", diagnostic)
+			}
+			actualOutput = withoutLocalContextProperty(t, actualOutput, "context_diagnostics")
 			actualOutput = maps.Clone(actualOutput)
 			rootProperties := maps.Clone(actualOutput["properties"].(map[string]any))
 			dynamic := maps.Clone(rootProperties["dynamic_mcp"].(map[string]any))

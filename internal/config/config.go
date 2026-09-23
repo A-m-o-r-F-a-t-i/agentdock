@@ -26,6 +26,7 @@ const (
 )
 
 type Config struct {
+	ContextTimeoutMS             int
 	AgentDockHome                string
 	AgentDockDefaultDir          string
 	CommandEnvFromEnv            map[string]string
@@ -69,6 +70,14 @@ type ACPProfile struct {
 }
 
 func FromEnv() (Config, error) {
+	contextTimeoutMS, err := getenvInt("AGENTDOCK_CONTEXT_TIMEOUT_MS", 5000)
+	if err != nil {
+		return Config{}, err
+	}
+	if contextTimeoutMS < 100 || contextTimeoutMS > 30000 {
+		return Config{}, fmt.Errorf("AGENTDOCK_CONTEXT_TIMEOUT_MS must be between 100 and 30000")
+	}
+
 	agentsAutoLoad, err := getenvBool("AGENTDOCK_AGENTS_AUTOLOAD", true)
 	if err != nil {
 		return Config{}, err
@@ -140,6 +149,7 @@ func FromEnv() (Config, error) {
 		}
 	}
 	return Config{
+		ContextTimeoutMS:             contextTimeoutMS,
 		AgentDockHome:                strings.TrimSpace(os.Getenv("AGENTDOCK_HOME")),
 		AgentDockDefaultDir:          strings.TrimSpace(os.Getenv("AGENTDOCK_DEFAULT_DIR")),
 		CommandEnvFromEnv:            commandEnvFromEnv,
@@ -666,4 +676,13 @@ func validACPAgentName(value string) bool {
 		}
 	}
 	return true
+}
+
+// ContextBudget bounds preparation of read-only bootstrap contexts only. It
+// does not shorten command, browser, adapter or dynamic MCP business timeouts.
+func (c Config) ContextBudget() time.Duration {
+	if c.ContextTimeoutMS <= 0 {
+		return 5 * time.Second
+	}
+	return time.Duration(c.ContextTimeoutMS) * time.Millisecond
 }

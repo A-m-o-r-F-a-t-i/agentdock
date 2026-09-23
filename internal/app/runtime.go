@@ -38,6 +38,8 @@ import (
 type Result = toolcore.Result
 
 type Runtime struct {
+	pluginStore              *pluginregistry.Store
+	contextSnapshots         *contextSnapshots
 	display                  *config.DisplayPreferences
 	connections              clientConnections
 	executionMaintenanceDone chan struct{}
@@ -100,16 +102,28 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	pluginStore, err := pluginregistry.New(cfg.AgentDockHome)
+	pluginStore, err := pluginregistry.New(cfg.AgentDockHome, cfg.ContextBudget())
 	if err != nil {
 		return nil, err
 	}
+	initialized := false
+	defer func() {
+		if !initialized {
+			pluginStore.Close()
+		}
+	}()
 	mcpClients, err := mcpclient.NewManager(cfg.AgentDockHome, envs)
 	if err != nil {
 		return nil, err
 	}
-	if err := mcpClients.SetExternalServerProvider(func() (map[string]mcpclient.ServerConfig, error) {
-		members, providerErr := pluginStore.MCPServers()
+	defer func() {
+		if !initialized {
+			_ = mcpClients.Close()
+		}
+	}()
+	mcpClients.SetExternalServerPreparation(pluginStore.PrepareMCPData)
+	if err := mcpClients.SetExternalServerProvider(func(ctx context.Context) (map[string]mcpclient.ServerConfig, error) {
+		members, providerErr := pluginStore.MCPServersContext(ctx)
 		if providerErr != nil {
 			return nil, providerErr
 		}
@@ -152,7 +166,13 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("initialize insertion queue: %w", err)
 	}
 	commandCtx, commandCancel := context.WithCancel(context.Background())
+	defer func() {
+		if !initialized {
+			commandCancel()
+		}
+	}()
 	runtime := &Runtime{
+		pluginStore: pluginStore, contextSnapshots: newContextSnapshots(cfg),
 		display:           config.NewDisplayPreferences(cfg.AgentDockHome, cfg.MCPAppsEnabled),
 		executionInstance: instance, insertions: insertions, capabilityManager: mcpClients,
 		conversations: conversations, permissions: permissions, tasks: tasks,
@@ -162,6 +182,11 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		toolNames: toolNames, toolValidators: toolValidators,
 		commandCtx: commandCtx, commandCancel: commandCancel,
 	}
+	defer func() {
+		if !initialized {
+			runtime.contextSnapshots.Close()
+		}
+	}()
 	if err := runtime.skills.SetPluginSkillProvider(
 		func(name string) (toolskill.PluginSkill, bool, error) {
 			member, found, lookupErr := pluginStore.Skill(name)
@@ -292,6 +317,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		return nil, fmt.Errorf("recover execution state: %w", err)
 	}
 	runtime.startExecutionMaintenance()
+	initialized = true
 	return runtime, nil
 }
 
@@ -345,6 +371,12 @@ func (r *Runtime) Close() error {
 		if err := r.drainExecutionsOnClose(); err != nil {
 			closeErrors = append(closeErrors, err)
 		}
+		if r.contextSnapshots != nil {
+			r.contextSnapshots.Close()
+		}
+		if r.pluginStore != nil {
+			r.pluginStore.Close()
+		}
 		r.closeErr = errors.Join(closeErrors...)
 	})
 	return r.closeErr
@@ -380,6 +412,12 @@ func (r *Runtime) ToolDefinition(name string) (ToolDefinition, bool) {
 }
 
 func (r *Runtime) Call(ctx context.Context, name string, args map[string]any) (Result, error) {
+	if name == "agentdock_context" || name == "workspace_context" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.cfg.ContextBudget())
+		defer cancel()
+	}
+
 	if args == nil {
 		args = map[string]any{}
 	}

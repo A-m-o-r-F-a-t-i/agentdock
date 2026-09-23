@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 
@@ -8,12 +9,16 @@ import (
 )
 
 func commonSkillCapabilityIndex() (*capabilityCommonSkillIndex, error) {
+	return commonSkillCapabilityIndexContext(context.Background(), nil)
+}
+
+func commonSkillCapabilityIndexContext(ctx context.Context, watch func(string)) (*capabilityCommonSkillIndex, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
 	root := filepath.Join(home, ".agents", "skills")
-	index, err := scanCommonFilesystemSkills(root)
+	index, err := scanCommonFilesystemSkillsContext(ctx, root, watch)
 	if err != nil {
 		return nil, err
 	}

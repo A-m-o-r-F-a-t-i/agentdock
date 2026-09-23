@@ -1,6 +1,7 @@
 package app
 
 import (
+	"github.com/uvwt/agentdock/internal/contextguide"
 	"maps"
 
 	"github.com/uvwt/agentdock/internal/agentinstructions"
@@ -14,7 +15,7 @@ type contextRequest struct {
 func contextToolSpecs() []ToolSpec {
 	return []ToolSpec{{
 		Name: "agentdock_context", Contract: contextToolContract, Title: "AgentDock context",
-		Description: "Return structured AgentDock bootstrap context including capabilities, integrations, rules, and automatically loaded global/workspace AGENTS.md content. Call before project operations; pass workdir when selecting another workspace or refreshing changed rules. Selection is request-local and never changes command defaults.",
+		Description: contextguide.Description,
 		Handler:     ctxToolHandler((*Runtime).agentDockContextTool),
 	}, {
 		Name: "workspace_context", Contract: canonicalToolContract, Title: "Workspace context",
@@ -40,6 +41,7 @@ func contextToolContract(name string, cfg config.Config) (ToolContract, bool) {
 	contract.OutputSchema = maps.Clone(contract.OutputSchema)
 	output := maps.Clone(contract.OutputSchema["properties"].(map[string]any))
 	output["instruction_files"] = instructionFilesSchema()
+	output["context_diagnostics"] = contextDiagnosticsSchema()
 	output["plugins"] = pluginIndexSchema()
 	output["tasks"] = taskIndexSchema()
 	output["workspace"] = map[string]any{"type": "object", "additionalProperties": true, "required": []string{"workspace_id", "root", "runtime", "rules_revision"}}

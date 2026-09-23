@@ -39,12 +39,25 @@ func newStore(agentDockHome string) *store {
 }
 
 func (s *store) load() (map[string]ServerConfig, error) {
-	release, err := s.acquire()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return s.loadContext(ctx)
+}
+
+func (s *store) loadContext(ctx context.Context) (map[string]ServerConfig, error) {
+	release, err := filelock.Acquire(ctx, s.lockPath)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	return s.loadUnlocked()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	result, err := s.loadUnlocked()
+	if err == nil {
+		err = ctx.Err()
+	}
+	return result, err
 }
 
 func (s *store) loadUnlocked() (map[string]ServerConfig, error) {

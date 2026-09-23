@@ -136,17 +136,26 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
     public DateTimeOffset? RequestReceivedAt => _value.Date("request_received_at");
     public DateTimeOffset? LastActivityAt => _value.Date("last_activity_at");
     public long? RpcElapsedMs => _value.OptionalNumber("rpc_elapsed_ms");
-    public string Duration => FormatDuration(RpcElapsedMs ?? (_value.Number("elapsed_ms") > 0 ? _value.Number("elapsed_ms") : null));
+    public long? TotalElapsedMs => RpcElapsedMs is >= 0 ? RpcElapsedMs : _value.OptionalNumber("elapsed_ms") is >= 0 ? _value.OptionalNumber("elapsed_ms") : _value.OptionalNumber("operation_elapsed_ms") is >= 0 ? _value.OptionalNumber("operation_elapsed_ms") : null;
+    public string DurationSource => RpcElapsedMs is >= 0 ? "rpc" : _value.OptionalNumber("elapsed_ms") is >= 0 ? "legacy" : _value.OptionalNumber("operation_elapsed_ms") is >= 0 ? "operation" : "unknown";
+    public string Duration => FormatDuration(TotalElapsedMs);
+    public string TotalTimingDetails => DurationSource switch
+    {
+        "rpc" => "RPC 耗时：" + Duration,
+        "legacy" => "历史总耗时：" + Duration + "；原记录未保存 RPC/执行/等待分项。",
+        "operation" => "操作完成耗时：" + Duration + "（来源：operation_elapsed_ms）",
+        _ => "总耗时：未记录"
+    };
     public string ExecutionDuration => FormatDuration(_value.OptionalNumber("execution_elapsed_ms"));
     public string WaitDuration => FormatDuration(_value.OptionalNumber("wait_elapsed_ms"));
-    public string ActualTool => Tool == "file_edit" ? "file_edit · EDIT_FILE" : Tool;
+    public string ActualTool => Tool;
     public string Started => _value.Date("started_at")?.ToLocalTime().ToString("HH:mm:ss.fff") ?? When;
     public string SourceType => _value.Text("source", "未记录");
     public string TimingDetails => string.Join("\n", new[]
     {
         "工具：" + Tool,
         "RPC 返回：" + (_value.Date("rpc_completed_at")?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff") ?? "未记录"),
-        "RPC 耗时：" + FormatDuration(RpcElapsedMs),
+        TotalTimingDetails,
         "执行阶段：" + ExecutionDuration,
         "执行前等待：" + WaitDuration + "（含已观测到的准备及审批等待）",
         "操作完成耗时：" + FormatDuration(_value.OptionalNumber("operation_elapsed_ms")),
@@ -161,7 +170,7 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
             if (edit.ValueKind != JsonValueKind.Object) return "文件操作详情未记录。";
             var changed = edit.Field("changed").ValueKind switch { JsonValueKind.True => "是", JsonValueKind.False => "否", _ => "结果未知" };
             var files = edit.Array("affected_files").Select(file => file.Text("path") + (file.Text("move_to").Length > 0 ? " → " + file.Text("move_to") : ""));
-            return $"EDIT_FILE / file_edit · {edit.Text("action")}\n目标：{edit.Text("path")}\n预览：{(edit.Flag("dry_run") ? "是，未写入" : "否")}\n已派发：{(edit.Flag("executed") ? "是" : "否")}\n实际修改：{changed}\n影响文件数：{edit.OptionalNumber("affected_count")?.ToString() ?? "未记录"}\n新增/删除行：{edit.OptionalNumber("insertions")?.ToString() ?? "未记录"} / {edit.OptionalNumber("deletions")?.ToString() ?? "未记录"}\n" + string.Join("\n", files) + (edit.Flag("files_truncated") ? "\n文件明细超过预览上限。" : "") + "\n\n" + edit.Text("diff_preview") + (edit.Flag("diff_truncated") ? "\n差异预览已截断。" : "");
+            return $"{Tool} · {edit.Text("action")}\n目标：{edit.Text("path")}\n预览：{(edit.Flag("dry_run") ? "是，未写入" : "否")}\n已派发：{(edit.Flag("executed") ? "是" : "否")}\n实际修改：{changed}\n影响文件数：{edit.OptionalNumber("affected_count")?.ToString() ?? "未记录"}\n新增/删除行：{edit.OptionalNumber("insertions")?.ToString() ?? "未记录"} / {edit.OptionalNumber("deletions")?.ToString() ?? "未记录"}\n" + string.Join("\n", files) + (edit.Flag("files_truncated") ? "\n文件明细超过预览上限。" : "") + "\n\n" + edit.Text("diff_preview") + (edit.Flag("diff_truncated") ? "\n差异预览已截断。" : "");
         }
     }
     private static string FormatDuration(long? milliseconds) => milliseconds is >= 0 ? (milliseconds.Value / 1000.0).ToString("0.000") + " s" : "未记录";

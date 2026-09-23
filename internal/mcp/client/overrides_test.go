@@ -58,7 +58,7 @@ func overrideFixture(t *testing.T) (*Manager, *atomic.Int32, *atomic.Bool) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = m.Close() })
-	if err = m.SetExternalServerProvider(func() (map[string]ServerConfig, error) {
+	if err = m.SetExternalServerProvider(func(context.Context) (map[string]ServerConfig, error) {
 		return map[string]ServerConfig{"managed": {Name: "managed", Description: "old 2.3.0 / 20 tools", Transport: TransportStreamableHTTP, URL: server.URL, Enabled: true, TimeoutMS: 1000}}, nil
 	}); err != nil {
 		t.Fatal(err)

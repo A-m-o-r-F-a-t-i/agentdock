@@ -221,13 +221,15 @@ func (m *Manager) Update(ctx context.Context, name, expected, scope string, patc
 	if !reset && len(patch) == 0 {
 		return ServerSummary{}, newError("MCP_PATCH_REQUIRED", "non-empty patch is required", false, nil, nil)
 	}
-	if err := m.syncRegistry(); err != nil {
+	if err := m.syncRegistryContext(ctx); err != nil {
 		var issue *Error
 		if !reset || !errors.As(err, &issue) || issue.Code != "MCP_OVERRIDE_CONFLICT" {
 			return ServerSummary{}, err
 		}
 	}
-	m.registryMu.Lock()
+	if err := lockWithContext(ctx, &m.registryMu); err != nil {
+		return ServerSummary{}, err
+	}
 	defer m.registryMu.Unlock()
 	if err := m.ensureOpenLocked(); err != nil {
 		return ServerSummary{}, err
@@ -242,11 +244,11 @@ func (m *Manager) Update(ctx context.Context, name, expected, scope string, patc
 	if summaryFor(old, oldState).Revision != expected {
 		return ServerSummary{}, newError("MCP_REVISION_CONFLICT", "MCP server changed; inspect again before updating", false, map[string]any{"server": name, "revision": summaryFor(old, oldState).Revision}, nil)
 	}
-	standalone, err := m.store.load()
+	standalone, err := m.store.loadContext(ctx)
 	if err != nil {
 		return ServerSummary{}, err
 	}
-	base, err := m.mergeExternalBaseLocked(standalone)
+	base, err := m.mergeExternalBaseLocked(ctx, standalone)
 	if err != nil {
 		return ServerSummary{}, err
 	}
@@ -303,7 +305,7 @@ func (m *Manager) Update(ctx context.Context, name, expected, scope string, patc
 		}
 		nextState = &serverState{}
 		if selected.Enabled {
-			resolved, resolveErr := m.runtimeConfig(selected)
+			resolved, resolveErr := m.prepareRuntimeConfig(ctx, selected)
 			if resolveErr != nil {
 				return ServerSummary{}, resolveErr
 			}
@@ -322,11 +324,11 @@ func (m *Manager) Update(ctx context.Context, name, expected, scope string, patc
 		}
 	}()
 	// Plugin files may change while candidate discovery is running.
-	latestStandalone, err := m.store.load()
+	latestStandalone, err := m.store.loadContext(ctx)
 	if err != nil {
 		return ServerSummary{}, err
 	}
-	latestBase, err := m.mergeExternalBaseLocked(latestStandalone)
+	latestBase, err := m.mergeExternalBaseLocked(ctx, latestStandalone)
 	if err != nil {
 		return ServerSummary{}, err
 	}

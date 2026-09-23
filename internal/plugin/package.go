@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -12,27 +13,58 @@ import (
 )
 
 func readPackage(root string, installed bool) (packageRecord, error) {
+	return readPackageContext(context.Background(), root, installed, false, nil, nil)
+}
+
+func readPackageContext(ctx context.Context, root string, installed, lazy bool, watch func(string), metrics *BuildMetrics) (packageRecord, error) {
+	if err := ctx.Err(); err != nil {
+		return packageRecord{}, err
+	}
+	if watch != nil {
+		watch(root)
+		watch(filepath.Join(root, "skills"))
+	}
+
 	manifest, diagnostics, err := readManifest(root)
 	if err != nil {
 		return packageRecord{}, newError("PLUGIN_MANIFEST_INVALID", "invalid root plugin.json: "+err.Error(), map[string]any{"path": filepath.Join(root, ManifestFilename)}, err)
 	}
-	skillPaths, skillDiagnostics := discoverPortableSkills(root)
-	diagnostics = append(diagnostics, skillDiagnostics...)
-	configs, mcpDiagnostics := readMCP(root, manifest.Name)
-	diagnostics = append(diagnostics, mcpDiagnostics...)
-	record := packageRecord{root: root, manifest: manifest, skillPaths: skillPaths, mcpConfigs: configs}
-	state := defaultState(record)
+	// Read host Heavy override before touching any member document. Metadata
+	// paths and ownership still undergo the same filesystem safety checks.
+	preloaded := State{Enabled: true}
+	hasState := false
 	if installed {
 		statePath := hostStatePath(root)
 		if _, err := os.Lstat(statePath); err == nil {
 			if _, err := containedPath(filepath.Dir(root), statePath, false); err != nil {
-				return record, err
+				return packageRecord{}, err
 			}
-			if err := readStrictJSON(statePath, maxStateBytes, &state); err != nil {
-				return record, newError("PLUGIN_STATE_INVALID", "read host plugin state", map[string]any{"plugin": manifest.Name}, err)
+			if err := readStrictJSON(statePath, maxStateBytes, &preloaded); err != nil {
+				return packageRecord{}, newError("PLUGIN_STATE_INVALID", "read host plugin state", map[string]any{"plugin": manifest.Name}, err)
 			}
+			hasState = true
 		} else if !errors.Is(err, os.ErrNotExist) {
-			return record, err
+			return packageRecord{}, err
+		}
+	}
+	heavy := manifestHeavy(manifest)
+	if preloaded.Heavy != nil {
+		heavy = *preloaded.Heavy
+	}
+	descriptions := map[string]string{}
+	skillPaths, skillDiagnostics := discoverPortableSkillsContext(ctx, root, lazy && heavy, watch, metrics, descriptions)
+	if err := ctx.Err(); err != nil {
+		return packageRecord{}, err
+	}
+
+	diagnostics = append(diagnostics, skillDiagnostics...)
+	configs, mcpDiagnostics := readMCP(root, manifest.Name)
+	diagnostics = append(diagnostics, mcpDiagnostics...)
+	record := packageRecord{root: root, manifest: manifest, skillPaths: skillPaths, skillDescriptions: descriptions, mcpConfigs: configs}
+	state := defaultState(record)
+	if installed {
+		if hasState {
+			state = preloaded
 		}
 		if state.Source != nil {
 			for name, cfg := range configs {
@@ -83,19 +115,21 @@ func readPackage(root string, installed bool) (packageRecord, error) {
 		}
 	}
 	record.state = normalizeState(state, record)
-	heavy := manifestHeavy(manifest)
-	if state.Heavy != nil {
-		heavy = *state.Heavy
-	}
 	record.definition = Definition{
 		Source: state.Source, Compatibility: state.Compatibility,
 		Name: manifest.Name, Description: manifest.Description, Version: manifest.Version,
 		Path: root, Enabled: state.Enabled, Heavy: heavy, Skills: sortedKeys(skillPaths), MCPServers: sortedKeys(configs), Diagnostics: diagnostics,
 	}
+	if err := ctx.Err(); err != nil {
+		return packageRecord{}, err
+	}
 	return record, nil
 }
 
 func discoverPortableSkills(root string) (map[string]string, []string) {
+	return discoverPortableSkillsContext(context.Background(), root, false, nil, nil, nil)
+}
+func discoverPortableSkillsContext(ctx context.Context, root string, lazy bool, watch func(string), metrics *BuildMetrics, descriptions map[string]string) (map[string]string, []string) {
 	items := map[string]string{}
 	skillsRoot := filepath.Join(root, "skills")
 	if _, err := os.Lstat(skillsRoot); errors.Is(err, os.ErrNotExist) {
@@ -111,6 +145,9 @@ func discoverPortableSkills(root string) (map[string]string, []string) {
 	}
 	diagnostics := []string{}
 	for _, entry := range entries {
+		if ctx.Err() != nil {
+			return items, diagnostics
+		}
 		name := entry.Name()
 		if strings.HasPrefix(name, ".") {
 			continue
@@ -127,6 +164,16 @@ func discoverPortableSkills(root string) (map[string]string, []string) {
 			diagnostics = append(diagnostics, "Skill "+name+": rejected SKILL.md filesystem path")
 			continue
 		}
+		if watch != nil {
+			watch(path)
+		}
+		if lazy {
+			items[name] = path
+			continue
+		}
+		if metrics != nil {
+			metrics.SkillDocuments++
+		}
 		doc, err := skills.LoadPortableSkillDocument(path)
 		if err != nil {
 			diagnostics = append(diagnostics, fmt.Sprintf("Skill %s: %s", name, err))
@@ -137,6 +184,9 @@ func discoverPortableSkills(root string) (map[string]string, []string) {
 			continue
 		}
 		items[name] = path
+		if descriptions != nil {
+			descriptions[name] = doc.Description
+		}
 	}
 	return items, diagnostics
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -31,6 +32,19 @@ type filesystemSkillIndex struct {
 // scanCommonFilesystemSkills 保留全局 common Skill 的历史行为：
 // package 目录和 SKILL.md 都允许通过 symlink 访问。
 func scanCommonFilesystemSkills(root string) (filesystemSkillIndex, error) {
+	return scanCommonFilesystemSkillsContext(context.Background(), root, nil)
+}
+
+func scanCommonFilesystemSkillsContext(ctx context.Context, root string, watch func(string)) (filesystemSkillIndex, error) {
+	if err := ctx.Err(); err != nil {
+		return filesystemSkillIndex{}, err
+	}
+	if watch != nil {
+		watch(root)
+		if realRoot, err := filepath.EvalSymlinks(root); err == nil {
+			watch(realRoot)
+		}
+	}
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -39,13 +53,19 @@ func scanCommonFilesystemSkills(root string) (filesystemSkillIndex, error) {
 		return filesystemSkillIndex{}, err
 	}
 
-	return indexFilesystemSkills(entries, func(entry os.DirEntry) (string, []byte, error) {
+	return indexFilesystemSkillsContext(ctx, entries, func(entry os.DirEntry) (string, []byte, error) {
 		packageDir := filepath.Join(root, entry.Name())
 		info, err := os.Stat(packageDir)
 		if err != nil || !info.IsDir() {
 			return "", nil, os.ErrInvalid
 		}
 		documentPath := filepath.Join(packageDir, "SKILL.md")
+		if watch != nil {
+			watch(packageDir)
+			if realPath, err := filepath.EvalSymlinks(documentPath); err == nil {
+				watch(filepath.Dir(realPath))
+			}
+		}
 		data, readErr := readCommonFilesystemSkillDocument(packageDir)
 		if readErr != nil {
 			return "", nil, readErr
@@ -58,6 +78,13 @@ func scanCommonFilesystemSkills(root string) (filesystemSkillIndex, error) {
 // 所有路径都从该 Root 相对解析，因此父目录 symlink 或 Windows reparse point
 // 不能把扫描重定向到所选 workspace 之外。common Skill 继续走独立的历史兼容入口。
 func scanWorkspaceFilesystemSkills(workspaceRoot string) (filesystemSkillIndex, error) {
+	return scanWorkspaceFilesystemSkillsContext(context.Background(), workspaceRoot)
+}
+
+func scanWorkspaceFilesystemSkillsContext(ctx context.Context, workspaceRoot string) (filesystemSkillIndex, error) {
+	if err := ctx.Err(); err != nil {
+		return filesystemSkillIndex{}, err
+	}
 	root, err := os.OpenRoot(workspaceRoot)
 	if err != nil {
 		return filesystemSkillIndex{}, err
@@ -82,7 +109,7 @@ func scanWorkspaceFilesystemSkills(workspaceRoot string) (filesystemSkillIndex, 
 	}
 
 	relativeSkillRoot := filepath.FromSlash(skillRoot)
-	return indexFilesystemSkills(entries, func(entry os.DirEntry) (string, []byte, error) {
+	return indexFilesystemSkillsContext(ctx, entries, func(entry os.DirEntry) (string, []byte, error) {
 		packagePath := filepath.Join(relativeSkillRoot, entry.Name())
 		info, err := root.Lstat(packagePath)
 		if err != nil || !info.IsDir() {
@@ -112,8 +139,15 @@ func scanWorkspaceFilesystemSkills(workspaceRoot string) (filesystemSkillIndex, 
 }
 
 func indexFilesystemSkills(entries []os.DirEntry, load func(os.DirEntry) (string, []byte, error)) (filesystemSkillIndex, error) {
+	return indexFilesystemSkillsContext(context.Background(), entries, load)
+}
+
+func indexFilesystemSkillsContext(ctx context.Context, entries []os.DirEntry, load func(os.DirEntry) (string, []byte, error)) (filesystemSkillIndex, error) {
 	items := make([]filesystemSkillItem, 0, len(entries))
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return filesystemSkillIndex{}, err
+		}
 		documentPath, data, err := load(entry)
 		if err != nil {
 			continue
@@ -147,11 +181,26 @@ func indexFilesystemSkills(entries []os.DirEntry, load func(os.DirEntry) (string
 }
 
 func readCommonFilesystemSkillDocument(packageDir string) ([]byte, error) {
-	file, err := os.Open(filepath.Join(packageDir, "SKILL.md"))
+	path := filepath.Join(packageDir, "SKILL.md")
+	before, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !before.Mode().IsRegular() {
+		return nil, os.ErrInvalid
+	}
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+	after, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !after.Mode().IsRegular() || !os.SameFile(before, after) {
+		return nil, os.ErrInvalid
+	}
 	return readBoundedSkillDocument(file)
 }
 

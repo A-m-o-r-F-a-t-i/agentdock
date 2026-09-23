@@ -1,10 +1,13 @@
 package mcp
 
-import "strings"
+import (
+	"github.com/uvwt/agentdock/internal/contextguide"
+	"strings"
+)
 
 const (
-	baseServerInstructions  = "优先调用 `agentdock_context` 获取可用于操作用户设备的核心能力、Skill、动态 MCP 和重要上下文。处理多步骤任务时使用 `task_manage` 记录和维护任务进度。根据用户需求选择合适的能力检查、操作和验证设备状态。"
-	nexusServerInstructions = "优先调用 `agentdock_context` 获取可用于操作用户设备的核心能力、Skill、动态 MCP、Workflow 模板、重要上下文和长期记忆索引。需要查找或读取长期记忆时使用 `recall_*`；需要查找或使用 Workflow 模板时使用 `workflow_template_manage`；处理多步骤任务时使用 `task_manage` 记录和维护任务进度。根据用户需求选择合适的能力检查、操作和验证设备状态。"
+	baseServerInstructions  = contextguide.Reuse + " 处理多步骤任务时使用 task_manage 记录有价值的执行断点。"
+	nexusServerInstructions = contextguide.Reuse + " 需要长期记忆时使用 recall_*，需要 Workflow 模板时使用 workflow_template_manage；多步骤任务使用 task_manage。"
 )
 
 func serverInstructions(nexusEnabled bool, custom string) string {

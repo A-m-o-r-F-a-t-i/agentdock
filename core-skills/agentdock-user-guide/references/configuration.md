@@ -59,3 +59,5 @@ Windows 原生 Tailscale 的 provider 状态保存在 `runtime.json` 的可选 `
 3. 新进程是否健康；
 4. 目标配置对应的行为是否变化；
 5. 是否有更高层的 Desktop、service、Compose 或进程管理器重新覆盖了手工修改。
+
+`AGENTDOCK_CONTEXT_TIMEOUT_MS`：上下文必经准备链总预算，默认 5000 ms，可设 100–30000 ms。只影响 bootstrap/workspace 上下文，不缩短业务 MCP、命令或浏览器超时。热缓存仍以低延迟完整响应为目标；预算是异常收敛上限，不是性能成绩。

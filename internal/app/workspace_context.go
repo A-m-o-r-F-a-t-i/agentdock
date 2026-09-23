@@ -29,7 +29,7 @@ type workspaceSkillItem struct {
 	ContentDigest string `json:"content_digest,omitempty"`
 }
 
-// workspaceContext 每次调用都从磁盘重新读取当前工作区规则与本地 Skill 索引。
+// workspaceContext 复用当前作用域规则快照，并可取消地读取工作区本地 Skill 索引。
 // workdir 只用于本次选择，不修改 Workspace 默认 cwd，也不保存为 Runtime 状态。
 func (r *Runtime) workspaceContext(ctx context.Context, workdir string) (Result, error) {
 	if err := ctx.Err(); err != nil {
@@ -51,7 +51,7 @@ func (r *Runtime) workspaceContext(ctx context.Context, workdir string) (Result,
 
 	warnings := []capabilityWarning{}
 	workspaceSkills := []workspaceSkillItem{}
-	skillIndex, skillErr := scanWorkspaceFilesystemSkills(instructions.WorkspaceRoot)
+	skillIndex, skillErr := scanWorkspaceFilesystemSkillsContext(ctx, instructions.WorkspaceRoot)
 	if skillErr != nil {
 		warnings = append(warnings, capabilityWarning{Source: "workspace_skills", Message: "工作区 Skill 索引暂不可用。"})
 	} else {
@@ -81,6 +81,9 @@ func (r *Runtime) workspaceContext(ctx context.Context, workdir string) (Result,
 		Warnings:        warnings,
 	}
 	var result Result
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := remarshal(value, &result); err != nil {
 		return nil, err
 	}

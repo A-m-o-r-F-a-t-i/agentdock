@@ -21,7 +21,7 @@ func (r *Runtime) InstructionFiles(ctx context.Context, workdir string) (agentin
 	if err != nil || !info.IsDir() {
 		return agentinstructions.Snapshot{}, toolErrorDetails("INVALID_ARGUMENT", "instruction workdir must be a directory", "validation", map[string]any{"workdir": workdir})
 	}
-	return agentinstructions.Load(ctx, agentinstructions.Options{
+	return r.cachedInstructions(ctx, agentinstructions.Options{
 		Home:            r.cfg.AgentDockHome,
 		DefaultDir:      r.ws.Root(),
 		Workdir:         resolved.Abs,

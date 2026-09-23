@@ -29,14 +29,14 @@ func definitionFingerprint(definition ServerConfig) (string, error) {
 	return hex.EncodeToString(digest[:]), nil
 }
 func (m *Manager) PermissionTargetFingerprint(ctx context.Context, qualifiedName string) (string, error) {
-	if err := m.syncRegistry(); err != nil {
+	if err := m.syncRegistryContext(ctx); err != nil {
 		return "", err
 	}
 	server, _, err := splitQualifiedToolName(qualifiedName)
 	if err != nil {
 		return "", err
 	}
-	definition, _, release, err := m.lockServer(server)
+	definition, _, release, err := m.lockServerContext(ctx, server)
 	if err != nil {
 		return "", err
 	}
