@@ -142,7 +142,7 @@ public partial class ExecutionWindow
             InsertionStatus.Text = items.LastOrDefault().Text("status") switch
             {
                 "reserved" => "已由下一次调用领取，等待返回",
-                "attached" => "已附加到工具响应",
+                "attached" => "已写入工具响应",
                 "expired" => "5 分钟没有新工具调用，此次插入已作废",
                 "cancelled" => "插入已取消",
                 "delivery_unknown" => "投递结果未知，未自动重发",

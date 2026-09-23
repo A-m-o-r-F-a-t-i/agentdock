@@ -14,6 +14,13 @@ func (r *Runtime) ChatGPTMCPUIEnabled() bool {
 	return r.display.Snapshot().ChatGPTMCPUIEnabled
 }
 
+func (r *Runtime) MCPPresentationSettings() config.DisplaySettings {
+	if r.display == nil {
+		return config.DisplaySettings{Revision: 1, ChatGPTMCPUIEnabled: r.cfg.MCPAppsEnabled}
+	}
+	return r.display.Snapshot()
+}
+
 func (r *Runtime) OnDisplaySettingsChanged(listener func()) {
 	if r.display != nil {
 		r.display.Subscribe(listener)
@@ -31,7 +38,7 @@ func displayResult(settings config.DisplaySettings) Result {
 	return Result{"schema_version": settings.SchemaVersion, "revision": settings.Revision,
 		"chatgpt_mcp_ui_enabled": settings.ChatGPTMCPUIEnabled, "warning": settings.Warning,
 		"server_policy_applied": true, "host_adoption": "unknown",
-		"refresh_hint": "设置仅控制 AgentDock 提供的内嵌界面。已渲染的历史卡片不会删除；请刷新 ChatGPT 连接并在新对话中验证。"}
+		"refresh_hint": "工具目录和模板策略已更新，后续请求使用当前设置。旧模板引用在限时兼容期内返回无脚本提示；已渲染的历史卡片不会删除，宿主采纳状态仍为未知。"}
 }
 
 func (r *Runtime) RuntimeUpdateDisplaySettings(ctx context.Context, change config.DisplayChange) (Result, error) {

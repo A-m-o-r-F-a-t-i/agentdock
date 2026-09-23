@@ -176,8 +176,12 @@ func TestMCPAppsCanBeDisabledWithoutRemovingTools(t *testing.T) {
 	if got := harness.server.UIResources(); len(got) != 0 {
 		t.Fatalf("UIResources() = %#v, want empty while disabled", got)
 	}
-	if _, err := harness.server.ReadAppResource(protocol.ContextUIResourceURI); err == nil {
-		t.Fatal("ReadAppResource() served an MCP App while disabled")
+	legacy, err := harness.server.ReadAppResource(protocol.ContextUIResourceURI)
+	if err != nil {
+		t.Fatalf("known cached template should get an inert compatibility result: %v", err)
+	}
+	if text := legacy["contents"].([]any)[0].(map[string]any)["text"]; text != disabledTemplateHTML {
+		t.Fatal("disabled resource served an active App")
 	}
 }
 

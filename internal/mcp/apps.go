@@ -23,6 +23,10 @@ func (s *Server) appResourceDefinitions() []appResourceDefinition {
 	if s == nil || !s.uiEnabled() {
 		return nil
 	}
+	return s.configuredAppResourceDefinitions()
+}
+
+func (s *Server) configuredAppResourceDefinitions() []appResourceDefinition {
 	definitions := []appResourceDefinition{
 		{
 			URI:         protocol.ContextUIResourceURI,
@@ -108,9 +112,13 @@ func (s *Server) UIResources() []protocol.UIResourceCapability {
 }
 
 func (s *Server) registerAppResources() {
+	s.registerAppResourceDefinitions(s.appResourceDefinitions())
+}
+
+func (s *Server) registerAppResourceDefinitions(definitions []appResourceDefinition) {
 	widgetDomain := appWidgetDomain(s.cfg.OAuthServerURL)
 
-	for _, definition := range s.appResourceDefinitions() {
+	for _, definition := range definitions {
 		definition := definition
 		meta := appResourceMeta(widgetDomain)
 		s.sdk.AddResource(&mcpsdk.Resource{
@@ -122,6 +130,9 @@ func (s *Server) registerAppResources() {
 			Meta:        meta,
 		}, func(_ context.Context, request *mcpsdk.ReadResourceRequest) (*mcpsdk.ReadResourceResult, error) {
 			if !s.uiEnabled() {
+				if result, ok := s.legacyTemplate(definition.URI); ok {
+					return result, nil
+				}
 				return nil, mcpsdk.ResourceNotFoundError(definition.URI)
 			}
 			if request == nil || request.Params == nil || request.Params.URI != definition.URI {
@@ -139,6 +150,9 @@ func (s *Server) ReadAppResource(uri string) (map[string]any, error) {
 		return nil, fmt.Errorf("AgentDock runtime is not initialized")
 	}
 	uri = strings.TrimSpace(uri)
+	if resource, ok := s.legacyTemplate(uri); ok {
+		return map[string]any{"contents": []any{map[string]any{"uri": uri, "mimeType": protocol.MCPAppMIMEType, "text": resource.Contents[0].Text}}}, nil
+	}
 	for _, definition := range s.appResourceDefinitions() {
 		if definition.URI != uri {
 			continue

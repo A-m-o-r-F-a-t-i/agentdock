@@ -25,6 +25,7 @@ func executionOutputSchema(original map[string]any) map[string]any {
 		}
 	}
 	properties["binding_updated"] = map[string]any{"type": "boolean"}
+	properties["agentdock_guidance"] = responseGuidanceSchema(properties["agentdock_guidance"])
 	success["properties"] = properties
 	pending := map[string]any{"type": "object", "properties": map[string]any{
 		"status": map[string]any{"const": "pending_approval"}, "executed": map[string]any{"const": false},

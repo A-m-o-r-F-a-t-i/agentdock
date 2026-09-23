@@ -55,6 +55,15 @@ func TestInsertionRuntimeOnlyNextExternalRootAndOwnConversation(t *testing.T) {
 	if blocks = r.FinishToolResponse(nextCtx, next, true); len(blocks) != 0 {
 		t.Fatal("duplicate response supplement")
 	}
+	replay := next.CompletedAdditions()
+	if len(replay.UserMessages) != 1 || replay.UserMessages[0].InsertionID != item.ID || len(replay.TextBlocks) != 1 {
+		t.Fatal("completed response cannot be reconstructed")
+	}
+	replay.UserMessages[0].Text = "mutated copy"
+	replay.TextBlocks[0] = "mutated block"
+	if next.CompletedAdditions().UserMessages[0].Text == "mutated copy" || next.CompletedAdditions().TextBlocks[0] == "mutated block" {
+		t.Fatal("response replay leaked mutable cache slices")
+	}
 	view, err := r.RuntimeInsertions(local, id)
 	if err != nil {
 		t.Fatal(err)
