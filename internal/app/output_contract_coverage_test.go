@@ -37,6 +37,7 @@ var outputContractCoverageInventory = map[string]outputContractCoverageEntry{
 	"skill_package":            {Variants: []string{"validate", "install", "uninstall", "enable", "disable", "env_list"}},
 	"mcp_manage":               {Variants: []string{"list", "add"}},
 	"mcp_tool_search":          {Variants: []string{"success"}},
+	"mcp_tool_list":            {Variants: []string{"success"}},
 	"mcp_tool_inspect":         {Variants: []string{"success"}},
 	"mcp_tool_call":            {Variants: []string{"success"}},
 	"view_image":               {Variants: []string{"success"}},

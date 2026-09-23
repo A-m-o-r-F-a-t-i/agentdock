@@ -32,8 +32,13 @@ type SearchRequest struct {
 	Limit  *int   `json:"limit,omitempty"`
 }
 
+type ListRequest struct {
+	Server string `json:"server"`
+}
+
 type InspectRequest struct {
-	Name string `json:"name"`
+	Names []string `json:"names,omitempty"`
+	Name  string   `json:"name,omitempty"`
 }
 
 // CallRequest.Arguments 是第三方 MCP 工具 schema 决定的动态叶子，必须保持开放对象。

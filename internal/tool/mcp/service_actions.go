@@ -117,7 +117,11 @@ func (s *Service) Search(ctx context.Context, request SearchRequest) (Result, er
 	if server == "" {
 		pluginOwned := make(map[string]bool)
 		if s.pluginMembership != nil {
-			for _, item := range s.mcpClients.EnabledIndex() {
+			index, err := s.mcpClients.EnabledIndexContext(ctx)
+			if err != nil {
+				return nil, dynamicMCPToolError(err)
+			}
+			for _, item := range index {
 				_, _, owned, lookupErr := s.pluginMembership(item.Name)
 				if lookupErr != nil {
 					return nil, toolErrorCause("PLUGIN_STATE_INVALID", "read MCP plugin ownership", "runtime", map[string]any{"server": item.Name}, lookupErr)
@@ -155,40 +159,6 @@ func (s *Service) Search(ctx context.Context, request SearchRequest) (Result, er
 	return Result{"query": query, "server": server, "tools": tools, "count": len(tools), "catalogs": s.mcpClients.Snapshots(names)}, nil
 }
 
-func (s *Service) Inspect(ctx context.Context, request InspectRequest) (Result, error) {
-	qualifiedName := request.Name
-	serverName, _, ok := strings.Cut(strings.TrimSpace(qualifiedName), ":")
-	if !ok || strings.TrimSpace(serverName) == "" {
-		return nil, toolErrorDetails("MCP_TOOL_NAME_INVALID", "MCP tool name must use <server>:<tool>", "validation", map[string]any{"tool": qualifiedName})
-	}
-	if err := s.ensureAvailable(serverName); err != nil {
-		return nil, err
-	}
-	server, tool, err := s.mcpClients.InspectTool(ctx, qualifiedName)
-	if err != nil {
-		return nil, dynamicMCPToolError(err)
-	}
-	result := Result{
-		"name":         qualifiedName,
-		"server":       server,
-		"tool_name":    tool.Name,
-		"title":        tool.Title,
-		"description":  tool.Description,
-		"input_schema": tool.InputSchema,
-	}
-	if summaries := s.mcpClients.Snapshots([]string{server}); len(summaries) == 1 {
-		result["catalog_revision"] = summaries[0].Revision
-		result["server_version"] = summaries[0].ServerVersion
-	}
-	if tool.OutputSchema != nil {
-		result["output_schema"] = tool.OutputSchema
-	}
-	if tool.Annotations != nil {
-		result["annotations"] = tool.Annotations
-	}
-	return result, nil
-}
-
 func (s *Service) Call(ctx context.Context, request CallRequest) (Result, error) {
 	qualifiedName := request.Name
 	serverName, _, ok := strings.Cut(strings.TrimSpace(qualifiedName), ":")
@@ -203,10 +173,18 @@ func (s *Service) Call(ctx context.Context, request CallRequest) (Result, error)
 		arguments = map[string]any{}
 	}
 	result, err := s.mcpClients.Call(ctx, qualifiedName, arguments)
-	if err != nil {
-		return nil, dynamicMCPToolError(err)
+	catalog, catalogErr := s.mcpClients.CachedSummary(serverName)
+	if catalogErr != nil {
+		catalog = map[string]any{"server": serverName, "catalog_revision": "", "complete": false, "stale": true, "total": 0, "tools": []map[string]any{}, "error": catalogErr.Error()}
 	}
-	return Result{"name": qualifiedName, "result": result}, nil
+	response := Result{"name": qualifiedName, "mcp_catalog": catalog}
+	if result != nil {
+		response["result"] = result
+	}
+	if err != nil {
+		return response, dynamicMCPToolError(err)
+	}
+	return response, nil
 }
 
 func dynamicMCPToolError(err error) error {

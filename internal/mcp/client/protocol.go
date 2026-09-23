@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -30,13 +31,14 @@ type protocolClient interface {
 }
 
 type sdkProtocolClient struct {
-	cfg        ServerConfig
-	session    *mcpsdk.ClientSession
-	command    *exec.Cmd
-	controller *processcontrol.Controller
-	stderr     *tailBuffer
-	closeOnce  sync.Once
-	closeErr   error
+	toolsRevision atomic.Uint64
+	cfg           ServerConfig
+	session       *mcpsdk.ClientSession
+	command       *exec.Cmd
+	controller    *processcontrol.Controller
+	stderr        *tailBuffer
+	closeOnce     sync.Once
+	closeErr      error
 }
 
 func newStreamableHTTPClient(cfg ServerConfig) *sdkProtocolClient {
@@ -56,6 +58,14 @@ func (c *sdkProtocolClient) initialize(ctx context.Context) error {
 		&mcpsdk.Implementation{Name: config.ServerName, Version: buildinfo.Version},
 		&mcpsdk.ClientOptions{Capabilities: &mcpsdk.ClientCapabilities{}},
 	)
+	client.AddReceivingMiddleware(func(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
+		return func(ctx context.Context, method string, request mcpsdk.Request) (mcpsdk.Result, error) {
+			if method == "notifications/tools/list_changed" {
+				c.toolsRevision.Add(1)
+			}
+			return next(ctx, method, request)
+		}
+	})
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
 		_ = c.cleanupProcess()
@@ -230,13 +240,21 @@ func convertSDKTool(remote *mcpsdk.Tool) (Tool, error) {
 	if err != nil {
 		return Tool{}, fmt.Errorf("decode annotations: %w", err)
 	}
+	metadata, err := jsonObject(remote)
+	if err != nil {
+		return Tool{}, err
+	}
+	for _, key := range []string{"name", "title", "description", "inputSchema", "outputSchema", "annotations"} {
+		delete(metadata, key)
+	}
 	return Tool{
-		Name:         remote.Name,
-		Title:        remote.Title,
-		Description:  remote.Description,
-		InputSchema:  input,
-		OutputSchema: output,
-		Annotations:  annotations,
+		StandardMetadata: metadata,
+		Name:             remote.Name,
+		Title:            remote.Title,
+		Description:      remote.Description,
+		InputSchema:      input,
+		OutputSchema:     output,
+		Annotations:      annotations,
 	}, nil
 }
 
@@ -372,6 +390,8 @@ func (b *tailBuffer) String() string {
 }
 
 // ServerVersion reports initialize metadata, never a version parsed from prose.
+func (c *sdkProtocolClient) ToolsRevision() uint64 { return c.toolsRevision.Load() }
+
 func (c *sdkProtocolClient) ServerVersion() string {
 	if c.session == nil {
 		return ""

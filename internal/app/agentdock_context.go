@@ -70,7 +70,7 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 			"需要真实执行命令或检查环境时，先用 exec_command 查看现状，再修改，修改后真实验证。",
 			"先根据 Skill 索引的 name、description 和来源选择相关 Skill，再用 read_file 读取宿主返回的 file；需要绑定命令时直接使用宿主返回的 skill_ref，不自行按名称拼接或重新解析。",
 			"workspace_skills、skills 和 common_skills 中的同名项是不同来源候选，不静默覆盖；当前项目通常优先考虑 workspace Skill，但必须使用所选候选自己的 skill_ref/file。若 common_skills.truncated=true 且当前索引未命中，可 list_dir 查看 common_skills.root 后再通过 workspace/共享 Skill 索引取得精确引用。",
-			"AgentDock 自带工具直接调用；动态 MCP 工具先用 mcp_tool_search 查找、mcp_tool_inspect 读取 schema，再用 mcp_tool_call 执行。",
+			"AgentDock 自带工具直接调用。动态 MCP 服务已知时用 mcp_tool_list 一次读取整套摘要，再用 mcp_tool_inspect 的 names 批量读取本批所需完整 Schema，随后持续 mcp_tool_call；响应已有摘要或 Schema 未变时跳过重复查询，mcp_tool_search 仅用于未知能力定位。",
 			"已取得本项目规则时直接继续操作，不另做 workspace_context；仅工作区规则或项目级 Skill 作用域变化时定向刷新。",
 		},
 	}

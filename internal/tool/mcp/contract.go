@@ -5,6 +5,7 @@ import toolcontract "github.com/uvwt/agentdock/internal/tool/contract"
 const (
 	ToolManage  = "mcp_manage"
 	ToolSearch  = "mcp_tool_search"
+	ToolList    = "mcp_tool_list"
 	ToolInspect = "mcp_tool_inspect"
 	ToolCall    = "mcp_tool_call"
 )
@@ -45,9 +46,12 @@ func InputSchema(name string) (map[string]any, bool) {
 		props["server"] = stringProp("Optional dynamic MCP server name from agentdock_context.")
 		props["limit"] = boundedIntProp("Maximum matching tools. Defaults to 10 and is capped at 100.", 1, 100)
 		required = []string{"query"}
+	case ToolList:
+		props["server"] = stringProp("Known enabled MCP server. Returns every visible tool name and one-line description without a search limit.")
+		required = []string{"server"}
 	case ToolInspect:
 		props["name"] = stringProp("Qualified dynamic MCP tool name in <server>:<tool> form.")
-		required = []string{"name"}
+		props["names"] = map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"type": "string", "minLength": 3}, "description": "Complete schemas for selected server:tool names and server:* selectors, including mixed services."}
 	case ToolCall:
 		props["name"] = stringProp("Qualified dynamic MCP tool name in <server>:<tool> form.")
 		toolcontract.ActivityProperties(props)
@@ -57,7 +61,11 @@ func InputSchema(name string) (map[string]any, bool) {
 	default:
 		return nil, false
 	}
-	return toolcontract.InputObject(props, required...), true
+	schema := toolcontract.InputObject(props, required...)
+	if name == ToolInspect {
+		schema["oneOf"] = []map[string]any{{"required": []string{"names"}}, {"required": []string{"name"}}}
+	}
+	return schema, true
 }
 
 func OutputSchema(name string) (map[string]any, bool) {
@@ -88,7 +96,16 @@ func OutputSchema(name string) (map[string]any, bool) {
 		props["tools"] = arrayProp("Matching lightweight MCP tool summaries.")
 		props["count"] = intProp("Matching tool count.")
 		props["catalogs"] = arrayProp("Current revisions and discovered facts for the matching servers; does not load unrelated plugins.")
+	case ToolList:
+		props = catalogSchemaProperties()
 	case ToolInspect:
+		props["tools"] = arrayProp("Complete selected tool schemas with original nested constraints and standard metadata.")
+		props["errors"] = arrayProp("Explicit per-selector errors; successful services remain present.")
+		props["catalogs"] = arrayProp("Service generations used by this batch.")
+		props["count"] = intProp("Returned complete schema count.")
+		props["total"] = intProp("Total successfully resolved selected tools in this untruncated response.")
+		props["complete"] = boolProp("All selectors were resolved without omissions or errors.")
+		props["metadata"] = objectProp("Additional standard upstream tool fields, retained without interpreting business data.")
 		props["name"] = stringProp("Qualified MCP tool name.")
 		props["server"] = stringProp("Dynamic MCP server name.")
 		props["tool_name"] = stringProp("Upstream MCP tool name.")
@@ -102,8 +119,20 @@ func OutputSchema(name string) (map[string]any, bool) {
 	case ToolCall:
 		props["name"] = stringProp("Qualified MCP tool name.")
 		props["result"] = objectProp("Raw upstream MCP tools/call result, including content and structuredContent when supplied.")
+		props["mcp_catalog"] = toolcontract.OutputObject(catalogSchemaProperties())
 	default:
 		return nil, false
 	}
 	return toolcontract.OutputObject(props), true
+}
+
+func catalogSchemaProperties() map[string]any {
+	return map[string]any{
+		"server": toolcontract.String("Dynamic MCP server."), "catalog_revision": toolcontract.String("Referenced complete catalog generation."),
+		"complete": toolcontract.Boolean("All tools in the referenced visible catalog are included; false if unavailable."),
+		"stale":    toolcontract.Boolean("The last complete directory is stale and has not been represented as current."),
+		"total":    toolcontract.Integer("Total tools in the referenced catalog."),
+		"error":    toolcontract.String("Catalog attachment problem; never changes the business outcome."),
+		"tools":    map[string]any{"type": "array", "items": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"name", "description"}, "properties": map[string]any{"name": map[string]any{"type": "string"}, "description": map[string]any{"type": "string"}}}},
+	}
 }

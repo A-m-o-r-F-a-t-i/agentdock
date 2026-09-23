@@ -31,7 +31,16 @@ func (r *Runtime) rememberCapabilityAccess(binding activity.Binding, tool string
 		if name, _, ok := strings.Cut(stringArg(args, "name"), ":"); ok {
 			names = append(names, name)
 		}
-	case "mcp_tool_search":
+		if selectors, ok := args["names"].([]any); ok {
+			for _, value := range selectors {
+				if text, ok := value.(string); ok {
+					if server, _, found := strings.Cut(text, ":"); found {
+						names = append(names, server)
+					}
+				}
+			}
+		}
+	case "mcp_tool_search", "mcp_tool_list":
 		if server := stringArg(args, "server"); server != "" {
 			names = append(names, server)
 		}

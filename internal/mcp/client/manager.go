@@ -42,16 +42,17 @@ type Manager struct {
 type ExternalServerProvider func(context.Context) (map[string]ServerConfig, error)
 
 type serverState struct {
-	snapshot      atomic.Pointer[indexSnapshot]
-	discovered    bool
-	indexRevision uint64
-	serverVersion string
-	mu            sync.Mutex
-	client        protocolClient
-	tools         map[string]Tool
-	lastError     string
-	lastErrorCode string
-	refreshedAt   time.Time
+	catalogGeneration uint64
+	snapshot          atomic.Pointer[indexSnapshot]
+	discovered        bool
+	indexRevision     uint64
+	serverVersion     string
+	mu                sync.Mutex
+	client            protocolClient
+	tools             map[string]Tool
+	lastError         string
+	lastErrorCode     string
+	refreshedAt       time.Time
 }
 
 func NewManager(agentDockHome string, provided ...*envstore.Store) (*Manager, error) {
@@ -636,6 +637,11 @@ func (m *Manager) Call(ctx context.Context, qualifiedName string, arguments map[
 			return nil, err
 		}
 	}
+	if !catalogFresh(state.snapshot.Load()) {
+		if _, err := reloadCatalogLocked(ctx, cfg, state); err != nil {
+			return nil, err
+		}
+	}
 	tool, exists := state.tools[name]
 	if !exists {
 		return nil, newError("MCP_TOOL_NOT_FOUND", "MCP tool not found", false, map[string]any{"tool": qualifiedName}, nil)
@@ -796,6 +802,14 @@ func (m *Manager) searchServers(name string) ([]ServerConfig, error) {
 }
 
 func (m *Manager) ensureTools(ctx context.Context, name string) (map[string]Tool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if cached, fresh, err := m.catalogSnapshot(name); err != nil {
+		return nil, err
+	} else if fresh {
+		return cloneTools(cached.Tools), nil
+	}
 	cfg, state, unlockState, err := m.lockServerContext(ctx, name)
 	if err != nil {
 		return nil, err
@@ -813,6 +827,9 @@ func (m *Manager) ensureTools(ctx context.Context, name string) (map[string]Tool
 			return nil, err
 		}
 		return refreshStateLocked(ctx, runtimeCfg, state)
+	}
+	if !catalogFresh(state.snapshot.Load()) {
+		return reloadCatalogLocked(ctx, cfg, state)
 	}
 	return cloneTools(state.tools), nil
 }
@@ -833,46 +850,23 @@ func initializeStateLocked(ctx context.Context, cfg ServerConfig, state *serverS
 		recordStateError(state, err)
 		return nil, err
 	}
+	generation := protocolGeneration(client)
 	listed, err := client.listTools(ctx)
 	if err != nil {
 		_ = client.close()
 		recordStateError(state, err)
 		return nil, err
 	}
-	tools := make(map[string]Tool, len(listed))
-	for _, tool := range listed {
-		tool.Name = strings.TrimSpace(tool.Name)
-		if tool.Name == "" {
-			_ = client.close()
-			err := newError("MCP_INVALID_RESPONSE", "MCP tools/list returned an empty tool name", false, map[string]any{"server": cfg.Name}, nil)
-			recordStateError(state, err)
-			return nil, err
-		}
-		if _, duplicate := tools[tool.Name]; duplicate {
-			_ = client.close()
-			err := newError("MCP_INVALID_RESPONSE", "MCP tools/list returned duplicate tool names", false, map[string]any{"server": cfg.Name, "tool": tool.Name}, nil)
-			recordStateError(state, err)
-			return nil, err
-		}
-		if tool.InputSchema == nil {
-			tool.InputSchema = map[string]any{"type": "object", "additionalProperties": true}
-		}
-		validator, err := compileToolInputSchema(tool.InputSchema)
-		if err != nil {
-			_ = client.close()
-			schemaErr := newError(
-				"MCP_SCHEMA_INVALID",
-				"MCP tools/list returned an invalid input schema",
-				false,
-				map[string]any{"server": cfg.Name, "tool": tool.Name, "reason": err.Error()},
-				err,
-			)
-			recordStateError(state, schemaErr)
-			return nil, schemaErr
-		}
-		tool.inputValidator = validator
-		tools[tool.Name] = tool
+	tools, err := compileCatalog(ctx, cfg, listed)
+	if err == nil && generation != protocolGeneration(client) {
+		err = newError("MCP_CATALOG_CHANGED", "tool directory changed during pagination", true, map[string]any{"server": cfg.Name}, nil)
 	}
+	if err != nil {
+		_ = client.close()
+		recordStateError(state, err)
+		return nil, err
+	}
+	state.catalogGeneration = generation
 	state.client = client
 	state.tools = tools
 	state.lastError = ""
@@ -962,7 +956,7 @@ func toolSummary(server string, tool Tool) ToolSummary {
 func cloneTools(input map[string]Tool) map[string]Tool {
 	out := make(map[string]Tool, len(input))
 	for name, tool := range input {
-		out[name] = tool
+		out[name] = cloneTool(tool)
 	}
 	return out
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -343,7 +344,11 @@ func toolDescriptors(definitions []ToolDefinition, mcpAppsEnabled bool) []map[st
 
 func toolEnvelope(name string, structured any, err error) map[string]any {
 	if err != nil {
-		payload := map[string]any{"tool": name, "error": err.Error()}
+		payload := maps.Clone(asMap(structured))
+		if payload == nil {
+			payload = map[string]any{}
+		}
+		payload["tool"], payload["error"] = name, err.Error()
 		var toolErr *app.ToolError
 		if errors.As(err, &toolErr) {
 			payload["code"] = toolErr.Code
@@ -358,7 +363,7 @@ func toolEnvelope(name string, structured any, err error) map[string]any {
 				}
 			}
 		}
-		return map[string]any{"isError": true, "structuredContent": payload, "content": []map[string]any{{"type": "text", "text": pretty(payload)}}}
+		return appendMCPCatalog(map[string]any{"isError": true, "structuredContent": payload, "content": []map[string]any{{"type": "text", "text": pretty(payload)}}}, name)
 	}
 	if name == "view_image" {
 		payload := asMap(structured)
@@ -369,7 +374,7 @@ func toolEnvelope(name string, structured any, err error) map[string]any {
 		}
 	}
 	if name == "mcp_tool_call" {
-		return dynamicMCPToolEnvelope(structured)
+		return appendMCPCatalog(dynamicMCPToolEnvelope(structured), name)
 	}
 	return map[string]any{"isError": false, "structuredContent": structured, "content": []map[string]any{{"type": "text", "text": pretty(structured)}}}
 }

@@ -8,6 +8,9 @@ import (
 )
 
 type indexSnapshot struct {
+	Tools         map[string]Tool
+	Client        protocolClient
+	Generation    uint64
 	Ready         bool
 	Known         bool
 	Count         int
@@ -19,7 +22,7 @@ type indexSnapshot struct {
 }
 
 func stateSnapshotLocked(state *serverState) indexSnapshot {
-	return indexSnapshot{Ready: state.client != nil, Known: state.discovered, Count: len(state.tools), Revision: state.indexRevision,
+	return indexSnapshot{Tools: state.tools, Client: state.client, Generation: state.catalogGeneration, Ready: state.client != nil, Known: state.discovered, Count: len(state.tools), Revision: state.indexRevision,
 		Version: state.serverVersion, LastError: state.lastError, LastErrorCode: state.lastErrorCode, RefreshedAt: state.refreshedAt}
 }
 func publishStateLocked(state *serverState) {
@@ -82,6 +85,7 @@ func refreshStateLocked(ctx context.Context, cfg ServerConfig, state *serverStat
 	state.discovered, state.serverVersion, state.indexRevision = true, candidate.serverVersion, revision
 	state.lastError, state.lastErrorCode = "", ""
 	state.refreshedAt = candidate.refreshedAt
+	state.catalogGeneration = candidate.catalogGeneration
 	publishStateLocked(state)
 	// The caller already pins this state: an in-flight call finishes before refresh
 	// takes the lock. A failed candidate never destroys the previous connection.
