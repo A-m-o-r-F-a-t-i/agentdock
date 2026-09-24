@@ -176,7 +176,9 @@ jobs:
       - name: Backend regression
         run: |
           $ErrorActionPreference = 'Stop'
-          go test -p 2 ./... -count=1 -timeout=8m
+          # Isolate packages that build real binaries from Windows process/journal
+          # fixtures. In-test concurrency, deadlines and assertions are unchanged.
+          go test -p 1 ./... -count=1 -timeout=8m
           if ($LASTEXITCODE -ne 0) { throw 'Go tests failed.' }
 
       - name: Static analysis
