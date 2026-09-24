@@ -2,4 +2,5 @@
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
   <ItemGroup><Compile Include="../control-panel/Services/ConversationActivityPolicy.cs" Link="ConversationActivityPolicy.cs"/><Compile Include="../control-panel/Services/SidebarOrdering.cs" Link="SidebarOrdering.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../control-panel/Models/ExecutionModels.cs" Link="ExecutionModels.cs"/></ItemGroup>
+	<ItemGroup><Compile Include="../control-panel/Models/ExecutionPayloadView.cs" Link="ExecutionPayloadView.cs"/><Compile Include="../control-panel/Services/SidebarNavigationState.cs" Link="SidebarNavigationState.cs"/></ItemGroup>
 </Project>

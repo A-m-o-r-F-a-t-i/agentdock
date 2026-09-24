@@ -30,8 +30,8 @@
       </Grid>
     </Border>
 
-    <TabControl Grid.Row="1" Margin="18">
-      <TabItem Header="{local:Loc Overview}">
+    <TabControl x:Name="MainPages" Grid.Row="1" Margin="18">
+      <TabItem Tag="overview" Header="{local:Loc Overview}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="18">
             <GroupBox Header="{local:Loc RuntimeStatus}">
@@ -114,7 +114,7 @@
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="{local:Loc PublicAccess}">
+      <TabItem Tag="public-access" Header="{local:Loc PublicAccess}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="18">
             <GroupBox Header="{local:Loc AccessMode}">
@@ -202,7 +202,7 @@
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="{local:Loc Capabilities}">
+      <TabItem Tag="capabilities" Header="{local:Loc Capabilities}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="18">
             <TextBlock Text="{local:Loc CapabilitiesDescription}"
@@ -233,9 +233,21 @@
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="{local:Loc RuntimeConfiguration}">
+      <TabItem Tag="runtime" Header="{local:Loc RuntimeConfiguration}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel x:Name="RuntimeOptionsPanel" Margin="18" Loaded="RuntimeOptionsPanel_Loaded">
+            <GroupBox x:Name="DisplayAndThemeGroup" Header="显示与主题">
+              <StackPanel Loaded="DisplaySettings_Loaded" Unloaded="DisplaySettings_Unloaded">
+                <TextBlock Text="主题" Margin="0,0,0,5"/>
+                <ComboBox x:Name="ThemePreferenceCombo" Width="180" HorizontalAlignment="Left" SelectedValuePath="Tag" SelectionChanged="ThemePreference_Changed">
+                  <ComboBoxItem Content="跟随系统" Tag="system"/><ComboBoxItem Content="浅色" Tag="light"/><ComboBoxItem Content="深色" Tag="dark"/>
+                </ComboBox>
+                <TextBlock x:Name="ThemeSaveStatus" Foreground="{DynamicResource SecondaryText}" Margin="0,6,0,12" TextWrapping="Wrap"/>
+                <CheckBox x:Name="McpUiEnabledChoice" Content="提供 AgentDock 内嵌界面" Click="McpUiPreference_Click" IsEnabled="False"/>
+                <TextBlock Text="关闭后仍可调用工具、管理任务和读写文件。此设置不影响其他插件和已经渲染的历史卡片。" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                <TextBlock x:Name="McpUiSaveStatus" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+              </StackPanel>
+            </GroupBox>
             <TextBlock Text="{local:Loc RuntimeConfigurationHelp}" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryText}" Margin="0,0,0,14" />
             <GroupBox Header="{local:Loc WorkspaceAndInstructions}">
               <StackPanel>
@@ -289,26 +301,7 @@
         </ScrollViewer>
       </TabItem>
 
-      <TabItem Header="显示">
-        <StackPanel Margin="18" Loaded="DisplaySettings_Loaded" Unloaded="DisplaySettings_Unloaded">
-          <GroupBox Header="主题">
-            <StackPanel>
-              <ComboBox x:Name="ThemePreferenceCombo" Width="180" HorizontalAlignment="Left" SelectedValuePath="Tag" SelectionChanged="ThemePreference_Changed">
-                <ComboBoxItem Content="跟随系统" Tag="system"/><ComboBoxItem Content="浅色" Tag="light"/><ComboBoxItem Content="深色" Tag="dark"/>
-              </ComboBox>
-              <TextBlock x:Name="ThemeSaveStatus" Foreground="{DynamicResource SecondaryText}" Margin="0,8,0,0" TextWrapping="Wrap"/>
-            </StackPanel>
-          </GroupBox>
-          <GroupBox Header="ChatGPT 内嵌界面">
-            <StackPanel>
-              <CheckBox x:Name="McpUiEnabledChoice" Content="提供 AgentDock 内嵌界面" Click="McpUiPreference_Click" IsEnabled="False"/>
-              <TextBlock Text="关闭后仍可调用工具、管理任务和读写文件。此设置不影响其他插件和已经渲染的历史卡片。" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-              <TextBlock x:Name="McpUiSaveStatus" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-            </StackPanel>
-          </GroupBox>
-        </StackPanel>
-      </TabItem>
-      <TabItem Header="{local:Loc AdvancedSettings}">
+      <TabItem Tag="advanced" Header="{local:Loc AdvancedSettings}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel Margin="18">
             <GroupBox Header="{local:Loc BasicSettings}">

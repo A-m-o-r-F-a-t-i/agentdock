@@ -25,6 +25,10 @@ public static class ExecutionJson
 
 public sealed class WorkspaceGroupKey(string id, string title) : INotifyPropertyChanged
 {
+	private bool _expanded;
+	public bool IsExpanded { get => _expanded; set { if (_expanded == value) return; _expanded = value; PropertyChanged?.Invoke(this, new(nameof(IsExpanded))); } }
+	public string Mode { get; private set; } = "auto";
+	public int RecentCount { get; private set; }
     public string Id { get; } = id;
     public string Title { get; private set; } = title;
     public string Root { get; private set; } = "";
@@ -35,6 +39,7 @@ public sealed class WorkspaceGroupKey(string id, string title) : INotifyProperty
     {
         Title = value.Text("title", Title); Root = value.Text("root");
         Total = (int)value.Number("total"); LastActivityAt = value.Date("last_activity_at");
+		Mode = value.Text("mode", "auto"); RecentCount = (int)value.Number("recent_count");
         PropertyChanged?.Invoke(this, new(null));
     }
     public override bool Equals(object? value) => value is WorkspaceGroupKey key && key.Id == Id;
@@ -53,6 +58,7 @@ public sealed class ExecutionObject : INotifyPropertyChanged
     public bool HasMore { get; set; }
     public bool AutoLoadMore { get; set; }
     public bool InsertionEligible { get; set; }
+	public bool InFlight { get; set; }
     public void Apply(ExecutionObject item)
     {
         if (Id != item.Id || Kind != item.Kind) throw new InvalidOperationException("Row identity changed.");
@@ -60,6 +66,7 @@ public sealed class ExecutionObject : INotifyPropertyChanged
         ManagementDates = item.ManagementDates; Pinned = item.Pinned; Archived = item.Archived;
         Trashed = item.Trashed; Terminated = item.Terminated; IsUnknown = item.IsUnknown; IsOrphan = item.IsOrphan;
         PendingCount = item.PendingCount; RunningCount = item.RunningCount; Snapshot = item.Snapshot;
+		InFlight = item.InFlight;
         LastToolCallAt = item.LastToolCallAt; LastActivityAt = item.LastActivityAt; SortActivityAt = item.SortActivityAt;
         IsGroupFooter = item.IsGroupFooter; HasMore = item.HasMore; AutoLoadMore = item.AutoLoadMore;
         PropertyChanged?.Invoke(this, new(null));
@@ -69,6 +76,7 @@ public sealed class ExecutionObject : INotifyPropertyChanged
         get => _recentlyActive;
         set { if (_recentlyActive == value) return; _recentlyActive = value; PropertyChanged?.Invoke(this, new(nameof(RecentlyActive))); }
     }
+	public void RefreshActivity() => PropertyChanged?.Invoke(this, new(null));
     public string Id { get; set; } = "";
     public string Kind { get; set; } = "conversation";
     public string Title { get; set; } = "";
@@ -103,6 +111,7 @@ public sealed class ExecutionObject : INotifyPropertyChanged
             Detail = kind == "task" ? ExecutionJson.State(value.Text("status")) : value.Text("source"),
             Pinned = value.Flag("pinned"), Archived = value.HasDate("archived_at"), Trashed = value.HasDate("trashed_at"), Terminated = value.HasDate("terminated_at"),
             ManagementDates = created, IsUnknown = value.Flag("is_unattributed"), IsOrphan = value.Flag("is_orphan"),
+			InFlight = value.Flag("in_flight"),
             PendingCount = stats.Number("pending"), RunningCount = stats.Number("running"), Snapshot = value.Clone(), LastToolCallAt = stats.Date("last_tool_call_at"), LastActivityAt = stats.Date("last_activity_at") ?? stats.Date("last_tool_call_at"), SortActivityAt = value.Date("last_activity_at") ?? stats.Date("last_activity_at") ?? value.Date("created_at")
         };
     }
@@ -110,6 +119,9 @@ public sealed class ExecutionObject : INotifyPropertyChanged
 
 public sealed class ExecutionCallRow : INotifyPropertyChanged
 {
+	public ExecutionPayloadView RequestPayload { get; } = new("调用");
+	public ExecutionPayloadView ResponsePayload { get; } = new("输出");
+	public string RequestText => RequestPayload.Text;
     private JsonElement _value;
     private string _output = "";
     private bool _expanded;
@@ -132,7 +144,15 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
     public string Parameters => _value.Text("parameter_summary");
     public bool ReadOnlyLegacy => _value.Flag("read_only_legacy");
     public string Summary => _value.Text("summary");
-    public string Title => _value.Text("activity_label", _value.Text("display_title", _value.Text("title", Tool))).Replace('\r', ' ').Replace('\n', ' ');
+	public string Title
+	{
+		get
+		{
+			var label = _value.Text("activity_label", _value.Text("display_title", _value.Text("title", Tool))).Replace('\r',' ').Replace('\n',' ');
+			if (Tool == "file_edit" && label.StartsWith("EDIT_FILE", StringComparison.Ordinal)) label = label[9..].TrimStart(' ', '·', ':');
+			return Tool.Length == 0 || label == Tool ? label : label.Length == 0 ? Tool : Tool + " · " + label;
+		}
+	}
     public DateTimeOffset? RequestReceivedAt => _value.Date("request_received_at");
     public DateTimeOffset? LastActivityAt => _value.Date("last_activity_at");
     public long? RpcElapsedMs => _value.OptionalNumber("rpc_elapsed_ms");
@@ -149,6 +169,13 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
     public string ExecutionDuration => FormatDuration(_value.OptionalNumber("execution_elapsed_ms"));
     public string WaitDuration => FormatDuration(_value.OptionalNumber("wait_elapsed_ms"));
     public string ActualTool => Tool;
+	public bool HasEditStatistics => _value.Text("parent_call_id").Length == 0 && _value.Field("file_edit").ValueKind == JsonValueKind.Object;
+	public bool EditPreview => HasEditStatistics && _value.Field("file_edit").Flag("dry_run");
+	public bool EditCountsKnown => HasEditStatistics && !EditPreview && (_value.Field("file_edit").Text("stats_state") is "" or "known" or "partial") && _value.Field("file_edit").OptionalNumber("insertions") is >= 0 && _value.Field("file_edit").OptionalNumber("deletions") is >= 0;
+	public bool PartialEditStatistics => _value.Field("file_edit").Text("stats_state") == "partial";
+	public string AddedLinesText => !HasEditStatistics ? "" : EditCountsKnown ? "+" + _value.Field("file_edit").Number("insertions") + (PartialEditStatistics ? "*" : "") : EditPreview ? "预演" : "—";
+	public string DeletedLinesText => EditCountsKnown ? "−" + _value.Field("file_edit").Number("deletions") : "";
+	public string EditCountsHint => PartialEditStatistics ? "部分执行：仅计入已确认仍落盘的变化；未核实的路径保留未知。" : EditPreview ? "预演未落盘；拟议行数在文件详情中。" : EditCountsKnown ? "本次根调用实际落盘的新增/删除逻辑行数。" : "本次修改行数未统计或结果未知，未计为零。";
     public string Started => _value.Date("started_at")?.ToLocalTime().ToString("HH:mm:ss.fff") ?? When;
     public string SourceType => _value.Text("source", "未记录");
     public string TimingDetails => string.Join("\n", new[]
@@ -169,8 +196,11 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
             var edit = _value.Field("file_edit");
             if (edit.ValueKind != JsonValueKind.Object) return "文件操作详情未记录。";
             var changed = edit.Field("changed").ValueKind switch { JsonValueKind.True => "是", JsonValueKind.False => "否", _ => "结果未知" };
-            var files = edit.Array("affected_files").Select(file => file.Text("path") + (file.Text("move_to").Length > 0 ? " → " + file.Text("move_to") : ""));
-            return $"{Tool} · {edit.Text("action")}\n目标：{edit.Text("path")}\n预览：{(edit.Flag("dry_run") ? "是，未写入" : "否")}\n已派发：{(edit.Flag("executed") ? "是" : "否")}\n实际修改：{changed}\n影响文件数：{edit.OptionalNumber("affected_count")?.ToString() ?? "未记录"}\n新增/删除行：{edit.OptionalNumber("insertions")?.ToString() ?? "未记录"} / {edit.OptionalNumber("deletions")?.ToString() ?? "未记录"}\n" + string.Join("\n", files) + (edit.Flag("files_truncated") ? "\n文件明细超过预览上限。" : "") + "\n\n" + edit.Text("diff_preview") + (edit.Flag("diff_truncated") ? "\n差异预览已截断。" : "");
+            var preview = edit.Flag("dry_run");
+            var addedKey = preview ? "proposed_insertions" : "insertions";
+            var removedKey = preview ? "proposed_deletions" : "deletions";
+            var files = edit.Array("affected_files").Select(file => file.Text("path") + (file.Text("move_to").Length > 0 ? " → " + file.Text("move_to") : "") + "  +" + (file.OptionalNumber(addedKey)?.ToString() ?? "—") + " −" + (file.OptionalNumber(removedKey)?.ToString() ?? "—"));
+            return $"{Tool} · {edit.Text("action")}\n目标：{edit.Text("path")}\n预览：{(edit.Flag("dry_run") ? "是，未写入" : "否")}\n已派发：{(edit.Flag("executed") ? "是" : "否")}\n实际修改：{changed}\n影响文件数：{edit.OptionalNumber("affected_count")?.ToString() ?? "未记录"}\n统计：{(PartialEditStatistics ? "部分执行，仅含已确认变化" : preview ? "预演计划" : edit.Text("stats_state", "旧记录"))}\n{(preview ? "拟议" : "实际")}新增/删除行：{edit.OptionalNumber(addedKey)?.ToString() ?? "未记录"} / {edit.OptionalNumber(removedKey)?.ToString() ?? "未记录"}\n" + string.Join("\n", files) + (edit.Flag("files_truncated") ? "\n文件明细超过预览上限。" : "") + "\n\n" + edit.Text("diff_preview") + (edit.Flag("diff_truncated") ? "\n差异预览已截断。" : "");
         }
     }
     private static string FormatDuration(long? milliseconds) => milliseconds is >= 0 ? (milliseconds.Value / 1000.0).ToString("0.000") + " s" : "未记录";
@@ -187,15 +217,22 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
     public bool CanStop => !ReadOnlyLegacy && Status is "created" or "running" or "pending_approval";
     public bool NeedsApproval => Status == "pending_approval";
     public bool NeedsVerification => Status == "unknown";
-    public bool HasChanges => _value.Array("file_changes").Length > 0;
+	public bool HasChanges => HasEditStatistics || _value.Array("file_changes").Length > 0;
     public string Changes => string.Join("\n", _value.Array("file_changes").Select(change => change.Text("path") + (change.Flag("stats_known") ? $"  +{change.Number("insertions")} −{change.Number("deletions")}" : "")));
     public string Technical => _value.Pretty();
     public bool IsExpanded { get => _expanded; set { _expanded = value; Notify(); } }
     public bool FollowOutput { get; set; } = true;
     public bool DetailLoaded { get; private set; }
-    public string Output => _output;
+	public string Output => ResponsePayload.Reference.Length == 0 && _output.Length > 0 ? _output : ResponsePayload.Text;
+	public string ProgressOutput => _output;
+	public bool HasSupplementalProgress => ResponsePayload.Reference.Length > 0 && _output.Length > 0;
     public string HistoryWarning => _value.Flag("history_incomplete") ? "该记录的部分历史已不可用。" : "";
-    public ExecutionCallRow(JsonElement value) { _value = value.Clone(); }
+	public ExecutionCallRow(JsonElement value)
+	{
+		_value = value.Clone();
+		RequestPayload.PropertyChanged += (_, _) => Notify(); ResponsePayload.PropertyChanged += (_, _) => Notify();
+		RequestPayload.Describe(value.Field("request"), value.Text("parent_call_id")); ResponsePayload.Describe(value.Field("response"), value.Text("parent_call_id"));
+	}
     public bool VisibleIn(string view)
     {
         if (_value.HasDate("deleted_at")) return false;
@@ -208,14 +245,20 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
             _ => !_value.HasDate("trashed_at") && !_value.HasDate("archived_at") && !_value.HasDate("isolated_at")
         };
     }
-    public void Apply(JsonElement value) { if (value.Number("updated_seq") < UpdatedSeq) return; _value = value.Clone(); Notify(); }
+	public void Apply(JsonElement value)
+	{
+		if (value.Number("updated_seq") < UpdatedSeq) return;
+		if (value.Number("updated_seq") > UpdatedSeq) DetailLoaded = false;
+		_value = value.Clone();
+		RequestPayload.Describe(value.Field("request"), value.Text("parent_call_id")); ResponsePayload.Describe(value.Field("response"), value.Text("parent_call_id"));
+		Notify();
+	}
     public void ApplyDetail(JsonElement value)
     {
         if (value.Number("updated_seq") < UpdatedSeq) return;
         Apply(value); DetailLoaded = true;
         var output = value.Text("output_preview"); var error = value.Text("stderr_preview");
         if (error.Length > 0) output += (output.Length > 0 ? "\n\n" : "") + "标准错误\n" + error;
-        if (output.Length == 0) output = value.Text("summary", "没有输出。");
         if (value.Flag("stdout_truncated") || value.Flag("stderr_truncated")) output = "输出已截断，仅显示保留部分。\n\n" + output;
         _output = output; Notify();
     }

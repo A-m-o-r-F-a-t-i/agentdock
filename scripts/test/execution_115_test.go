@@ -49,8 +49,14 @@ func TestExecution115MarkupAndSharedThemeContracts(t *testing.T) {
 		t.Fatal("per-conversation management button remains")
 	}
 	sidebar := source115(t, "desktop/windows/control-panel/ExecutionWindow.Sidebar.cs")
-	if strings.Contains(sidebar, "Objects.Clear()") || !strings.Contains(sidebar, "_sidebarLimits.Remove(key.Id)") {
+	if strings.Contains(sidebar, "Objects.Clear()") || !strings.Contains(sidebar, "CurrentNavigation().For(key.Id).Collapse()") {
 		t.Fatal("sidebar loses identity or expansion reset")
+	}
+	navigation := source115(t, "desktop/windows/control-panel/Services/SidebarNavigationState.cs")
+	for _, rule := range []string{"HistoryLimit = 5; Cursor = \"\"", "HistoryLimit = 0; Cursor = \"\"", "DefaultCollapsed = true", "HistoryLimit < 20 ? 20 : checked(HistoryLimit + 20)"} {
+		if !strings.Contains(navigation, rule) {
+			t.Fatalf("missing 1.1.6 navigation rule: %s", rule)
+		}
 	}
 	theme := source115(t, "desktop/windows/control-panel/MainWindow.Capabilities.cs")
 	if strings.Contains(theme, "Brushes.White") || strings.Contains(theme, "Color.FromRgb") {

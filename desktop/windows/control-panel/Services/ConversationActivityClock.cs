@@ -46,9 +46,10 @@ internal sealed class ConversationActivityClock : IDisposable
         TimeSpan? next = null;
         foreach (var item in _items())
         {
-            item.RecentlyActive = !item.IsUnknown && !item.IsOrphan && !item.IsGroupFooter && IsRecent(item.LastActivityAt, now, item.Terminated);
+			var recent = IsRecent(item.LastActivityAt, now, item.Terminated);
+			item.RecentlyActive = !item.IsUnknown && !item.IsOrphan && !item.IsGroupFooter && !item.Trashed && !item.Terminated && (recent || item.InFlight);
             item.InsertionEligible = !item.IsUnknown && !item.IsOrphan && !item.IsGroupFooter && !item.Trashed && CanInsert(item.LastToolCallAt, now, item.Terminated);
-            if (item.RecentlyActive && item.LastActivityAt is { } activity)
+			if (recent && item.LastActivityAt is { } activity)
             {
                 var remaining = activity + ActivityWindow - now;
                 if (next is null || remaining < next) next = remaining;

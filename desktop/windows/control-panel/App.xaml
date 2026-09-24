@@ -10,7 +10,23 @@
       <Style TargetType="Window"><Setter Property="Background" Value="{DynamicResource AppBackground}"/><Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/></Style>
       <Style TargetType="Button" BasedOn="{StaticResource ActionButton}"><Setter Property="Padding" Value="14,7"/><Setter Property="Margin" Value="0,0,8,8"/><Setter Property="MinHeight" Value="34"/></Style>
       <Style TargetType="PasswordBox"><Setter Property="Padding" Value="8,6"/><Setter Property="Background" Value="{DynamicResource PanelBackground}"/><Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/><Setter Property="BorderBrush" Value="{DynamicResource ActionBorderBrush}"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
-      <Style TargetType="GroupBox"><Setter Property="Margin" Value="0,0,0,14"/><Setter Property="Padding" Value="12"/><Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/><Setter Property="BorderBrush" Value="{DynamicResource SeparatorBrush}"/></Style>
+      <Style TargetType="GroupBox">
+        <Setter Property="Margin" Value="0,0,0,14"/><Setter Property="Padding" Value="12"/>
+        <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
+        <Setter Property="Background" Value="{DynamicResource PanelBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource SeparatorBrush}"/>
+        <Setter Property="BorderThickness" Value="2"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="GroupBox">
+          <Grid SnapsToDevicePixels="True">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Border Grid.RowSpan="2" Margin="0,9,0,0" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Background="{TemplateBinding Background}" CornerRadius="5"/>
+            <Border HorizontalAlignment="Left" Margin="12,0,0,0" Padding="5,0" Background="{TemplateBinding Background}">
+              <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
+            </Border>
+            <ContentPresenter Grid.Row="1" Margin="{TemplateBinding Padding}" ContentSource="Content"/>
+          </Grid>
+        </ControlTemplate></Setter.Value></Setter>
+      </Style>
       <Style TargetType="RadioButton"><Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/></Style>
       <Style TargetType="ToolTip"><Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/><Setter Property="Background" Value="{DynamicResource PanelBackground}"/><Setter Property="BorderBrush" Value="{DynamicResource ActionBorderBrush}"/></Style>
       <Style TargetType="TabControl">

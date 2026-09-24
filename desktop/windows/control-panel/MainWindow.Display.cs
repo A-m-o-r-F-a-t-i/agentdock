@@ -84,7 +84,7 @@ public partial class MainWindow
                 McpUiSaveStatus.Text = "已重新读取服务端当前设置。" + current.RefreshHint;
             }
             catch (Exception readError) when (readError is OperationCanceledException or System.IO.IOException or System.Net.Http.HttpRequestException or System.Text.Json.JsonException or InvalidOperationException)
-            { McpUiSaveStatus.Text = "暂时无法确认保存结果，请重新打开显示页。"; }
+            { McpUiSaveStatus.Text = "暂时无法确认保存结果，请重新打开运行配置中的显示与主题。"; }
         }
         finally
         {

@@ -189,6 +189,17 @@ public partial class App : System.Windows.Application
     {
         Dispatcher.Invoke(() =>
         {
+            // A standalone activity monitor first activates the existing tray
+            // instance. It never launches another process or starts a runtime.
+            if (ControlPanelWindow is null)
+            {
+                if (EventWaitHandle.TryOpenExisting(ShowEventName, out var existing))
+                {
+                    using (existing) existing.Set();
+                    return;
+                }
+                ControlPanelWindow = new MainWindow(Runtime);
+            }
             if (!ControlPanelWindow.IsVisible)
             {
                 ControlPanelWindow.Show();

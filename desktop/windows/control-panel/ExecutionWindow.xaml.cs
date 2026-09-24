@@ -61,7 +61,8 @@ public partial class ExecutionWindow : Window
         DesktopTheme.Initialize(runtime.RuntimeRoot);
         InitializeComponent(); DataContext = this;
         InitializeComposer();
-        _activityClock.Changed += (_, _) => UpdateStopButton();
+		InitializeSidebar();
+		_activityClock.Changed += (_, _) => { UpdateStopButton(); RefreshAutoProjectExpansion(); };
         CollectionViewSource.GetDefaultView(Objects).GroupDescriptions.Add(new PropertyGroupDescription(nameof(ExecutionObject.WorkspaceKey)));
         _filterTimer.Tick += async (_, _) => { _filterTimer.Stop(); await GuardAsync(() => LoadObjectsAsync()); };
         _callSearchTimer.Tick += async (_, _) => { _callSearchTimer.Stop(); await GuardAsync(() => LoadCallsAsync(false)); };
@@ -116,6 +117,7 @@ public partial class ExecutionWindow : Window
             var changed = facts.Date("last_activity_at");
             if (changed is not null && (item.LastActivityAt is null || changed > item.LastActivityAt)) item.LastActivityAt = changed;
             item.PendingCount = facts.Number("pending"); item.RunningCount = facts.Number("running");
+			item.InFlight = value.Field("in_flight").Flag(item.Id); item.RefreshActivity();
         }
         _activityClock.Synchronize(value.Date("server_now"));
         var pending = value.Field("statistics").Number("pending");
@@ -248,13 +250,19 @@ public partial class ExecutionWindow : Window
         if (_selected is null) return;
         var query = CallScopeQuery(); var generation = _generation;
         var epoch = older ? _streamEpoch : ++_streamEpoch;
-        if (!older) _streamCancellation?.Cancel();
+        if (!older) { _streamCancellation?.Cancel(); _historyReadFailed = false; HistoryRetryButton.Visibility = Visibility.Collapsed; }
         var value = await _client.ExecutionGetAsync("/internal/runtime/calls?" + query + "&limit=100" + (older && _before > 0 ? "&before=" + _before : ""), SelectionToken);
         if (generation != _generation || epoch != _streamEpoch || query != CallScopeQuery()) return;
-        if (!older) { Calls.Clear(); _callsById.Clear(); }
-        foreach (var call in value.Array("calls").Reverse()) UpsertCall(call);
+        var previousUpdating = _updating;
+        _updating = true;
+        try
+        {
+            if (!older) { Calls.Clear(); _callsById.Clear(); }
+            foreach (var call in value.Array("calls").Reverse()) UpsertCall(call);
+        }
+        finally { _updating = previousUpdating; }
         _before = (ulong)value.Number("next_before");
-        OlderCallsButton.IsEnabled = value.Flag("has_more");
+		_hasOlderCalls = value.Flag("has_more");
         if (value.Flag("gap")) Warn("部分历史记录已过保留期限，当前显示现有记录。", "activity_retention_gap");
         UpdateEmpty();
         if (!older)
@@ -263,7 +271,7 @@ public partial class ExecutionWindow : Window
             _streamCancellation?.Dispose(); _streamCancellation = CancellationTokenSource.CreateLinkedTokenSource(SelectionToken);
             _streamTask = _client.ObserveExecutionsAsync(query, _cursor, message => Dispatcher.InvokeAsync(() => ApplyStreamAsync(message, generation, epoch)).Task.Unwrap(), _streamCancellation.Token);
         }
-        if (_following && Calls.Count > 0) await Dispatcher.InvokeAsync(() => CallsList.ScrollIntoView(Calls[^1]), DispatcherPriority.Loaded);
+        if (!older && _following && Calls.Count > 0) await Dispatcher.InvokeAsync(() => CallsList.ScrollIntoView(Calls[^1]), DispatcherPriority.Loaded);
     }
     private bool MatchesScope(ExecutionCallRow row)
     {
@@ -274,15 +282,12 @@ public partial class ExecutionWindow : Window
     private void UpsertCall(JsonElement value)
     {
         var incoming = new ExecutionCallRow(value);
-        if (incoming.RequestReceivedAt is { } received)
+        var activeItem = ActivityItems().FirstOrDefault(candidate => candidate.Id == incoming.ConversationId);
+        if (activeItem is not null)
         {
-            var item = ActivityItems().FirstOrDefault(candidate => candidate.Id == incoming.ConversationId);
-            if (item is not null && (item.LastToolCallAt is null || received > item.LastToolCallAt))
-            {
-                item.LastToolCallAt = received;
-                if (incoming.LastActivityAt is { } changed && (item.LastActivityAt is null || changed > item.LastActivityAt)) item.LastActivityAt = changed;
-                _activityClock.Refresh();
-            }
+            if (incoming.RequestReceivedAt is { } received && (activeItem.LastToolCallAt is null || received > activeItem.LastToolCallAt)) activeItem.LastToolCallAt = received;
+            if (incoming.LastActivityAt is { } changed && (activeItem.LastActivityAt is null || changed > activeItem.LastActivityAt)) activeItem.LastActivityAt = changed;
+            activeItem.RefreshActivity(); _activityClock.Refresh();
         }
         if (!MatchesScope(incoming)) return;
         var status = ComboValue(CallStatusCombo);
@@ -306,8 +311,8 @@ public partial class ExecutionWindow : Window
     private async Task ApplyStreamAsync(ExecutionStreamMessage message, int generation, int epoch)
     {
         if (_closed || generation != _generation || epoch != _streamEpoch) return;
-        if (message.Kind == "connected") { _streamConnected = true; ConnectionButton.ToolTip = "本地执行流已连接"; }
-        else if (message.Kind == "disconnected") { _streamConnected = false; ConnectionButton.ToolTip = "本地执行流重连中：" + message.Message; }
+		if (message.Kind == "connected") { _streamConnected = true; FollowButton.ToolTip = "跟随最新调用"; }
+		else if (message.Kind == "disconnected") { _streamConnected = false; FollowButton.ToolTip = "执行流重连中：" + message.Message; }
         else if (message.Kind == "call")
         {
             _cursor = Math.Max(_cursor, message.Seq); UpsertCall(message.Value); UpdateEmpty();
@@ -322,7 +327,11 @@ public partial class ExecutionWindow : Window
         try
         {
             var value = await _client.ExecutionGetAsync("/internal/runtime/calls/" + Escape(row.Id), SelectionToken);
-            if (!_closed && _detailCall?.Id == row.Id) row.ApplyDetail(value);
+			if (!_closed && ReferenceEquals(_detailCall, row))
+			{
+				row.ApplyDetail(value);
+				await Task.WhenAll(LoadPayloadPageAsync(row, "request", false, true), LoadPayloadPageAsync(row, "response", false, true));
+			}
         }
         finally { _detailReads.Remove(row.Id); }
     }
@@ -351,9 +360,9 @@ public partial class ExecutionWindow : Window
         {
             _ticks++;
             if (_ticks % 3 == 0) await GuardAsync(RefreshOverviewAsync);
-            if (_detailCall is { } row && CallDetailsTabs.Visibility == Visibility.Visible && row.CanStop) await GuardAsync(() => LoadCallDetailAsync(row));
+			if (_detailCall is { } row && CallDetailsTabs.Visibility == Visibility.Visible && (row.CanStop || !row.DetailLoaded || row.RequestPayload.NeedsLoad || row.ResponsePayload.NeedsLoad)) await GuardAsync(() => LoadCallDetailAsync(row));
             if (_ticks % 5 == 0 && _selectedTaskId.Length > 0 && TaskDetailsPanel.Visibility != Visibility.Visible) await GuardAsync(() => LoadTaskAsync(_selectedTaskId, "", false));
-            if (System.Diagnostics.Stopwatch.GetElapsedTime(_lastSidebarRefresh) >= TimeSpan.FromSeconds(60) && ObjectsList.SelectedItems.Count <= 1 && _frozenSelection is null && _openMenus == 0 && _sidebarPaging.Count == 0) await GuardAsync(() => LoadObjectsAsync());
+			if (System.Diagnostics.Stopwatch.GetElapsedTime(_lastSidebarRefresh) >= TimeSpan.FromSeconds(_streamConnected ? 60 : 3) && ObjectsList.SelectedItems.Count <= 1 && _frozenSelection is null && _openMenus == 0 && _sidebarPaging.Count == 0 && !_sidebarLoading) await GuardAsync(() => LoadObjectsAsync());
             if (_ticks % 3 == 0) await GuardAsync(RefreshInsertionsAsync);
             UpdateStopButton();
         }
@@ -384,7 +393,7 @@ public partial class ExecutionWindow : Window
     }
     private async void Calls_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (e.Source != CallsList || CallsList.SelectedItem is not ExecutionCallRow row) return;
+		if (_updating || e.Source != CallsList || CallsList.SelectedItem is not ExecutionCallRow row) return;
         _detailCall = row; CallDetailsTabs.DataContext = row; CallDetailsTabs.SelectedIndex = 0;
         OpenDetails(row.Title, CallDetailsTabs); await GuardAsync(() => LoadCallDetailAsync(row));
     }
@@ -408,7 +417,6 @@ public partial class ExecutionWindow : Window
     private void CallSearch_Changed(object sender, TextChangedEventArgs e) { if (!_initialized) return; _callSearchTimer.Stop(); _callSearchTimer.Start(); }
     private async void CallFilter_Changed(object sender, SelectionChangedEventArgs e) { if (_initialized) await GuardAsync(() => LoadCallsAsync(false)); }
     private async void MoreObjects_Click(object sender, RoutedEventArgs e) => await GuardAsync(() => LoadObjectsAsync(true));
-    private async void OlderCalls_Click(object sender, RoutedEventArgs e) { _following = false; UpdateFollowButton(); await GuardAsync(() => LoadCallsAsync(true)); }
     private void Follow_Click(object sender, RoutedEventArgs e) { _following = !_following; UpdateFollowButton(); if (_following && Calls.Count > 0) CallsList.ScrollIntoView(Calls[^1]); }
     private async void LinkTask_Click(object sender, RoutedEventArgs e)
     {
@@ -420,20 +428,30 @@ public partial class ExecutionWindow : Window
         var detailed = _preferences.DetailedCalls;
         CallsList.ItemTemplate = (DataTemplate)Resources[detailed ? "DetailedCallRowTemplate" : "CallRowTemplate"];
         DetailedCallsHeader.Visibility = detailed ? Visibility.Visible : Visibility.Collapsed;
-        CompactCallsChoice.IsChecked = !detailed;
-        DetailedCallsChoice.IsChecked = detailed;
+		CallPresentationButton.Content = detailed ? "详细" : "简洁";
+		CallPresentationButton.ToolTip = detailed ? "切换到简洁视图" : "切换到详细视图";
     }
-    private void CallPresentation_Changed(object sender, RoutedEventArgs e)
+	private async void CallPresentation_Click(object sender, RoutedEventArgs e)
     {
-        if (!_initialized || sender is not RadioButton choice) return;
-        var detailed = choice.Tag?.ToString() == "detailed";
-        if (_preferences.DetailedCalls == detailed) return;
-        _preferences.DetailedCalls = detailed;
+		if (!_initialized) return;
+		var anchor = CaptureCallAnchor();
+		_preferences.DetailedCalls = !_preferences.DetailedCalls;
         SavePreferences();
         ApplyCallPresentation();
+		await RestoreCallAnchorAsync(anchor);
     }
-    private void Calls_Wheel(object sender, MouseWheelEventArgs e) { if (e.Delta > 0) { _following = false; UpdateFollowButton(); } }
-    private void Calls_ScrollChanged(object sender, ScrollChangedEventArgs e) { if (e.VerticalChange < 0 && e.ExtentHeightChange == 0) { _following = false; UpdateFollowButton(); } }
+	private async void Calls_Wheel(object sender, MouseWheelEventArgs e)
+	{
+		if (e.Delta <= 0) return;
+		_following = false; UpdateFollowButton();
+		await TryLoadOlderCallsAsync();
+	}
+	private async void Calls_ScrollChanged(object sender, ScrollChangedEventArgs e)
+	{
+		if (_restoringCallScroll || _loadingOlderCalls || _updating || e.ExtentHeightChange != 0 || e.VerticalChange >= 0) return;
+		_following = false; UpdateFollowButton();
+		await TryLoadOlderCallsAsync();
+	}
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await GuardAsync(async () => { await LoadWorkspacesAsync(); await LoadObjectsAsync(); await LoadCallsAsync(false); await RefreshOverviewAsync(); });
     private void CloseDetails_Click(object sender, RoutedEventArgs e) => CloseDetails();
     private void DismissWarning_Click(object sender, RoutedEventArgs e)
@@ -488,6 +506,7 @@ public partial class ExecutionWindow : Window
         if (_closed) return; _closed = true; SavePreferences();
         DesktopTheme.Changed -= Theme_Changed;
         _activityClock.Dispose();
+		StopSidebar();
         _filterTimer.Stop(); _callSearchTimer.Stop(); _pulse.Stop(); _lifetime.Cancel(); _selectionCancellation?.Cancel(); _streamCancellation?.Cancel();
         _client.Dispose(); _selectionCancellation?.Dispose(); _streamCancellation?.Dispose(); _lifetime.Dispose();
         // Closing an observer window never stops tasks or command processes.

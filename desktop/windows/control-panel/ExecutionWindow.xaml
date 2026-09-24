@@ -1,6 +1,7 @@
 <Window x:Class="AgentDock.ControlPanel.ExecutionWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+		xmlns:local="clr-namespace:AgentDock.ControlPanel"
         Title="AgentDock" Width="1280" Height="800" MinWidth="800" MinHeight="540"
         FontFamily="Segoe UI, Microsoft YaHei UI" FontSize="14"
         Background="{DynamicResource AppBackground}" Foreground="{DynamicResource PrimaryText}"
@@ -11,9 +12,17 @@
         <ResourceDictionary Source="Themes/Tokens.xaml"/>
       </ResourceDictionary.MergedDictionaries>
       <BooleanToVisibilityConverter x:Key="BoolVisibility"/>
+	  <DataTemplate x:Key="EditStatsTemplate">
+	    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" MinWidth="84" Margin="8,0,0,0" ToolTip="{Binding EditCountsHint}" Visibility="{Binding HasEditStatistics, Converter={StaticResource BoolVisibility}}">
+	      <TextBlock Text="{Binding AddedLinesText}" FontFamily="Consolas" FontSize="12" MinWidth="36" TextAlignment="Right">
+	        <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource SecondaryText}"/><Style.Triggers><DataTrigger Binding="{Binding EditCountsKnown}" Value="True"><Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
+	      </TextBlock>
+	      <TextBlock Text="{Binding DeletedLinesText}" FontFamily="Consolas" FontSize="12" MinWidth="36" Margin="7,0,0,0" TextAlignment="Right" Foreground="{DynamicResource DangerBrush}"/>
+	    </StackPanel>
+	  </DataTemplate>
       <DataTemplate x:Key="CallRowTemplate">
         <Grid Height="{StaticResource ExecutionRowHeight}" Margin="6,0">
-          <Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/><ColumnDefinition Width="84"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+		  <Grid.ColumnDefinitions><ColumnDefinition Width="28"/><ColumnDefinition Width="*"/><ColumnDefinition Width="84"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
           <TextBlock Text="{Binding StatusGlyph}" ToolTip="{Binding State}" VerticalAlignment="Center" HorizontalAlignment="Center">
             <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource SecondaryText}"/>
               <Style.Triggers><DataTrigger Binding="{Binding Status}" Value="failed"><Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/></DataTrigger><DataTrigger Binding="{Binding NeedsApproval}" Value="True"><Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/></DataTrigger></Style.Triggers>
@@ -22,11 +31,12 @@
           <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ActualTool}" VerticalAlignment="Center" Margin="7,0,14,0"/>
           <TextBlock Grid.Column="2" Text="{Binding Duration}" Style="{StaticResource MutedText}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
           <TextBlock Grid.Column="3" Width="78" Text="{Binding When}" Style="{StaticResource MutedText}" VerticalAlignment="Center" HorizontalAlignment="Right" TextAlignment="Right" Visibility="{Binding ShowTimestamps, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/>
+		  <ContentControl Grid.Column="4" Content="{Binding}" ContentTemplate="{StaticResource EditStatsTemplate}"/>
         </Grid>
       </DataTemplate>
       <DataTemplate x:Key="DetailedCallRowTemplate">
         <Grid Height="{StaticResource ExecutionRowHeight}" Margin="6,0">
-          <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="84"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+		  <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="84"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
           <TextBlock Text="{Binding ActualTool}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" VerticalAlignment="Center" Margin="8,0"/>
           <TextBlock Grid.Column="1" Text="{Binding Started}" FontSize="12" VerticalAlignment="Center"/>
           <TextBlock Grid.Column="2" Text="{Binding State}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding State}" VerticalAlignment="Center"/>
@@ -34,6 +44,7 @@
           <TextBlock Grid.Column="4" Text="{Binding ExecutionDuration}" FontSize="12" VerticalAlignment="Center"/>
           <TextBlock Grid.Column="5" Text="{Binding WaitDuration}" FontSize="12" VerticalAlignment="Center"/>
           <TextBlock Grid.Column="6" Text="{Binding SourceType}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceType}" VerticalAlignment="Center"/>
+		  <ContentControl Grid.Column="7" Content="{Binding}" ContentTemplate="{StaticResource EditStatsTemplate}"/>
         </Grid>
       </DataTemplate>
     </ResourceDictionary>
@@ -43,36 +54,37 @@
     <Border Background="{DynamicResource SidebarBackground}" Padding="12,12,10,12">
       <DockPanel>
         <Grid DockPanel.Dock="Top" Margin="4,0,0,12">
-          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="30"/></Grid.ColumnDefinitions>
+		  <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="30"/><ColumnDefinition Width="30"/></Grid.ColumnDefinitions>
           <Grid>
             <TextBox x:Name="SearchBox" TextChanged="Search_Changed" ToolTip="搜索工作区或对话" AutomationProperties.Name="搜索工作区或对话" Background="Transparent"/>
             <TextBlock Text="搜索" Foreground="{DynamicResource SecondaryText}" Margin="9,0" VerticalAlignment="Center" IsHitTestVisible="False">
               <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
             </TextBlock>
           </Grid>
-          <Button Grid.Column="1" Content="···" Padding="0" Click="SidebarMenu_Click" ToolTip="对话管理" AutomationProperties.Name="对话管理"/>
+		  <Button Grid.Column="1" Padding="0" Click="CollapseAllProjects_Click" ToolTip="折叠全部项目" AutomationProperties.Name="折叠全部项目"><Path Data="M 0,0 L 4,4 8,0 M 0,8 L 4,4 8,8" Stroke="{DynamicResource SecondaryText}" StrokeThickness="1.4" Width="10" Height="10" Stretch="Uniform"/></Button>
+		  <Button Grid.Column="2" Content="···" Padding="0" Click="SidebarMenu_Click" ToolTip="对话管理" AutomationProperties.Name="对话管理"/>
         </Grid>
         <Button x:Name="MoreObjectsButton" DockPanel.Dock="Bottom" Content="更多对话" Click="MoreObjects_Click" Visibility="Collapsed"/>
         <Grid>
-          <ListBox x:Name="ObjectsList" ItemsSource="{Binding Objects}" SelectionMode="Extended" SelectionChanged="Objects_Changed" PreviewMouseRightButtonDown="Objects_RightClick" ScrollViewer.ScrollChanged="Sidebar_ScrollChanged"
+		  <ListBox x:Name="ObjectsList" ItemsSource="{Binding Objects}" SelectionMode="Extended" SelectionChanged="Objects_Changed" PreviewMouseRightButtonDown="Objects_RightClick"
                    VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.IsVirtualizingWhenGrouping="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True">
             <ListBox.GroupStyle>
               <GroupStyle>
                 <GroupStyle.ContainerStyle>
                   <Style TargetType="GroupItem"><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="GroupItem">
-                    <Expander IsExpanded="True" Loaded="WorkspaceGroup_Loaded" Expanded="WorkspaceGroup_Expanded" Collapsed="WorkspaceGroup_Collapsed" Margin="0,0,0,8">
+				    <Expander IsExpanded="{Binding Name.IsExpanded, Mode=TwoWay}" Loaded="WorkspaceGroup_Loaded" Expanded="WorkspaceGroup_Expanded" Collapsed="WorkspaceGroup_Collapsed" Margin="0">
                       <Expander.Template><ControlTemplate TargetType="Expander">
                         <StackPanel>
-                          <ToggleButton PreviewMouseRightButtonDown="Project_RightClick" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Height="34">
+					      <ToggleButton PreviewMouseRightButtonDown="Project_RightClick" IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" HorizontalContentAlignment="Stretch" Background="Transparent" BorderThickness="0" Height="{x:Static local:ExecutionLayout.ConversationRowHeight}" AutomationProperties.Name="{Binding Name.Title}">
                             <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
-                              <Border Background="Transparent" Padding="3,0,6,0"><Grid>
+						      <Border x:Name="ProjectHeaderBody" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" Padding="3,0,6,0"><Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="18"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                 <TextBlock x:Name="Arrow" Text="▸" Foreground="{DynamicResource SecondaryText}" VerticalAlignment="Center"/>
                                 <TextBlock Grid.Column="1" Text="{Binding Name.Title}" Foreground="{DynamicResource PrimaryText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                                 <Border Grid.Column="2" Style="{StaticResource SemanticBadge}" Margin="7,0,0,0"><TextBlock Text="对话" FontSize="11" Foreground="{DynamicResource SecondaryText}"/></Border>
                                 <TextBlock Grid.Column="3" Text="{Binding Name.Total}" Foreground="{DynamicResource SecondaryText}" FontSize="12" Margin="8,0,0,0" VerticalAlignment="Center"/>
                               </Grid></Border>
-                              <ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Arrow" Property="Text" Value="▾"/></Trigger></ControlTemplate.Triggers>
+						      <ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Arrow" Property="Text" Value="▾"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ProjectHeaderBody" Property="BorderBrush" Value="{DynamicResource FocusBrush}"/></Trigger></ControlTemplate.Triggers>
                             </ControlTemplate></ToggleButton.Template>
                           </ToggleButton>
                           <ContentPresenter x:Name="GroupItems" ContentSource="Content" Margin="16,0,0,0"/>
@@ -86,12 +98,14 @@
               </GroupStyle>
             </ListBox.GroupStyle>
             <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}"><EventSetter Event="PreviewMouseLeftButtonDown" Handler="SidebarFooter_PreviewMouseDown"/>
-              <Style.Triggers><DataTrigger Binding="{Binding IsGroupFooter}" Value="True"><Setter Property="Focusable" Value="False"/></DataTrigger>
+			  <Setter Property="Height" Value="{x:Static local:ExecutionLayout.ConversationRowHeight}"/>
+			  <Style.Triggers><DataTrigger Binding="{Binding IsGroupFooter}" Value="True"><Setter Property="Focusable" Value="False"/><Setter Property="Height" Value="{x:Static local:ExecutionLayout.MoreRowHeight}"/></DataTrigger>
                 <MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding IsGroupFooter}" Value="True"/><Condition Binding="{Binding HasMore}" Value="False"/></MultiDataTrigger.Conditions><Setter Property="Height" Value="0"/><Setter Property="Visibility" Value="Collapsed"/></MultiDataTrigger>
+			    <MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding IsGroupFooter}" Value="False"/><Condition Binding="{Binding WorkspaceKey.Mode}" Value="auto"/><Condition Binding="{Binding RecentlyActive}" Value="False"/></MultiDataTrigger.Conditions><Setter Property="Height" Value="0"/><Setter Property="Visibility" Value="Collapsed"/></MultiDataTrigger>
               </Style.Triggers>
             </Style></ListBox.ItemContainerStyle>
             <ListBox.ItemTemplate><DataTemplate>
-              <Grid Height="34" Margin="8,0,3,0">
+			  <Grid Margin="8,0,3,0">
                 <Grid x:Name="ConversationRow">
                   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="20"/></Grid.ColumnDefinitions>
                   <TextBlock Text="{Binding Title}" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
@@ -100,7 +114,7 @@
                   </TextBlock>
                   <TextBlock Grid.Column="2" Text="···" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="最近 2 分钟有执行更新" AutomationProperties.Name="最近 2 分钟有执行更新" Visibility="{Binding RecentlyActive, Converter={StaticResource BoolVisibility}}"/>
                 </Grid>
-                <Button x:Name="ProjectMore" Content="…" Click="SidebarMore_Click" Loaded="SidebarMore_Loaded" Visibility="Collapsed" BorderThickness="0" HorizontalAlignment="Stretch" ToolTip="展开更多对话" AutomationProperties.Name="展开更多对话"/>
+			    <Button x:Name="ProjectMore" Content="…" Click="SidebarMore_Click" Visibility="Collapsed" BorderThickness="0" MinHeight="0" Padding="0" Margin="0" FontSize="12" HorizontalAlignment="Stretch" ToolTip="展开更多对话" AutomationProperties.Name="展开更多对话"/>
               </Grid>
               <DataTemplate.Triggers><DataTrigger Binding="{Binding IsGroupFooter}" Value="True"><Setter TargetName="ConversationRow" Property="Visibility" Value="Collapsed"/><Setter TargetName="ProjectMore" Property="Visibility" Value="Visible"/></DataTrigger></DataTemplate.Triggers>
             </DataTemplate></ListBox.ItemTemplate>
@@ -118,8 +132,7 @@
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
           <Button x:Name="AttentionButton" Content="待处理" Visibility="Collapsed" Click="Attention_Click" FontSize="12"/>
           <Button Content="权限" Click="Permissions_Click" FontSize="12"/>
-          <Button x:Name="ConnectionButton" Content="连接" Click="Connection_Click" Foreground="{DynamicResource SecondaryText}" FontSize="12"/>
-          <Button Content="主题" Click="Theme_Click" FontSize="12"/>
+		  <Button Content="控制面板" Click="ControlPanel_Click" FontSize="12"/>
           <Button Content="设置" Click="SettingsMenu_Click" FontSize="12"/>
           <Button x:Name="InsertButton" Content="插入" Click="Insert_Click" IsEnabled="False" Margin="8,0,0,0" FontSize="12"/>
           <Button Content="···" Click="ConversationMenu_Click" Width="30" Padding="0" Margin="2,0,0,0" ToolTip="当前对话操作" AutomationProperties.Name="当前对话操作"/>
@@ -146,9 +159,7 @@
           <ComboBox x:Name="CallStatusCombo" Width="92" Margin="8,0,0,0" SelectionChanged="CallFilter_Changed" SelectedIndex="0"><ComboBoxItem Content="全部状态" Tag=""/><ComboBoxItem Content="运行中" Tag="running"/><ComboBoxItem Content="待审批" Tag="pending_approval"/><ComboBoxItem Content="失败" Tag="failed"/><ComboBoxItem Content="待核对" Tag="unknown"/></ComboBox>
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <RadioButton x:Name="CompactCallsChoice" Content="简洁" GroupName="CallPresentation" Tag="compact" Style="{StaticResource SegmentChoice}" Checked="CallPresentation_Changed" Margin="0,0,3,0"/>
-          <RadioButton x:Name="DetailedCallsChoice" Content="详细" GroupName="CallPresentation" Tag="detailed" Style="{StaticResource SegmentChoice}" Checked="CallPresentation_Changed" Margin="0,0,6,0"/>
-          <Button x:Name="OlderCallsButton" Content="更早" Click="OlderCalls_Click" IsEnabled="False" FontSize="12"/>
+		  <Button x:Name="CallPresentationButton" Content="简洁" Click="CallPresentation_Click" Margin="0,0,6,0" FontSize="12" ToolTip="切换到详细视图"/>
           <Button x:Name="FollowButton" Content="跟随" Click="Follow_Click" FontSize="12" ToolTip="跟随最新调用"/>
           <Button Content="···" Width="30" Padding="0" Click="CallMenu_Click" ToolTip="记录管理" AutomationProperties.Name="记录管理"/>
         </StackPanel>
@@ -156,14 +167,15 @@
       <Grid Grid.Row="4" Margin="14,0,14,8">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <Grid x:Name="DetailedCallsHeader" Height="26" Margin="6,0" Visibility="Collapsed">
-          <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="84"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-          <TextBlock Text="工具" Style="{StaticResource MutedText}" Margin="8,0"/><TextBlock Grid.Column="1" Text="开始" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="2" Text="状态" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="3" Text="RPC 总计" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="4" Text="执行" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="5" Text="等待" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="6" Text="来源" Style="{StaticResource MutedText}"/>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="84"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
+		  <TextBlock Text="工具" Style="{StaticResource MutedText}" Margin="8,0"/><TextBlock Grid.Column="1" Text="开始" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="2" Text="状态" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="3" Text="总耗时" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="4" Text="执行" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="5" Text="等待" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="6" Text="来源" Style="{StaticResource MutedText}"/>
         </Grid>
         <ListBox x:Name="CallsList" Grid.Row="1" ItemsSource="{Binding Calls}" ItemTemplate="{StaticResource CallRowTemplate}" SelectionMode="Extended"
                  SelectionChanged="Calls_Changed" PreviewMouseRightButtonDown="Calls_RightClick" PreviewMouseWheel="Calls_Wheel" ScrollViewer.ScrollChanged="Calls_ScrollChanged"
-                 VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True">
+				 VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.CanContentScroll="True">
           <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}"><Setter Property="Height" Value="{StaticResource ExecutionRowHeight}"/></Style></ListBox.ItemContainerStyle>
         </ListBox>
+		<Button x:Name="HistoryRetryButton" Grid.Row="1" Content="历史加载失败，重试" Click="RetryHistory_Click" Visibility="Collapsed" VerticalAlignment="Top" HorizontalAlignment="Center"/>
         <StackPanel x:Name="EmptyPanel" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"><TextBlock x:Name="EmptyText" Text="暂无执行记录" Foreground="{DynamicResource SecondaryText}"/><Button Content="刷新" Click="Refresh_Click" Margin="0,8,0,0"/></StackPanel>
       </Grid>
       <Border x:Name="DetailsPanel" Grid.Row="6" Height="270" Visibility="Collapsed" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,1,0,0" Padding="18,5,18,12">
@@ -182,11 +194,25 @@
               <TextBox x:Name="InsertionTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinLines="2" MaxLines="5" MaxLength="8192" VerticalScrollBarVisibility="Auto" TextChanged="InsertionText_Changed" PreviewKeyDown="Insertion_KeyDown" ToolTip="补充要求；发送后等待下一次工具调用，5 分钟没有新调用则作废。Shift+Enter 换行。" AutomationProperties.Name="插入补充要求"/>
             </DockPanel>
             <TabControl x:Name="CallDetailsTabs" SelectionChanged="DetailTab_Changed" Visibility="Collapsed">
-              <TabItem Header="命令与输出"><DockPanel>
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,3,0,5"><Button Content="复制命令" Click="CopyCommand_Click" FontSize="12"/><Button Content="复制输出" Click="CopyOutput_Click" FontSize="12"/><Button Content="停止调用" Click="StopCall_Click" IsEnabled="{Binding CanStop}" FontSize="12"/><Button Content="审批" Click="Approve_Click" Visibility="{Binding NeedsApproval, Converter={StaticResource BoolVisibility}}" FontSize="12"/><Button Content="拒绝" Click="Reject_Click" Visibility="{Binding NeedsApproval, Converter={StaticResource BoolVisibility}}" FontSize="12"/><Button Content="重试说明" Click="RetryInstruction_Click" IsEnabled="{Binding CanRetry}" FontSize="12"/></StackPanel>
-                <TextBox DockPanel.Dock="Top" Text="{Binding Command, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="64" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" BorderThickness="0" Padding="4,0"/>
-                <TextBox Text="{Binding Output, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" BorderThickness="0" Padding="4,6"/>
-              </DockPanel></TabItem>
+			  <TabItem Header="调用与输出"><DockPanel>
+			    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,3,0,5"><Button Content="复制调用" Click="CopyCommand_Click" FontSize="12" ToolTip="复制当前已脱敏的调用参数页"/><Button Content="复制输出" Click="CopyOutput_Click" FontSize="12" ToolTip="复制当前已脱敏的输出页"/><Button Content="停止调用" Click="StopCall_Click" IsEnabled="{Binding CanStop}" FontSize="12"/><Button Content="审批" Click="Approve_Click" Visibility="{Binding NeedsApproval, Converter={StaticResource BoolVisibility}}" FontSize="12"/><Button Content="拒绝" Click="Reject_Click" Visibility="{Binding NeedsApproval, Converter={StaticResource BoolVisibility}}" FontSize="12"/><Button Content="重试说明" Click="RetryInstruction_Click" IsEnabled="{Binding CanRetry}" FontSize="12"/></StackPanel>
+			    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="1"/><ColumnDefinition Width="2*"/></Grid.ColumnDefinitions>
+			      <DockPanel Margin="0,0,8,0">
+			        <DockPanel DockPanel.Dock="Top"><TextBlock Text="调用" FontWeight="SemiBold" VerticalAlignment="Center"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><Button Content="‹" Tag="request:previous" Click="PayloadPage_Click" MinHeight="22" Padding="5,0" IsEnabled="{Binding RequestPayload.CanReadPrevious}" ToolTip="上一段调用参数"/><Button Content="›" Tag="request:next" Click="PayloadPage_Click" MinHeight="22" Padding="5,0" IsEnabled="{Binding RequestPayload.CanReadNext}" ToolTip="下一段调用参数"/></StackPanel></DockPanel>
+			        <TextBlock DockPanel.Dock="Top" Text="{Binding RequestPayload.Position}" Style="{StaticResource MutedText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding RequestPayload.Position}"/>
+			        <Button DockPanel.Dock="Top" Content="重试读取调用" Tag="request:retry" Click="PayloadPage_Click" Visibility="{Binding RequestPayload.HasReadError, Converter={StaticResource BoolVisibility}}" ToolTip="{Binding RequestPayload.Reason}"/>
+			        <TextBox x:Name="RequestPayloadText" Text="{Binding RequestText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Consolas, Microsoft YaHei UI" VerticalScrollBarVisibility="Auto" BorderThickness="0" Padding="4,6" AutomationProperties.Name="真实调用参数"/>
+			      </DockPanel>
+			      <Border Grid.Column="1" Background="{DynamicResource SeparatorBrush}"/>
+			      <DockPanel Grid.Column="2" Margin="8,0,0,0">
+			        <DockPanel DockPanel.Dock="Top"><TextBlock Text="输出" FontWeight="SemiBold" VerticalAlignment="Center"/><StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><Button Content="‹" Tag="response:previous" Click="PayloadPage_Click" MinHeight="22" Padding="5,0" IsEnabled="{Binding ResponsePayload.CanReadPrevious}" ToolTip="上一段输出"/><Button Content="›" Tag="response:next" Click="PayloadPage_Click" MinHeight="22" Padding="5,0" IsEnabled="{Binding ResponsePayload.CanReadNext}" ToolTip="下一段输出"/></StackPanel></DockPanel>
+			        <TextBlock DockPanel.Dock="Top" Text="{Binding ResponsePayload.Position}" Style="{StaticResource MutedText}" TextTrimming="CharacterEllipsis" ToolTip="{Binding ResponsePayload.Position}"/>
+			        <Button DockPanel.Dock="Top" Content="重试读取输出" Tag="response:retry" Click="PayloadPage_Click" Visibility="{Binding ResponsePayload.HasReadError, Converter={StaticResource BoolVisibility}}" ToolTip="{Binding ResponsePayload.Reason}"/>
+			        <Expander DockPanel.Dock="Bottom" Header="执行过程" MaxHeight="120" Visibility="{Binding HasSupplementalProgress, Converter={StaticResource BoolVisibility}}"><TextBox Text="{Binding ProgressOutput, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" BorderThickness="0"/></Expander>
+			        <TextBox x:Name="ResponsePayloadText" Text="{Binding Output, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Consolas, Microsoft YaHei UI" VerticalScrollBarVisibility="Auto" BorderThickness="0" Padding="4,6" AutomationProperties.Name="真实工具输出"/>
+			      </DockPanel>
+			    </Grid>
+			  </DockPanel></TabItem>
               <TabItem Header="来源"><TextBox x:Name="SourceDetailsText" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" BorderThickness="0"/></TabItem>
               <TabItem Header="子调用"><ListBox x:Name="ChildrenList" ItemsSource="{Binding Children}" ItemTemplate="{StaticResource CallRowTemplate}" SelectionChanged="ChildCall_Changed"/></TabItem>
               <TabItem Header="技术"><TextBox Text="{Binding Technical, Mode=OneWay}" IsReadOnly="True" FontFamily="Consolas" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" BorderThickness="0"/></TabItem>

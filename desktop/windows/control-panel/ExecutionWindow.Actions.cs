@@ -170,42 +170,6 @@ public partial class ExecutionWindow
         var change = ExecutionDialogs.Permissions(this, detail);
         if (change is not null) { await _client.ExecutionPostAsync("/internal/runtime/permissions", change, _lifetime.Token); await RefreshOverviewAsync(); Warn("权限设置已保存。"); }
     });
-    private async void Connection_Click(object sender, RoutedEventArgs e) => await GuardAsync(async () =>
-    {
-        ConnectionButton.IsEnabled = false;
-        try
-        {
-            var value = await _client.ExecutionGetAsync("/internal/runtime/execution/connection", _lifetime.Token);
-            var text = "本地执行流：" + (_streamConnected ? "已连接" : "重连中") + "\n" + value.Text("summary") + "\n" + value.Text("detail");
-            ShowInfo("连接", text + "\n\n正在检查公网访问…");
-            var manifestPath = Path.Combine(_runtime.RuntimeRoot, "runtime.json");
-            var publicState = "未配置公网地址";
-            if (File.Exists(manifestPath))
-            {
-                if (new FileInfo(manifestPath).Length > 1048576) throw new IOException("运行配置超过大小限制。");
-                using var manifest = JsonDocument.Parse(await File.ReadAllTextAsync(manifestPath, _lifetime.Token));
-                var origin = manifest.RootElement.Text("public_url", manifest.RootElement.Text("public_access_url"));
-                if (!string.IsNullOrWhiteSpace(origin))
-                {
-                    var probe = await _runtime.TestUrlAsync(origin, _lifetime.Token);
-                    publicState = (probe.Success ? "公网可达" : "公网不可达或检查未通过") + "\n" + probe.Message;
-                }
-            }
-            // Public discovery is independent of the latest authenticated client
-            // evidence. A successful anonymous probe never means reauthorization.
-            value = await _client.ExecutionGetAsync("/internal/runtime/execution/connection", _lifetime.Token);
-            if (InfoDetailsText.Visibility == Visibility.Visible && DetailsTitle.Text == "连接")
-                InfoDetailsText.Text = "本地执行流：" + (_streamConnected ? "已连接" : "重连中") + "\n" + value.Text("summary") + "\n" + value.Text("detail") + "\n\n" + publicState;
-        }
-        finally { ConnectionButton.IsEnabled = true; }
-    });
-    private void Theme_Click(object sender, RoutedEventArgs e)
-    {
-        var menu = Menu(Anchor(sender, ConversationHeader));
-        foreach (var choice in new[] { ("system", "跟随系统"), ("light", "浅色"), ("dark", "深色") })
-            ChoiceMenu(menu, choice.Item2, _preferences.Theme == choice.Item1, () => { ApplyTheme(choice.Item1); SavePreferences(); return Task.CompletedTask; });
-        OpenMenu(menu);
-    }
     private void SettingsMenu_Click(object sender, RoutedEventArgs e)
     {
         var menu = Menu(Anchor(sender, ConversationHeader));
@@ -240,7 +204,7 @@ public partial class ExecutionWindow
         if (_callView == "archived") ActionMenu(menu, "取消归档所选", () => BatchAsync("call", fixedIds, "unarchive"), fixedIds.Length > 0);
         OpenMenu(menu);
     }
-    private void CopyCommand_Click(object sender, RoutedEventArgs e) { if (_detailCall is { } row) CopyText(row.Command); }
+    private void CopyCommand_Click(object sender, RoutedEventArgs e) { if (_detailCall is { } row) CopyText(row.RequestText); }
     private void CopyOutput_Click(object sender, RoutedEventArgs e) { if (_detailCall is { } row) CopyText(row.Output); }
     private void CopyText(string value) { try { Clipboard.SetText(value); } catch (System.Runtime.InteropServices.ExternalException) { Warn("剪贴板正忙，请重试复制。"); } }
     private async void StopCall_Click(object sender, RoutedEventArgs e) { if (_detailCall is { CanStop:true } row) await GuardAsync(async () => { await _client.ExecutionPostAsync("/internal/runtime/calls/" + Escape(row.Id) + "/stop", new { }, _lifetime.Token); await LoadCallDetailAsync(row); }); }
