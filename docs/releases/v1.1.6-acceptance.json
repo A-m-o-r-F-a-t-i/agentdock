@@ -1,0 +1,1732 @@
+{
+  "schema_version": 1,
+  "version": "1.1.6",
+  "generated_at_utc": "2026-09-24T09:17:01.6847404Z",
+  "code_commit": "5f03d4fa59312b3365059c4902fa247b22dcadac",
+  "release_commit": null,
+  "release_ready": false,
+  "traceability_complete": false,
+  "source_summary": {
+    "available_plan": {
+      "name": "AgentDock_1.1.6_详细更新计划.md",
+      "library_version": 1,
+      "lines": 786,
+      "exact_items": 94,
+      "ranges": [
+        "A01-A18",
+        "U01-U12",
+        "F01-F14",
+        "P01-P30",
+        "M01-M14",
+        "G01-G06"
+      ]
+    },
+    "missing_plan": {
+      "expected_lines": 954,
+      "missing_exact_items": 32,
+      "ranges": [
+        "A19-A25",
+        "U13-U23",
+        "M15-M28"
+      ],
+      "known_scope_summary": [
+        "真实输入与输出",
+        "调用开始展示",
+        "全部折叠",
+        "模板兼容",
+        "双通道插入"
+      ],
+      "rule": "Do not invent or paraphrase missing item text as exact acceptance requirements."
+    }
+  },
+  "local_validation": {
+    "windows_go_full": "passed",
+    "go_vet": "passed",
+    "activity_race": "passed",
+    "desktop_offscreen": {
+      "status": "passed",
+      "assertions": 14445,
+      "rendered_samples": 36
+    },
+    "desktop_policy": {
+      "status": "passed",
+      "assertions": 674
+    },
+    "installer_static_contract": "passed",
+    "context": {
+      "status": "passed",
+      "samples": 960,
+      "failures": 0,
+      "hot_p50_max_ms": 82.2017,
+      "hot_p95_max_ms": 172.2788,
+      "cold_p95_max_ms": 1169.1755,
+      "concurrent_hot_p95_max_ms": 658.2627
+    },
+    "mcp": {
+      "status": "passed",
+      "samples": 121,
+      "failures": 0,
+      "cold_p95_ms": 574.2563,
+      "hot_p95_ms": 380.123
+    }
+  },
+  "remote_validation": {
+    "candidate_run_id": null,
+    "candidate_status": "pending",
+    "formal_run_id": null,
+    "formal_status": "pending",
+    "release_url": null
+  },
+  "items": [
+    {
+      "id": "A01",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A02",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A03",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A04",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A05",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A06",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A07",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A08",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A09",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A10",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A11",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A12",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A13",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A14",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A15",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A16",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A17",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "A18",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.1；A01-A18",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "internal/activity",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "U01",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "U02",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "U03",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "U04",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "U05",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "U06",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "U07",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "U08",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "U09",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "U10",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "U11",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "U12",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.2；U01-U12",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "desktop/windows/control-panel-layout-tests",
+        "desktop/windows/control-panel-tests"
+      ]
+    },
+    {
+      "id": "F01",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F02",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F03",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F04",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F05",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F06",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F07",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F08",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F09",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F10",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F11",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F12",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F13",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "F14",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.3；F01-F14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/release-validation.md",
+        "internal/tool/file",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P01",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P02",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P03",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P04",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P05",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P06",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P07",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P08",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P09",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P10",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P11",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P12",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P13",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P14",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P15",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P16",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P17",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P18",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P19",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P20",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P21",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P22",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P23",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P24",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P25",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P26",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P27",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P28",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P29",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "P30",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.4；P01-P30",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/context-performance.md",
+        "docs/validation/1.1.6/context-root-samples.json",
+        "internal/app",
+        "internal/activity"
+      ]
+    },
+    {
+      "id": "M01",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M02",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M03",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M04",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M05",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M06",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M07",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M08",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M09",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M10",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M11",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M12",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M13",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "M14",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.5；M01-M14",
+      "automated": true,
+      "status": "passed_local_automated",
+      "evidence": [
+        "docs/validation/1.1.6/mcp-catalog.md",
+        "docs/validation/1.1.6/mcp-discovery-end-to-end.json",
+        "internal/mcp",
+        "internal/app"
+      ]
+    },
+    {
+      "id": "G01",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.6；G01-G06",
+      "automated": true,
+      "status": "pending_remote_candidate",
+      "evidence": [
+        ".github/workflows/windows-package.yml",
+        "docs/validation/1.1.6/release-validation.md"
+      ]
+    },
+    {
+      "id": "G02",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.6；G01-G06",
+      "automated": true,
+      "status": "pending_remote_candidate",
+      "evidence": [
+        ".github/workflows/windows-package.yml",
+        "docs/validation/1.1.6/release-validation.md"
+      ]
+    },
+    {
+      "id": "G03",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.6；G01-G06",
+      "automated": true,
+      "status": "pending_remote_candidate",
+      "evidence": [
+        ".github/workflows/windows-package.yml",
+        "docs/validation/1.1.6/release-validation.md"
+      ]
+    },
+    {
+      "id": "G04",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.6；G01-G06",
+      "automated": true,
+      "status": "pending_remote_candidate",
+      "evidence": [
+        ".github/workflows/windows-package.yml",
+        "docs/validation/1.1.6/release-validation.md"
+      ]
+    },
+    {
+      "id": "G05",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.6；G01-G06",
+      "automated": true,
+      "status": "pending_remote_candidate",
+      "evidence": [
+        ".github/workflows/windows-package.yml",
+        "docs/validation/1.1.6/release-validation.md"
+      ]
+    },
+    {
+      "id": "G06",
+      "details": null,
+      "source_text": "available-in-library-plan-v1",
+      "source_locator": "旧版计划 §10.6；G01-G06",
+      "automated": true,
+      "status": "pending_remote_candidate",
+      "evidence": [
+        ".github/workflows/windows-package.yml",
+        "docs/validation/1.1.6/release-validation.md"
+      ]
+    },
+    {
+      "id": "A19",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "A20",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "A21",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "A22",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "A23",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "A24",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "A25",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "U13",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "U14",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "U15",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "U16",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "U17",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "U18",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "U19",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "U20",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "U21",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "U22",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "U23",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M15",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M16",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M17",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M18",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M19",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M20",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M21",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M22",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M23",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M24",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M25",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M26",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M27",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    },
+    {
+      "id": "M28",
+      "details": null,
+      "source_text": "unavailable",
+      "source_locator": "新版 954 行计划未取得；仅有范围摘要，禁止补写原文",
+      "automated": null,
+      "status": "source_missing",
+      "evidence": [
+        "docs/releases/v1.1.6.md"
+      ]
+    }
+  ],
+  "limitations": [
+    "The exact text for 32 newly added acceptance items was not available; those entries remain source_missing.",
+    "Offscreen WPF does not replace physical-display DPI, keyboard, or accessibility acceptance.",
+    "No installer, upgraded desktop binary, production process replacement, or real ChatGPT host/model behavior was exercised on the user computer.",
+    "ARM64 and Linux behavior require the GitHub Actions candidate jobs; local Windows validation does not substitute for them."
+  ]
+}

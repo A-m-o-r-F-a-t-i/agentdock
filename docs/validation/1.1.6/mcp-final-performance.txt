@@ -1,0 +1,7 @@
+=== RUN   TestMCPDiscoveryEndToEndPerformance
+    mcp_catalog_performance_test.go:149: map[count:21 failures:0 inspect_full_200_p95_ms:176.0315 list_p95_ms:157.643 max_ms:707.4972 mode:cold p50_ms:323.119 p95_ms:574.2563]
+    mcp_catalog_performance_test.go:149: map[count:100 failures:0 inspect_full_200_p95_ms:117.0558 list_p95_ms:77.2331 max_ms:418.2761 mode:hot p50_ms:289.0056 p95_ms:380.123]
+    mcp_catalog_performance_test.go:149: map[count:100 failures:0 inspect_full_200_p95_ms:117.0558 list_p95_ms:77.2331 max_ms:418.2761 mode:warm-total p50_ms:289.0056 p95_ms:380.123]
+--- PASS: TestMCPDiscoveryEndToEndPerformance (40.67s)
+PASS
+ok  	github.com/uvwt/agentdock/internal/app	40.775s

@@ -1,0 +1,23 @@
+=== RUN   TestContextPerformanceSamples
+=== RUN   TestContextPerformanceSamples/none
+=== RUN   TestContextPerformanceSamples/actual-shape
+=== RUN   TestContextPerformanceSamples/large-160
+=== NAME  TestContextPerformanceSamples
+    context_performance_test.go:135: none cold n=20 failures=0 P50=64.841 P95=74.986 max=75.117 ms
+    context_performance_test.go:135: none hot n=100 failures=0 P50=75.487 P95=172.279 max=231.146 ms
+    context_performance_test.go:135: none concurrent-cold n=100 failures=0 P50=496.103 P95=637.050 max=667.702 ms
+    context_performance_test.go:135: none concurrent-hot n=100 failures=0 P50=527.217 P95=658.263 max=674.300 ms
+    context_performance_test.go:135: actual-shape cold n=20 failures=0 P50=507.058 P95=698.383 max=2642.981 ms
+    context_performance_test.go:135: actual-shape hot n=100 failures=0 P50=66.531 P95=124.358 max=219.338 ms
+    context_performance_test.go:135: actual-shape concurrent-cold n=100 failures=0 P50=705.156 P95=850.527 max=899.126 ms
+    context_performance_test.go:135: actual-shape concurrent-hot n=100 failures=0 P50=478.481 P95=641.355 max=687.678 ms
+    context_performance_test.go:135: large-160 cold n=20 failures=0 P50=1004.465 P95=1169.176 max=1192.840 ms
+    context_performance_test.go:135: large-160 hot n=100 failures=0 P50=82.202 P95=161.508 max=212.013 ms
+    context_performance_test.go:135: large-160 concurrent-cold n=100 failures=0 P50=1215.872 P95=1637.631 max=1696.202 ms
+    context_performance_test.go:135: large-160 concurrent-hot n=100 failures=0 P50=511.827 P95=641.096 max=692.765 ms
+--- PASS: TestContextPerformanceSamples (140.78s)
+    --- PASS: TestContextPerformanceSamples/none (24.20s)
+    --- PASS: TestContextPerformanceSamples/actual-shape (44.78s)
+    --- PASS: TestContextPerformanceSamples/large-160 (71.76s)
+PASS
+ok  	github.com/uvwt/agentdock/internal/app	140.902s

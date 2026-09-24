@@ -1,0 +1,15 @@
+Final performance isolation preflight
+started_utc=2026-09-24T09:10:15.1890667Z
+head=5f03d4fa59312b3365059c4902fa247b22dcadac
+status=
+preexisting_go_processes=0
+idle_probe_utc=2026-09-24T09:10:17.3911052Z cpu_percent=2
+idle_probe_utc=2026-09-24T09:10:19.7067939Z cpu_percent=1
+idle_probe_utc=2026-09-24T09:10:22.0171305Z cpu_percent=0
+idle_probe_utc=2026-09-24T09:10:24.3005870Z cpu_percent=1
+idle_probe_utc=2026-09-24T09:10:26.5995386Z cpu_percent=6
+context_started_utc=2026-09-24T09:10:26.6021332Z
+context_exit_code=0
+mcp_started_utc=2026-09-24T09:12:49.1687968Z
+mcp_exit_code=0
+completed_utc=2026-09-24T09:13:31.5825951Z
