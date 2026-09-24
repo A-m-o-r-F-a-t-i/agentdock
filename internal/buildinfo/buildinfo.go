@@ -8,7 +8,7 @@ import (
 	"github.com/uvwt/agentdock/internal/executioncompat"
 )
 
-const Version = "1.1.5"
+const Version = "1.1.6"
 
 var (
 	Commit    string

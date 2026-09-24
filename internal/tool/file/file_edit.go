@@ -17,7 +17,8 @@ func (svc *Service) Edit(ctx context.Context, request EditRequest) (Result, erro
 		return nil, err
 	}
 	if selection.isWSL() {
-		return svc.fileEditWSL(ctx, request, selection)
+		result, failure := svc.fileEditWSL(ctx, request, selection)
+		return finishEditStatistics(result, failure, request.DryRun), failure
 	}
 
 	action := strings.ToLower(strings.TrimSpace(request.Action))
@@ -39,9 +40,8 @@ func (svc *Service) Edit(ctx context.Context, request EditRequest) (Result, erro
 	default:
 		return nil, toolErrorDetails("INVALID_ACTION", "unsupported file_edit action", "validation", map[string]any{"action": action, "allowed": []string{"replace", "patch", "add", "delete", "move"}})
 	}
-	if result != nil {
-		result["action"] = action
-	}
+	result = finishEditStatistics(result, err, request.DryRun)
+	result["action"] = action
 	return addFileRuntimeResult(result, selection), err
 }
 
@@ -135,6 +135,20 @@ func (svc *Service) fileEditDelete(request EditRequest) (Result, error) {
 		return nil, toolErrorDetails("IS_DIRECTORY", "directory deletion requires recursive=true", "validation", map[string]any{"path": p.Display})
 	}
 	result := Result{"action": "delete", "path": p.Display, "dry_run": dryRun, "changed": true, "recursive": recursive, "summary": "deleted " + p.Display}
+	// Text deletion uses the same byte-verified transaction as replacements.
+	// Unsupported binary/directory deletion retains its existing behavior and
+	// does not invent a count of text lines.
+	if snapshot.Info.Mode().IsRegular() {
+		info, data, readErr := readPatchFile(p.Abs)
+		if readErr == nil {
+			result["files_changed"], result["insertions"], result["deletions"] = 1, 0, logicalLineCount(string(data))
+			if dryRun {
+				return result, nil
+			}
+			staged := map[string]stagedPatchFile{p.Abs: {Abs: p.Abs, Display: p.Display, Mode: info.Mode().Perm(), Original: data, OriginalExists: true}}
+			return result, commitStagedPatch(staged)
+		}
+	}
 	if dryRun {
 		return result, nil
 	}
@@ -226,10 +240,28 @@ func (svc *Service) fileEditMove(request EditRequest) (Result, error) {
 	}
 	changed := src.Abs != dest.Abs
 	result := Result{"action": "move", "path": src.Display, "new_path": dest.Display, "dry_run": dryRun, "changed": changed, "summary": "moved " + src.Display + " to " + dest.Display}
+	if !dest.Exists || !changed {
+		result["insertions"], result["deletions"] = 0, 0
+		result["files_changed"] = 0
+		if changed {
+			result["files_changed"] = 1
+		}
+	} else if dryRun {
+		if _, content, err := readPatchFile(dest.Abs); err == nil {
+			result["insertions"], result["deletions"], result["files_changed"] = 0, logicalLineCount(string(content)), 2
+		}
+	}
 	if dryRun || !changed {
 		return result, nil
 	}
-	if err := movePathWithRollback(src.Abs, dest.Abs, dest.Exists && overwrite, os.Rename, renameNoReplace); err != nil {
+	observeOverwrite := func(backupPath string) {
+		if _, content, err := readPatchFile(backupPath); err == nil {
+			// The source is relocated unchanged. The old destination is the only
+			// text removed by this operation, and is read from the actual backup.
+			result["insertions"], result["deletions"], result["files_changed"] = 0, logicalLineCount(string(content)), 2
+		}
+	}
+	if err := movePathWithRollback(src.Abs, dest.Abs, dest.Exists && overwrite, os.Rename, renameNoReplace, observeOverwrite); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -271,7 +303,7 @@ func verifyMovedSource(src, dest, backupPath string, expected fileSnapshot, inst
 	return conflict
 }
 
-func movePathWithRollback(src, dest string, replace bool, rename, installNoReplace func(string, string) error) error {
+func movePathWithRollback(src, dest string, replace bool, rename, installNoReplace func(string, string) error, observers ...func(string)) error {
 	expectedSource, err := captureFileSnapshot(src)
 	if err != nil {
 		return fmt.Errorf("inspect move source: %w", err)
@@ -311,6 +343,9 @@ func movePathWithRollback(src, dest string, replace bool, rename, installNoRepla
 	}
 	if err := verifyMovedSource(src, dest, backupPath, expectedSource, installNoReplace, cleanupBackupDir); err != nil {
 		return err
+	}
+	for _, observe := range observers {
+		observe(backupPath)
 	}
 	if err := cleanupBackupDir(); err != nil {
 		slog.Warn("remove committed move backup failed", "path", backupDir, "error", err)

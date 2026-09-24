@@ -8,21 +8,21 @@ import (
 )
 
 const (
-	SidebarRecentWindow  = 72 * time.Hour
+	SidebarRecentWindow  = 120 * time.Second
 	SidebarDefaultLimit  = 5
-	SidebarExpandedLimit = 15
-	SidebarPageSize      = 200
-	SidebarMaxItems      = 20000
+	SidebarExpandedLimit = 20
+	SidebarPageSize      = 20
+	SidebarMaxItems      = 20000 // Maximum number of project selectors, not history rows.
 )
 
-// Each project has its own bounded window. Every response is one snapshot;
-// scrolling requests a longer prefix, so changing activity cannot invalidate
-// an offset or hide a project behind a global conversation limit.
 type SidebarRequest struct {
-	View       string         `json:"view"`
-	Search     string         `json:"search"`
-	Limits     map[string]int `json:"limits,omitempty"`
-	SelectedID string         `json:"selected_id,omitempty"`
+	View        string            `json:"view"`
+	Search      string            `json:"search"`
+	Limits      map[string]int    `json:"limits,omitempty"`
+	Modes       map[string]string `json:"modes,omitempty"`
+	Cursors     map[string]string `json:"cursors,omitempty"`
+	DefaultMode string            `json:"default_mode,omitempty"`
+	SelectedID  string            `json:"selected_id,omitempty"`
 }
 
 type SidebarGroup struct {
@@ -35,10 +35,15 @@ type SidebarGroup struct {
 	Conversations  []ConversationItem `json:"conversations"`
 	HasMore        bool               `json:"has_more"`
 	Shown          int                `json:"shown"`
+	Mode           string             `json:"mode"`
+	HistoryCursor  string             `json:"history_cursor,omitempty"`
+	HistoryReset   bool               `json:"history_reset,omitempty"`
+	HistoryLimit   int                `json:"history_limit,omitempty"`
 }
 
 type SidebarPage struct {
 	ServerNow time.Time         `json:"server_now"`
+	LatestSeq uint64            `json:"latest_seq"`
 	Groups    []SidebarGroup    `json:"groups"`
 	Selected  *ConversationItem `json:"selected,omitempty"`
 	Total     int               `json:"total"`
@@ -57,16 +62,46 @@ func conversationWorkspace(item ConversationItem) string {
 	return "unassigned"
 }
 
+func sidebarActive(item ConversationItem, now time.Time) bool {
+	if item.IsUnattributed || item.TerminatedAt != nil || item.TrashedAt != nil {
+		return false
+	}
+	if item.InFlight {
+		return true
+	}
+	return !item.LastActivityAt.IsZero() && !item.LastActivityAt.After(now) && now.Sub(item.LastActivityAt) < SidebarRecentWindow
+}
+
 func (r *Runtime) RuntimeConversationSidebar(ctx context.Context, request SidebarRequest) (SidebarPage, error) {
 	result := SidebarPage{ServerNow: time.Now().UTC(), Groups: []SidebarGroup{}}
-	if len(request.Limits) > SidebarMaxItems {
-		return result, errors.New("too many sidebar project windows")
+	if len(request.Limits) > SidebarMaxItems || len(request.Modes) > SidebarMaxItems || len(request.Cursors) > SidebarMaxItems {
+		return result, errors.New("too many sidebar project selectors")
 	}
 	for _, count := range request.Limits {
-		if count < 0 || count != 0 && count != SidebarExpandedLimit && count%SidebarPageSize != 0 {
-			return result, errors.New("sidebar limits must be 0, 15 or a positive multiple of 200")
+		if count < 0 || count != 0 && count != SidebarDefaultLimit && count%SidebarPageSize != 0 {
+			return result, errors.New("sidebar limits must be 0, 5, or a positive multiple of 20")
 		}
 	}
+	if request.DefaultMode != "" && request.DefaultMode != "auto" && request.DefaultMode != "collapsed" {
+		return result, errors.New("invalid default sidebar mode")
+	}
+	for _, mode := range request.Modes {
+		if mode != "auto" && mode != "collapsed" && mode != "history" {
+			return result, errors.New("invalid project sidebar mode")
+		}
+	}
+	for _, cursor := range request.Cursors {
+		if len(cursor) > 64 {
+			return result, errors.New("invalid sidebar history cursor")
+		}
+	}
+	// Capture the stream boundary first: a call arriving during projection is
+	// either in this snapshot or replayed after this cursor, never missed.
+	cursor, err := r.activity.CallCursor(ctx)
+	if err != nil {
+		return result, err
+	}
+	result.LatestSeq = cursor
 	page, err := r.RuntimeConversations(ctx, ExecutionListQuery{View: request.View, Search: request.Search, snapshot: true})
 	if err != nil {
 		return result, err
@@ -89,6 +124,22 @@ func (r *Runtime) RuntimeConversationSidebar(ctx context.Context, request Sideba
 			result.Selected = &copy
 		}
 	}
+	// A search result is navigation only. Keep the right-hand conversation even
+	// when it is no longer among the search or activity rows.
+	if result.Selected == nil && request.SelectedID != "" {
+		if selected, err := r.conversations.Get(ctx, request.SelectedID); err == nil {
+			_, stats, err := r.activity.CallStatistics(ctx)
+			if err != nil {
+				return result, err
+			}
+			summary := stats[selected.ID]
+			last := time.Time{}
+			if summary.LastActivityAt != nil {
+				last = *summary.LastActivityAt
+			}
+			result.Selected = &ConversationItem{Conversation: selected, Statistics: summary, LastActivityAt: last, InFlight: r.confirmedConversationActivity()[selected.ID]}
+		}
+	}
 	for id, items := range grouped {
 		if err := ctx.Err(); err != nil {
 			return result, err
@@ -104,7 +155,47 @@ func (r *Runtime) RuntimeConversationSidebar(ctx context.Context, request Sideba
 			title = "未关联项目"
 		}
 		group := SidebarGroup{ID: id, Title: title, Root: roots[id], Total: len(items), Conversations: []ConversationItem{}}
-		projectSidebarRows(&group, items, request.Limits[id], request.Search, request.View, result.ServerNow)
+		mode, limit := request.Modes[id], request.Limits[id]
+		if mode == "" {
+			mode = request.DefaultMode
+			if mode == "" {
+				mode = "auto"
+			}
+			if limit > 0 {
+				mode = "history"
+			}
+		}
+		if mode == "auto" && (request.Search != "" || request.View == "archived" || request.View == "trash") {
+			mode = "history"
+			if limit == 0 {
+				limit = 200
+			}
+		}
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].LastActivityAt.Equal(items[j].LastActivityAt) {
+				return items[i].ID < items[j].ID
+			}
+			return items[i].LastActivityAt.After(items[j].LastActivityAt)
+		})
+		group.Mode = mode
+		projectSidebarRows(&group, items, limit, "", "active", result.ServerNow)
+		if mode == "collapsed" {
+			group.Conversations = []ConversationItem{}
+			group.HasMore = false
+		}
+		if mode == "history" {
+			if limit == 0 {
+				limit = SidebarDefaultLimit
+			}
+			ordered, arrivals, token, reset, err := r.sidebarHistory.order(id+"\x00"+request.View+"\x00"+request.Search, request.Cursors[id], items, result.ServerNow)
+			if err != nil {
+				return result, err
+			}
+			group.Conversations = append(arrivals, ordered[:min(limit, len(ordered))]...)
+			group.HistoryCursor, group.HistoryReset, group.HistoryLimit = token, reset, limit
+			group.HasMore = len(ordered) > limit
+		}
+		group.Shown = len(group.Conversations)
 		result.Groups = append(result.Groups, group)
 	}
 	sort.Slice(result.Groups, func(i, j int) bool {
@@ -118,26 +209,25 @@ func (r *Runtime) RuntimeConversationSidebar(ctx context.Context, request Sideba
 }
 
 func projectSidebarRows(group *SidebarGroup, items []ConversationItem, limit int, search, view string, now time.Time) {
-	recentOnly := limit == 0 && search == "" && view != "archived" && view != "trash"
-	if limit == 0 {
-		if recentOnly {
-			limit = SidebarDefaultLimit
-		} else {
-			limit = SidebarPageSize
-		}
+	history := group.Mode == "history" || group.Mode == "" && (limit > 0 || search != "" || view == "archived" || view == "trash")
+	if history && limit == 0 {
+		limit = 200
 	}
 	for _, item := range items {
 		if item.LastActivityAt.After(group.LastActivityAt) {
 			group.LastActivityAt = item.LastActivityAt
 		}
-		recent := !item.LastActivityAt.IsZero() && !item.LastActivityAt.Before(now.Add(-SidebarRecentWindow)) && !item.LastActivityAt.After(now)
-		if recent {
+		active := sidebarActive(item, now)
+		if active {
 			group.RecentCount++
 		}
-		if len(group.Conversations) < limit && (!recentOnly || recent) {
+		if group.Mode == "collapsed" {
+			continue
+		}
+		if history && len(group.Conversations) < limit || !history && active {
 			group.Conversations = append(group.Conversations, item)
 		}
 	}
 	group.Shown = len(group.Conversations)
-	group.HasMore = group.Shown < group.Total
+	group.HasMore = history && group.Shown < group.Total
 }

@@ -219,6 +219,26 @@ func (svc *Service) CallActivityRunning(callID string) bool {
 	}
 	return false
 }
+
+// ActiveConversationBindings is an in-memory, non-consuming liveness snapshot.
+// A stale durable 'running' label cannot keep a project open indefinitely.
+func (svc *Service) ActiveConversationBindings() []activity.Binding {
+	svc.activityMu.Lock()
+	commands := make([]*session.Session, 0, len(svc.activeCommands))
+	for _, command := range svc.activeCommands {
+		commands = append(commands, command)
+	}
+	svc.activityMu.Unlock()
+	result := make([]activity.Binding, 0, len(commands))
+	for _, command := range commands {
+		select {
+		case <-command.Done:
+		default:
+			result = append(result, command.Summary().Binding)
+		}
+	}
+	return result
+}
 func (svc *Service) StopActivityCall(ctx context.Context, callID string) (bool, error) {
 	svc.activityMu.Lock()
 	var target *session.Session

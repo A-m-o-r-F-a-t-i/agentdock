@@ -128,7 +128,7 @@ func (svc *Service) applyEnvelopePatch(patch string, dryRun bool, basePath strin
 				return nil, err
 			}
 			staged[source.Abs] = stagedPatchFile{Abs: source.Abs, Display: source.Display, Mode: current.Mode, Original: current.Original, OriginalExists: true}
-			staged[dest.Abs] = stagedPatchFile{Abs: dest.Abs, Display: dest.Display, Content: &updated, Mode: current.Mode}
+			staged[dest.Abs] = stagedPatchFile{Abs: dest.Abs, Display: dest.Display, Content: &updated, Mode: current.Mode, MoveFrom: source.Abs}
 			affected = append(affected, map[string]any{"path": source.Display, "operation": "move", "move_to": dest.Display})
 			summaries = append(summaries, "R "+source.Display+" -> "+dest.Display)
 		}
@@ -136,7 +136,8 @@ func (svc *Service) applyEnvelopePatch(patch string, dryRun bool, basePath strin
 	if len(affected) == 0 {
 		return nil, toolError("PATCH_FAILED", "no files were modified", "validation")
 	}
-	diffPreview, diffTruncated, stats, err := stagedDiffPreview(staged, 65536)
+	fileStatistics := []editFileStatistics{}
+	diffPreview, diffTruncated, stats, err := stagedDiffPreview(staged, 65536, &fileStatistics)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +146,7 @@ func (svc *Service) applyEnvelopePatch(patch string, dryRun bool, basePath strin
 			return nil, err
 		}
 	}
-	return Result{"dry_run": dryRun, "workdir": basePath, "affected_files": affected, "summary": strings.Join(summaries, "\n"), "diff_preview": diffPreview, "truncated": diffTruncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
+	return Result{"dry_run": dryRun, "workdir": basePath, "affected_files": affected, "file_statistics": fileStatistics, "summary": strings.Join(summaries, "\n"), "diff_preview": diffPreview, "truncated": diffTruncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
 }
 
 func ensurePatchPathUnused(staged map[string]stagedPatchFile, absPath, displayPath string) error {

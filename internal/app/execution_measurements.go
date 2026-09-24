@@ -13,9 +13,10 @@ import (
 )
 
 func (r *Runtime) recordRPCReturn(binding activity.Binding, tool string, received time.Time, result Result, failure error) error {
-	completed := time.Now()
-	elapsed := completed.Sub(received).Milliseconds()
-	stamp := completed.UTC()
+	return r.recordRPCReturnStatus(binding, tool, received, rpcReturnStatus(result, failure))
+}
+
+func rpcReturnStatus(result Result, failure error) string {
 	status := "succeeded"
 	if failure != nil || resultReportsFailure(result) || result["command_ok"] == false {
 		status = "failed"
@@ -26,6 +27,13 @@ func (r *Runtime) recordRPCReturn(binding activity.Binding, tool string, receive
 	if stringArg(result, "status") == "pending_approval" {
 		status = "pending_approval"
 	}
+	return status
+}
+
+func (r *Runtime) recordRPCReturnStatus(binding activity.Binding, tool string, received time.Time, status string) error {
+	completed := time.Now()
+	elapsed := completed.Sub(received).Milliseconds()
+	stamp := completed.UTC()
 	event := activity.Event{Binding: binding, Kind: "call.rpc_returned", ToolName: tool}
 	event.RPCCompletedAt, event.RPCElapsedMS, event.RPCStatus = &stamp, &elapsed, status
 	return r.appendExecution(event)
@@ -61,9 +69,31 @@ func (r *Runtime) fileEditDetails(args map[string]any, result Result, state exec
 		}
 	}
 	details.Insertions, details.Deletions = measuredInt(result, "insertions"), measuredInt(result, "deletions")
+	details.StatsState = stringArg(result, "stats_state")
+	if details.DryRun {
+		details.StatsState = "preview"
+		details.ProposedInsertions, details.ProposedDeletions = details.Insertions, details.Deletions
+		details.Insertions, details.Deletions = nil, nil
+	} else if !state.executed && failure != nil {
+		zero := 0
+		details.StatsState = "known"
+		details.Insertions, details.Deletions = &zero, &zero
+	} else if details.StatsState == "" {
+		details.StatsState = "unknown"
+		if details.Insertions != nil && details.Deletions != nil && failure == nil {
+			details.StatsState = "known"
+		}
+	}
+	if details.StatsState != "known" && details.StatsState != "partial" {
+		details.Insertions, details.Deletions = nil, nil
+	}
 	details.DiffPreview = r.executionRedactor(args).Text(stringArg(result, "diff_preview"), 2048)
 	details.DiffTruncated = result["truncated"] == true || len(stringArg(result, "diff_preview")) > 2048
-	value := reflect.ValueOf(result["affected_files"])
+	rawFiles := result["file_statistics"]
+	if rawFiles == nil {
+		rawFiles = result["affected_files"]
+	}
+	value := reflect.ValueOf(rawFiles)
 	if value.IsValid() && value.Kind() == reflect.Slice {
 		count := value.Len()
 		details.AffectedCount = &count
@@ -103,6 +133,14 @@ func (r *Runtime) fileEditDetails(args map[string]any, result Result, state exec
 	for index := range details.AffectedFiles {
 		file := &details.AffectedFiles[index]
 		file.Path, file.MoveTo = relative(file.Path), relative(file.MoveTo)
+		file.StatsState = details.StatsState
+		if details.DryRun {
+			file.ProposedInsertions, file.ProposedDeletions = file.Insertions, file.Deletions
+			file.Insertions, file.Deletions = nil, nil
+		}
+		if details.StatsState != "known" && details.StatsState != "partial" {
+			file.Insertions, file.Deletions = nil, nil
+		}
 	}
 	return details
 }

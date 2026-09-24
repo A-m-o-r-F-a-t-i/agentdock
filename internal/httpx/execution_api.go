@@ -475,6 +475,31 @@ func (h *activityHTTP) serveExecution(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if parts[0] == "calls" {
+		if len(parts) == 4 && parts[2] == "payload" {
+			if !require("GET") {
+				return
+			}
+			offset := int64(0)
+			var err error
+			if raw := r.URL.Query().Get("offset"); raw != "" {
+				offset, err = strconv.ParseInt(raw, 10, 64)
+			}
+			if err != nil || offset < 0 {
+				executionError(w, errors.New("invalid payload offset"))
+				return
+			}
+			limit := 32768
+			if raw := r.URL.Query().Get("limit"); raw != "" {
+				limit, err = strconv.Atoi(raw)
+			}
+			if err != nil || limit < 4 || limit > 262144 {
+				executionError(w, errors.New("payload limit must be 4..262144 bytes"))
+				return
+			}
+			page, err := h.runtime.ActivityJournal().ReadCallPayload(ctx, parts[1], parts[3], offset, limit)
+			finish(page, err)
+			return
+		}
 		if len(parts) == 2 && parts[1] == "batch" {
 			if !require("POST") {
 				return

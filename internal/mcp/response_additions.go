@@ -13,7 +13,12 @@ import (
 // finishResponse is the one adapter boundary for SDK and direct Bridge calls.
 // Validate business content before committing the local queue reservation. The
 // final append contains only locally constructed, JSON-safe strings and numbers.
-func (s *Server) finishResponse(ctx context.Context, name string, arguments map[string]any, pending *app.ToolResponse, original map[string]any) (map[string]any, error) {
+func (s *Server) finishResponse(ctx context.Context, name string, arguments map[string]any, pending *app.ToolResponse, original map[string]any) (out map[string]any, returnErr error) {
+	defer func() {
+		if returnErr != nil {
+			s.runtime.RecordToolResponse(pending, map[string]any{"isError": true, "error": returnErr.Error(), "output_state": "not_stored"})
+		}
+	}()
 	encoded, err := json.Marshal(original)
 	if err != nil {
 		return nil, fmt.Errorf("encode MCP tool result: %w", err)
@@ -48,6 +53,7 @@ func (s *Server) finishResponse(ctx context.Context, name string, arguments map[
 	if !s.uiEnabled() {
 		envelope = filterTextOnlyEnvelope(envelope, name == "mcp_tool_call")
 	}
+	s.runtime.RecordToolResponse(pending, envelope)
 	return envelope, nil
 }
 

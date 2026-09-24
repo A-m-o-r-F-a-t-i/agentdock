@@ -401,7 +401,7 @@ func pathExistsLexically(path string) bool {
 	return err == nil
 }
 
-func rollbackTransaction(journal transactionJournal, ops transactionOps) []string {
+func rollbackTransaction(journal transactionJournal, ops transactionOps, removed ...map[string]bool) []string {
 	rollbackErrors := make([]string, 0)
 	for index := len(journal.Items) - 1; index >= 0; index-- {
 		item := journal.Items[index]
@@ -435,10 +435,14 @@ func rollbackTransaction(journal transactionJournal, ops transactionOps) []strin
 			case installedUnchanged:
 				if err := os.Remove(item.Path); err != nil {
 					rollbackErrors = append(rollbackErrors, fmt.Sprintf("remove partially installed %s: %v", item.Path, err))
-				} else if err := ops.fsyncDirStrict(filepath.Dir(item.Path)); err != nil {
-					rollbackErrors = append(rollbackErrors, fmt.Sprintf("fsync patch directory %s: %v", filepath.Dir(item.Path), err))
 				} else {
 					targetExists = false
+					for _, paths := range removed {
+						paths[item.Path] = true
+					}
+					if err := ops.fsyncDirStrict(filepath.Dir(item.Path)); err != nil {
+						rollbackErrors = append(rollbackErrors, fmt.Sprintf("fsync patch directory %s: %v", filepath.Dir(item.Path), err))
+					}
 				}
 			default:
 				rollbackErrors = append(rollbackErrors, "patched target changed during rollback; preserving current file: "+item.Path)
@@ -567,12 +571,28 @@ func ensureDirectory(path string) error {
 	return nil
 }
 
-func patchTransaction(req *Request, ops transactionOps) (*Response, error) {
+func patchTransaction(req *Request, ops transactionOps) (response *Response, returnErr error) {
+	unchanged := true
+	defer func() {
+		if returnErr == nil {
+			return
+		}
+		failure := failureFrom(returnErr)
+		details := make(map[string]any, len(failure.Details)+1)
+		for key, value := range failure.Details {
+			details[key] = value
+		}
+		details["edit_outcome"] = "unknown"
+		if unchanged {
+			details["edit_outcome"] = "unchanged"
+		}
+		returnErr = &ToolFailure{Code: failure.Code, Message: failure.Message, Details: details}
+	}()
 	workdir, err := checkedPath(req.Workdir, false)
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureDirectory(workdir); err != nil {
+	if err := ensureTransactionScope(workdir); err != nil {
 		return nil, err
 	}
 	stateDir, err := transactionStateDir(workdir)
@@ -610,6 +630,7 @@ func patchTransaction(req *Request, ops transactionOps) (*Response, error) {
 		return nil, err
 	}
 
+	installedPaths, backedUpPaths := map[string]bool{}, map[string]bool{}
 	commitErr := func() error {
 		for _, directory := range plannedDirs {
 			if err := os.Mkdir(directory, 0o755); err != nil {
@@ -651,6 +672,7 @@ func patchTransaction(req *Request, ops transactionOps) (*Response, error) {
 		}
 
 		// destructive commit 只能在所有 target preflight、temp fsync 与 prepared journal durable 之后开始。
+		unchanged = false
 		for _, item := range items {
 			if _, err := checkedPath(item.Path, true); err != nil {
 				return err
@@ -666,6 +688,7 @@ func patchTransaction(req *Request, ops transactionOps) (*Response, error) {
 				}
 				return err
 			}
+			backedUpPaths[item.Path] = true
 			if err := ops.fsyncDirStrict(filepath.Dir(item.Path)); err != nil {
 				return err
 			}
@@ -683,6 +706,7 @@ func patchTransaction(req *Request, ops transactionOps) (*Response, error) {
 				}
 				return err
 			}
+			installedPaths[item.Path] = true
 			if err := ops.fsyncDirStrict(filepath.Dir(item.Path)); err != nil {
 				return err
 			}
@@ -719,17 +743,20 @@ func patchTransaction(req *Request, ops transactionOps) (*Response, error) {
 	}()
 
 	if commitErr != nil {
-		rollbackErrors := rollbackTransaction(journal, ops)
+		removed := map[string]bool{}
+		rollbackErrors := rollbackTransaction(journal, ops, removed)
 		if len(rollbackErrors) > 0 {
+			unchanged = false
 			return nil, fail("PATCH_ROLLBACK_INCOMPLETE", "WSL patch transaction failed and rollback is incomplete", map[string]any{
-				"journal": journalPath, "reason": commitErr.Error(), "rollback_errors": rollbackErrors,
+				"journal": journalPath, "reason": commitErr.Error(), "rollback_errors": rollbackErrors, "residual_outcomes": transactionResiduals(items, installedPaths, backedUpPaths, removed),
 			})
 		}
+		unchanged = true
 		if err := os.Remove(journalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, err
+			return nil, errors.Join(commitErr, err)
 		}
 		if err := ops.fsyncDirStrict(stateDir); err != nil {
-			return nil, err
+			return nil, errors.Join(commitErr, err)
 		}
 		return nil, commitErr
 	}
@@ -738,10 +765,9 @@ func patchTransaction(req *Request, ops transactionOps) (*Response, error) {
 	cleanupPending := len(cleanupErrors) > 0
 	if !cleanupPending {
 		if err := os.Remove(journalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
-		if err := ops.fsyncDirStrict(stateDir); err != nil {
-			return nil, err
+			cleanupPending = true
+		} else if err := ops.fsyncDirStrict(stateDir); err != nil {
+			cleanupPending = true
 		}
 	}
 	return &Response{
@@ -754,7 +780,7 @@ func recoverPatchTransactions(req *Request, ops transactionOps) (*Response, erro
 	if err != nil {
 		return nil, err
 	}
-	if err := ensureDirectory(workdir); err != nil {
+	if err := ensureTransactionScope(workdir); err != nil {
 		return nil, err
 	}
 	stateDir, err := transactionStateDir(workdir)
@@ -771,4 +797,53 @@ func recoverPatchTransactions(req *Request, ops transactionOps) (*Response, erro
 		return nil, err
 	}
 	return &Response{RecoveredTransactions: intPtr(recovered)}, nil
+}
+
+// Keep the originally requested journal scope even when an add operation must
+// create its parent. Resolving it to an ancestor would lose crash journals once
+// that directory appears. This check performs no filesystem mutation.
+func ensureTransactionScope(path string) error {
+	for {
+		info, err := os.Lstat(path)
+		if err == nil {
+			if info.Mode()&os.ModeSymlink != 0 {
+				return fail("SYMLINK_NOT_ALLOWED", "transaction scope contains a symbolic link", nil)
+			}
+			if !info.IsDir() {
+				return fail("NOT_A_DIRECTORY", "transaction scope is not a directory", nil)
+			}
+			return nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		parent := filepath.Dir(path)
+		if parent == path {
+			return err
+		}
+		path = parent
+	}
+}
+
+func transactionResiduals(items []transactionItem, installed, backedUp, removed map[string]bool) map[string]string {
+	outcomes := map[string]string{}
+	for _, item := range items {
+		outcomes[item.Path] = "unknown"
+		current, err := pathSnapshot(item.Path)
+		if err != nil {
+			continue
+		}
+		if (!item.ExpectedExists && current == nil) || snapshotMatches(current, item.ExpectedSHA256, item.ExpectedMode, item.ExpectedUID, item.ExpectedGID) {
+			outcomes[item.Path] = "unchanged"
+			continue
+		}
+		if installed[item.Path] && item.NewExists && snapshotMatches(current, item.NewSHA256, item.NewMode, item.NewUID, item.NewGID) {
+			outcomes[item.Path] = "committed"
+			continue
+		}
+		if current == nil && backedUp[item.Path] && (!installed[item.Path] || removed[item.Path]) && verifyBackup(item) == nil {
+			outcomes[item.Path] = "deleted"
+		}
+	}
+	return outcomes
 }

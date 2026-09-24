@@ -47,6 +47,14 @@ func (r Redactor) Text(value string, limit int) string {
 
 func (r Redactor) Event(e Event) Event {
 	e.CallMeasurements = e.CallMeasurements.clone()
+	e.Request = e.Request.clone(true)
+	e.Response = e.Response.clone(true)
+	for _, payload := range []*Payload{e.Request, e.Response} {
+		if payload != nil {
+			payload.Preview = r.Text(payload.Preview, PayloadPreviewBytes)
+			payload.Reason = r.Text(payload.Reason, 512)
+		}
+	}
 	if e.FileEdit != nil {
 		detail := e.FileEdit.clone(true)
 		detail.Action = r.Text(detail.Action, 32)

@@ -19,28 +19,36 @@ type CallMeasurements struct {
 const MaxRecordedAffectedFiles = 16
 
 type AffectedFile struct {
-	Path      string `json:"path"`
-	Operation string `json:"operation,omitempty"`
-	MoveTo    string `json:"move_to,omitempty"`
+	StatsState         string `json:"stats_state,omitempty"`
+	Insertions         *int   `json:"insertions,omitempty"`
+	Deletions          *int   `json:"deletions,omitempty"`
+	ProposedInsertions *int   `json:"proposed_insertions,omitempty"`
+	ProposedDeletions  *int   `json:"proposed_deletions,omitempty"`
+	Path               string `json:"path"`
+	Operation          string `json:"operation,omitempty"`
+	MoveTo             string `json:"move_to,omitempty"`
 }
 
 // AffectedFiles can describe planned edits when DryRun is true. Changed must
 // never claim that preview statistics were actually written to disk.
 type FileEditDetails struct {
-	Action         string         `json:"action"`
-	Path           string         `json:"path,omitempty"`
-	NewPath        string         `json:"new_path,omitempty"`
-	DryRun         bool           `json:"dry_run"`
-	Recursive      bool           `json:"recursive,omitempty"`
-	Executed       bool           `json:"executed"`
-	Changed        *bool          `json:"changed,omitempty"`
-	AffectedFiles  []AffectedFile `json:"affected_files,omitempty"`
-	AffectedCount  *int           `json:"affected_count,omitempty"`
-	FilesTruncated bool           `json:"files_truncated,omitempty"`
-	Insertions     *int           `json:"insertions,omitempty"`
-	Deletions      *int           `json:"deletions,omitempty"`
-	DiffPreview    string         `json:"diff_preview,omitempty"`
-	DiffTruncated  bool           `json:"diff_truncated,omitempty"`
+	Action             string         `json:"action"`
+	Path               string         `json:"path,omitempty"`
+	NewPath            string         `json:"new_path,omitempty"`
+	DryRun             bool           `json:"dry_run"`
+	Recursive          bool           `json:"recursive,omitempty"`
+	Executed           bool           `json:"executed"`
+	Changed            *bool          `json:"changed,omitempty"`
+	AffectedFiles      []AffectedFile `json:"affected_files,omitempty"`
+	AffectedCount      *int           `json:"affected_count,omitempty"`
+	FilesTruncated     bool           `json:"files_truncated,omitempty"`
+	StatsState         string         `json:"stats_state,omitempty"`
+	Insertions         *int           `json:"insertions,omitempty"`
+	Deletions          *int           `json:"deletions,omitempty"`
+	ProposedInsertions *int           `json:"proposed_insertions,omitempty"`
+	ProposedDeletions  *int           `json:"proposed_deletions,omitempty"`
+	DiffPreview        string         `json:"diff_preview,omitempty"`
+	DiffTruncated      bool           `json:"diff_truncated,omitempty"`
 }
 
 func copyValue[T any](value *T) *T {
@@ -71,7 +79,13 @@ func (details *FileEditDetails) clone(preview bool) *FileEditDetails {
 	copy.Changed = copyValue(details.Changed)
 	copy.AffectedCount = copyValue(details.AffectedCount)
 	copy.Insertions, copy.Deletions = copyValue(details.Insertions), copyValue(details.Deletions)
+	copy.ProposedInsertions, copy.ProposedDeletions = copyValue(details.ProposedInsertions), copyValue(details.ProposedDeletions)
 	copy.AffectedFiles = append([]AffectedFile(nil), details.AffectedFiles...)
+	for index := range copy.AffectedFiles {
+		file := &copy.AffectedFiles[index]
+		file.Insertions, file.Deletions = copyValue(file.Insertions), copyValue(file.Deletions)
+		file.ProposedInsertions, file.ProposedDeletions = copyValue(file.ProposedInsertions), copyValue(file.ProposedDeletions)
+	}
 	if !preview {
 		copy.DiffPreview = ""
 	}
@@ -79,6 +93,13 @@ func (details *FileEditDetails) clone(preview bool) *FileEditDetails {
 }
 
 func applyMeasurements(call *ExecutionCall, event Event) {
+	if event.Request != nil {
+		call.Request = event.Request.clone(true)
+	}
+	if event.Response != nil {
+		call.Response = event.Response.clone(true)
+		call.HasOutput = true
+	}
 	if event.Kind == "call.created" && call.RequestReceivedAt == nil {
 		call.RequestReceivedAt = copyValue(event.RequestReceivedAt)
 	}
@@ -115,7 +136,7 @@ func RecentlyActive(last *time.Time, now time.Time, terminated bool) bool {
 func genuineActivityEvent(kind string) bool {
 	switch kind {
 	case "call.created", "call.bound", "call.pending", "call.started", "call.completed", "call.rpc_returned",
-		"command.started", "command.output", "command.completed", "tool.started", "tool.completed", "file.requested", "file.changed":
+		"command.started", "command.output", "tool.output", "command.completed", "tool.started", "tool.completed", "file.requested", "file.changed":
 		return true
 	}
 	return false

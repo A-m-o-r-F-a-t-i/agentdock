@@ -30,12 +30,13 @@ type Options struct {
 	Segments     int
 }
 type Store struct {
-	projection *callProjection
-	root       string
-	options    Options
-	mu         sync.Mutex
-	changed    chan struct{}
-	redactor   Redactor
+	projection       *callProjection
+	root             string
+	options          Options
+	mu               sync.Mutex
+	changed          chan struct{}
+	redactor         Redactor
+	payloadDirectory os.FileInfo
 }
 type sequenceState struct {
 	Seq           uint64 `json:"seq"`
@@ -71,13 +72,23 @@ func New(root string, options Options, secrets ...string) (*Store, error) {
 func (s *Store) Changed() <-chan struct{} { s.mu.Lock(); defer s.mu.Unlock(); return s.changed }
 
 func (s *Store) lock(ctx context.Context) (func(), error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	if !s.mu.TryLock() {
+		tick := time.NewTicker(2 * time.Millisecond)
+		defer tick.Stop()
+		for !s.mu.TryLock() {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-tick.C:
+			}
+		}
+	}
 	release, err := filelock.Acquire(ctx, filepath.Join(s.root, ".activity.lock"))
-	cancel()
 	if err != nil {
 		s.mu.Unlock()
 		return nil, err

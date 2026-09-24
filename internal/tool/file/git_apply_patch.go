@@ -3,12 +3,8 @@ package file
 import (
 	"context"
 	"os"
-	"os/exec"
 	"strings"
-	"time"
 
-	processcontrol "github.com/uvwt/agentdock/internal/process"
-	"github.com/uvwt/agentdock/internal/textutil"
 	workspacepkg "github.com/uvwt/agentdock/internal/workspace"
 )
 
@@ -24,32 +20,7 @@ func (svc *Service) applyPatch(ctx context.Context, request EditRequest) (Result
 	if strings.HasPrefix(strings.TrimSpace(patch), "*** Begin Patch") {
 		return svc.applyEnvelopePatch(patch, request.DryRun, workdir.Display)
 	}
-	maxDiffBytes := boundedInt(intValue(request.MaxDiffBytes, 65536), 65536, 1, maxTextOutputBytes)
-	preview := textutil.SafeTruncateString(patch, maxDiffBytes)
-	stats := countDiffStats(patch)
-	affected := parseDiffFiles(patch)
-	cmdCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, "git", "apply", "--whitespace=nowarn", "-")
-	if request.DryRun {
-		cmd = exec.CommandContext(cmdCtx, "git", "apply", "--check", "--whitespace=nowarn", "-")
-	}
-	cmd.Dir = workdir.Abs
-	cmd.Stdin = strings.NewReader(patch)
-	processcontrol.Configure(cmd)
-	output, outputTotal, outputTruncated, err := runBoundedCombinedOutput(cmd, 1<<20)
-	if err != nil {
-		outputText, _ := truncateBytes(output, 1<<20)
-		diagnostic := patchDiagnostic("GIT_APPLY_FAILED", workdir.Display, "git apply failed", redactSecrets(outputText, nil), err.Error())
-		return nil, toolErrorDetails("PATCH_FAILED", "git apply failed", "runtime", map[string]any{
-			"workdir": workdir.Display, "output": diagnostic["output"], "reason": err.Error(), "diagnostic": diagnostic,
-			"output_total_bytes": outputTotal, "output_truncated": outputTruncated,
-		})
-	}
-	if request.DryRun {
-		return Result{"summary": "patch validated", "dry_run": true, "workdir": workdir.Display, "affected_files": affected, "diff_preview": preview.Text, "truncated": preview.Truncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
-	}
-	return Result{"summary": "patch applied", "dry_run": false, "workdir": workdir.Display, "affected_files": affected, "diff_preview": preview.Text, "truncated": preview.Truncated, "files_changed": stats.FilesChanged, "insertions": stats.Insertions, "deletions": stats.Deletions}, nil
+	return svc.applyGitPatch(ctx, request, workdir)
 }
 
 func patchDiagnostic(code, path, message, output, reason string) map[string]any {

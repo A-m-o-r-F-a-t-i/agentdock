@@ -22,6 +22,8 @@ type FileChange struct {
 	StatsKnown bool   `json:"stats_known"`
 }
 type ExecutionCall struct {
+	Request        *Payload   `json:"request,omitempty"`
+	Response       *Payload   `json:"response,omitempty"`
 	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
 	CallMeasurements
 	FileEdit *FileEditDetails `json:"file_edit,omitempty"`
@@ -324,7 +326,7 @@ func (p *callProjection) apply(event Event) {
 	}
 	call.StdoutTruncated = call.StdoutTruncated || event.StdoutTruncated
 	call.StderrTruncated = call.StderrTruncated || event.StderrTruncated
-	call.HasOutput = call.OutputPreview != "" || call.StderrPreview != "" || call.StdoutTruncated || call.StderrTruncated
+	call.HasOutput = call.Response != nil && call.Response.State != "pending" || call.OutputPreview != "" || call.StderrPreview != "" || call.StdoutTruncated || call.StderrTruncated
 	if event.Kind == "file.changed" {
 		if len(call.FileChanges) < 128 {
 			call.FileChanges = append(call.FileChanges, FileChange{Path: event.ResolvedPath, Insertions: event.Insertions, Deletions: event.Deletions, StatsKnown: event.ChangeStatsKnown})
@@ -447,6 +449,8 @@ func (s *Store) projectAppendedLocked(event Event) {
 }
 func cloneCall(call *ExecutionCall, output bool) ExecutionCall {
 	copied := *call
+	copied.Request = call.Request.clone(output)
+	copied.Response = call.Response.clone(output)
 	copied.CallMeasurements = call.CallMeasurements.clone()
 	copied.LastActivityAt = copyValue(call.LastActivityAt)
 	copied.FileEdit = call.FileEdit.clone(output)
@@ -681,4 +685,18 @@ func (s *Store) CallStatistics(ctx context.Context) (CallStats, map[string]CallS
 		result[conversationID] = stats.result()
 	}
 	return total.result(), result, nil
+}
+
+// CallCursor is a read-only stream boundary, not a new activity event.
+func (s *Store) CallCursor(ctx context.Context) (uint64, error) {
+	release, err := s.lock(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer release()
+	projection, err := s.projectionLocked(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return projection.seq, nil
 }

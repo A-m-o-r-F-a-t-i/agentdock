@@ -30,6 +30,7 @@ func (h *activityHTTP) streamCalls(w http.ResponseWriter, r *http.Request, query
 	}
 	defer h.streams.Add(-1)
 	store := h.runtime.ActivityJournal()
+	changed := store.Changed()
 	page, err := store.Calls(r.Context(), query)
 	if err != nil {
 		executionError(w, err)
@@ -88,7 +89,7 @@ func (h *activityHTTP) streamCalls(w http.ResponseWriter, r *http.Request, query
 			select {
 			case <-r.Context().Done():
 				return
-			case <-store.Changed():
+			case <-changed:
 			case <-poll.C:
 			case <-heartbeat.C:
 				_ = control.SetWriteDeadline(time.Now().Add(5 * time.Second))
@@ -97,6 +98,7 @@ func (h *activityHTTP) streamCalls(w http.ResponseWriter, r *http.Request, query
 				}
 			}
 		}
+		changed = store.Changed()
 		page, err = store.Calls(r.Context(), query)
 		if err != nil {
 			if r.Context().Err() == nil {

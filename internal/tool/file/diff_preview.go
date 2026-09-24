@@ -29,27 +29,53 @@ func unifiedDiffPreview(path, oldContent, newContent string, maxBytes int) (stri
 		return "", false, diffStats{}, fmt.Errorf("diff output exceeds %d bytes (observed %d bytes)", maxDiffOutputBytes, len(output))
 	}
 	stats := countDiffStats(string(output))
+	logicalOld, logicalNew := logicalDiffContent(oldContent), logicalDiffContent(newContent)
+	if logicalOld != oldContent || logicalNew != newContent {
+		stats = countDiffStats(string(anchoreddiff.Diff("a/"+path, []byte(logicalOld), "b/"+path, []byte(logicalNew))))
+	}
+	if oldContent != newContent {
+		stats.FilesChanged = 1
+	}
 	truncated := textutil.SafeTruncateBytes(output, maxBytes)
 	return truncated.Text, truncated.Truncated, stats, nil
 }
 
 func countDiffStats(diffText string) diffStats {
 	stats := diffStats{}
-	if strings.TrimSpace(diffText) == "" {
-		return stats
-	}
+	inHunk, changed := false, false
 	for _, line := range strings.Split(diffText, "\n") {
 		switch {
-		case strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "--- "):
-			continue
-		case strings.HasPrefix(line, "+"):
+		case strings.HasPrefix(line, "diff "):
+			if changed {
+				stats.FilesChanged++
+			}
+			inHunk, changed = false, false
+		case strings.HasPrefix(line, "@@ "):
+			inHunk = true
+		case inHunk && strings.HasPrefix(line, "+"):
 			stats.Insertions++
-		case strings.HasPrefix(line, "-"):
+			changed = true
+		case inHunk && strings.HasPrefix(line, "-"):
 			stats.Deletions++
+			changed = true
 		}
 	}
-	if stats.Insertions > 0 || stats.Deletions > 0 {
-		stats.FilesChanged = 1
+	if changed {
+		stats.FilesChanged++
 	}
 	return stats
+}
+
+// The preview preserves exact bytes. Statistics compare logical text lines:
+// CRLF and LF are equivalent, and a terminator does not add an empty line.
+func logicalDiffContent(content string) string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	return content
+}
+
+func logicalLineCount(content string) int {
+	return strings.Count(logicalDiffContent(content), "\n")
 }

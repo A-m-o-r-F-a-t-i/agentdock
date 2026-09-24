@@ -210,8 +210,13 @@ func OutputSchema(name string) (map[string]any, bool) {
 		props["diff_preview"] = stringProp("Diff preview.")
 		props["truncated"] = boolProp("Whether the diff preview was truncated.")
 		props["files_changed"] = intProp("Changed file count.")
-		props["insertions"] = intProp("Inserted line count.")
-		props["deletions"] = intProp("Deleted line count.")
+		props["file_statistics"] = map[string]any{"type": "array", "description": "Per-file logical line statistics from the same protected transaction as the root totals. Proposed only for dry runs.", "items": map[string]any{"type": "object", "required": []string{"path", "operation", "insertions", "deletions"}, "properties": map[string]any{"path": stringProp("Original file path."), "operation": stringProp("Edit operation, including move or overwrite."), "move_to": stringProp("Move destination when present."), "insertions": intProp("Inserted logical lines."), "deletions": intProp("Deleted logical lines.")}}}
+		props["unverified_files"] = stringArrayProp("Paths excluded from partial totals because their final state or ownership could not be confirmed.")
+		props["cleanup_pending"] = boolProp("The edit committed successfully, but transaction cleanup needs recovery; do not repeat the edit.")
+		props["transaction_id"] = stringProp("Transaction identity for retained cleanup state.")
+		props["stats_state"] = map[string]any{"type": "string", "enum": []string{"known", "partial", "preview", "unknown", "unsupported"}, "description": "Known actual committed counts, proposed dry-run counts, unknown outcome, or unsupported non-text statistics."}
+		props["insertions"] = intProp("Inserted logical lines across this transaction; proposed only when dry_run=true. Missing when unknown or unsupported.")
+		props["deletions"] = intProp("Deleted logical lines across this transaction; CRLF/LF or final newline changes alone do not add/remove lines. Missing when unknown or unsupported.")
 	default:
 		return nil, false
 	}

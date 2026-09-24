@@ -64,6 +64,8 @@ func (b ExecutionScope) Validate() error {
 
 type Event struct {
 	CallMeasurements
+	Request          *Payload         `json:"request,omitempty"`
+	Response         *Payload         `json:"response,omitempty"`
 	FileEdit         *FileEditDetails `json:"file_edit,omitempty"`
 	OwnerPID         int              `json:"owner_pid,omitempty"`
 	OwnerInstance    string           `json:"owner_instance,omitempty"`

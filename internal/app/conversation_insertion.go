@@ -105,12 +105,18 @@ type toolResponseKey struct{}
 // ToolResponse is adapter-owned state. Its private call binding is filled only
 // by the external root admission path; callers cannot supply it as tool arguments.
 type ToolResponse struct {
-	mu        sync.Mutex
-	binding   activity.Binding
-	warning   string
-	finished  bool
-	reserved  bool
-	additions ResponseAdditions
+	auditBinding  activity.Binding
+	auditName     string
+	auditRedactor activity.Redactor
+	auditRecorded bool
+	auditReceived time.Time
+	auditStatus   string
+	mu            sync.Mutex
+	binding       activity.Binding
+	warning       string
+	finished      bool
+	reserved      bool
+	additions     ResponseAdditions
 }
 
 // UserResponseAddition is constructed solely from the authenticated local queue,

@@ -14,6 +14,7 @@ import (
 
 	sdkjsonrpc "github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/buildinfo"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
@@ -31,14 +32,17 @@ type protocolClient interface {
 }
 
 type sdkProtocolClient struct {
-	toolsRevision atomic.Uint64
-	cfg           ServerConfig
-	session       *mcpsdk.ClientSession
-	command       *exec.Cmd
-	controller    *processcontrol.Controller
-	stderr        *tailBuffer
-	closeOnce     sync.Once
-	closeErr      error
+	progressSequence atomic.Uint64
+	progressMu       sync.Mutex
+	progressSinks    map[string]activity.ProgressSink
+	toolsRevision    atomic.Uint64
+	cfg              ServerConfig
+	session          *mcpsdk.ClientSession
+	command          *exec.Cmd
+	controller       *processcontrol.Controller
+	stderr           *tailBuffer
+	closeOnce        sync.Once
+	closeErr         error
 }
 
 func newStreamableHTTPClient(cfg ServerConfig) *sdkProtocolClient {
@@ -56,7 +60,7 @@ func (c *sdkProtocolClient) initialize(ctx context.Context) error {
 	}
 	client := mcpsdk.NewClient(
 		&mcpsdk.Implementation{Name: config.ServerName, Version: buildinfo.Version},
-		&mcpsdk.ClientOptions{Capabilities: &mcpsdk.ClientCapabilities{}},
+		&mcpsdk.ClientOptions{Capabilities: &mcpsdk.ClientCapabilities{}, ProgressNotificationHandler: c.receiveProgress},
 	)
 	client.AddReceivingMiddleware(func(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
 		return func(ctx context.Context, method string, request mcpsdk.Request) (mcpsdk.Result, error) {
@@ -155,7 +159,10 @@ func (c *sdkProtocolClient) callTool(ctx context.Context, name string, arguments
 	if c.session == nil {
 		return nil, newError("MCP_CONNECTION_FAILED", "MCP session is not initialized", true, map[string]any{"server": c.cfg.Name}, nil)
 	}
-	result, err := c.session.CallTool(ctx, &mcpsdk.CallToolParams{Name: name, Arguments: arguments})
+	params := &mcpsdk.CallToolParams{Name: name, Arguments: arguments}
+	unregister := c.registerProgress(ctx, name, params)
+	defer unregister()
+	result, err := c.session.CallTool(ctx, params)
 	if err != nil {
 		return nil, c.wrapSDKError("call MCP tool", err)
 	}

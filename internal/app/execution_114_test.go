@@ -55,7 +55,7 @@ func Test114FileEditActionsShareOneObservedRoot(t *testing.T) {
 			if call.ConversationID != conversationID || call.ToolName != "file_edit" || call.Status != "succeeded" || call.ParentCallID != "" {
 				t.Fatalf("bad file-edit root: %+v", call)
 			}
-			if !strings.Contains(call.DisplayTitle, "EDIT_FILE") || call.FileEdit == nil || call.FileEdit.Action != test.name || !call.FileEdit.Executed {
+			if !strings.Contains(call.DisplayTitle, "file_edit") || strings.Contains(call.DisplayTitle, "EDIT_FILE") || call.FileEdit == nil || call.FileEdit.Action != test.name || !call.FileEdit.Executed {
 				t.Fatalf("missing file-edit observation: %+v", call)
 			}
 			if call.RequestReceivedAt == nil || call.RPCCompletedAt == nil || call.RPCElapsedMS == nil || call.RPCStatus != "succeeded" || call.ExecutionElapsedMS == nil || call.WaitElapsedMS == nil {

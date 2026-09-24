@@ -38,6 +38,7 @@ import (
 type Result = toolcore.Result
 
 type Runtime struct {
+	sidebarHistory           sidebarHistoryCache
 	pluginStore              *pluginregistry.Store
 	contextSnapshots         *contextSnapshots
 	display                  *config.DisplayPreferences

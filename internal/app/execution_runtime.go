@@ -25,6 +25,7 @@ type ExecutionListQuery struct {
 	Limit       int
 }
 type ConversationItem struct {
+	InFlight       bool      `json:"in_flight"`
 	LastActivityAt time.Time `json:"last_activity_at"`
 	activity.Conversation
 	Statistics     activity.CallStats `json:"statistics"`
@@ -70,7 +71,7 @@ func (r *Runtime) RuntimeExecutionOverview(ctx context.Context) (Result, error) 
 	if err != nil {
 		return nil, err
 	}
-	return Result{"statistics": stats, "conversation_activity": conversations, "server_now": time.Now().UTC(), "permission_mode": policy.GlobalMode, "policy_revision": policy.Revision, "schema_version": 2}, nil
+	return Result{"statistics": stats, "conversation_activity": conversations, "in_flight": r.confirmedConversationActivity(), "server_now": time.Now().UTC(), "permission_mode": policy.GlobalMode, "policy_revision": policy.Revision, "schema_version": 2}, nil
 }
 func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQuery) (ConversationPage, error) {
 	page := ConversationPage{Conversations: []ConversationItem{}, ServerNow: time.Now().UTC()}
@@ -104,6 +105,7 @@ func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQ
 		return page, err
 	}
 	candidates := []ConversationItem{}
+	inFlight := r.confirmedConversationActivity()
 	for _, item := range items {
 		if err := ctx.Err(); err != nil {
 			return page, err
@@ -156,11 +158,11 @@ func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQ
 		if summary.LatestAt.After(item.UpdatedAt) {
 			item.UpdatedAt = summary.LatestAt
 		}
-		lastActivity := item.CreatedAt
+		lastActivity := time.Time{}
 		if summary.LastActivityAt != nil && summary.LastActivityAt.After(lastActivity) {
 			lastActivity = *summary.LastActivityAt
 		}
-		candidates = append(candidates, ConversationItem{Conversation: item, Statistics: summary, LastActivityAt: lastActivity})
+		candidates = append(candidates, ConversationItem{Conversation: item, Statistics: summary, LastActivityAt: lastActivity, InFlight: inFlight[item.ID]})
 	}
 	if unknown := stats[""]; unknown.Total > 0 && query.View != "trash" && query.View != "archived" && query.Tag == "" && query.WorkspaceID == "" && (query.Search == "" || strings.Contains("未识别对话", query.Search)) {
 		// This is a navigation group, not a minted Conversation. Its ID is empty and

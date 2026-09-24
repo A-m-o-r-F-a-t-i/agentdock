@@ -20,13 +20,17 @@ type stagedPatchFile struct {
 	Mode           os.FileMode
 	Original       []byte
 	OriginalExists bool
+	MoveFrom       string
+	Binary         bool
+	NewMode        *os.FileMode
 }
 
 type preparedPatchFile struct {
-	file       stagedPatchFile
-	tempPath   string
-	backupPath string
-	installed  bool
+	file                  stagedPatchFile
+	tempPath              string
+	backupPath            string
+	installed             bool
+	removedDuringRollback bool
 }
 
 type installedPatchState int
@@ -58,7 +62,7 @@ func commitStagedPatchWithFileOps(staged map[string]stagedPatchFile, rename, ins
 		file := staged[path]
 		if err := verifyPatchOriginal(file); err != nil {
 			cleanupPreparedPatch(prepared, createdDirs)
-			return err
+			return unchangedEditError(err)
 		}
 		if file.Content == nil {
 			prepared = append(prepared, preparedPatchFile{file: file})
@@ -67,13 +71,13 @@ func commitStagedPatchWithFileOps(staged map[string]stagedPatchFile, rename, ins
 		dirs, err := ensurePatchParent(filepath.Dir(file.Abs))
 		if err != nil {
 			cleanupPreparedPatch(prepared, createdDirs)
-			return err
+			return unchangedEditError(err)
 		}
 		createdDirs = append(createdDirs, dirs...)
 		tempPath, err := writePatchTemp(file)
 		if err != nil {
 			cleanupPreparedPatch(prepared, createdDirs)
-			return err
+			return unchangedEditError(err)
 		}
 		prepared = append(prepared, preparedPatchFile{file: file, tempPath: tempPath})
 	}
@@ -111,6 +115,17 @@ func commitStagedPatchWithFileOps(staged map[string]stagedPatchFile, rename, ins
 		item.tempPath = ""
 	}
 
+	// Verify the transaction's actual final bytes before discarding originals.
+	// A concurrent replacement stays untouched and the audit cannot claim it.
+	for _, item := range prepared {
+		if item.file.Content != nil {
+			if inspectInstalledPatchFile(item) != installedPatchUnchanged {
+				return rollbackPatch(prepared, createdDirs, rename, toolErrorDetails("PATCH_CONFLICT", "installed patch target changed before commit verification", "runtime", map[string]any{"path": item.file.Display}))
+			}
+		} else if _, err := os.Lstat(item.file.Abs); !errors.Is(err, os.ErrNotExist) {
+			return rollbackPatch(prepared, createdDirs, rename, toolErrorDetails("PATCH_CONFLICT", "deleted patch target is no longer absent", "runtime", map[string]any{"path": item.file.Display}))
+		}
+	}
 	for _, item := range prepared {
 		if item.backupPath != "" {
 			if err := os.Remove(item.backupPath); err != nil {
@@ -130,7 +145,7 @@ func verifyPatchOriginal(file stagedPatchFile) error {
 		}
 		return nil
 	}
-	info, content, err := readPatchFile(file.Abs)
+	info, content, err := readCommitOriginal(file.Abs, file.Binary)
 	if err != nil {
 		return toolErrorDetails("PATCH_CONFLICT", "patch target changed before commit", "runtime", map[string]any{"path": file.Display, "reason": err.Error()})
 	}
@@ -141,7 +156,7 @@ func verifyPatchOriginal(file stagedPatchFile) error {
 }
 
 func verifyPatchBackup(item preparedPatchFile) error {
-	info, content, err := readPatchFile(item.backupPath)
+	info, content, err := readCommitOriginal(item.backupPath, item.file.Binary)
 	if err != nil {
 		return toolErrorDetails("PATCH_CONFLICT", "patch target changed while commit was starting", "runtime", map[string]any{"path": item.file.Display, "reason": err.Error()})
 	}
@@ -195,7 +210,7 @@ func writePatchTemp(file stagedPatchFile) (path string, returnErr error) {
 			_ = os.Remove(path)
 		}
 	}()
-	if err := temp.Chmod(file.Mode.Perm()); err != nil {
+	if err := temp.Chmod(patchTargetMode(file)); err != nil {
 		return "", err
 	}
 	if _, err := temp.WriteString(*file.Content); err != nil {
@@ -244,6 +259,8 @@ func rollbackPatch(prepared []preparedPatchFile, createdDirs []string, rename fu
 				if err := os.Remove(item.file.Abs); err != nil && !errors.Is(err, os.ErrNotExist) {
 					errs = append(errs, fmt.Errorf("remove partially installed %s: %w", item.file.Display, err))
 					canRestoreBackup = false
+				} else {
+					item.removedDuringRollback = true
 				}
 			case installedPatchMissing:
 				// 外部删除了事务写入文件；原路径为空时可以直接恢复备份。
@@ -267,11 +284,22 @@ func rollbackPatch(prepared []preparedPatchFile, createdDirs []string, rename fu
 		}
 	}
 	removeEmptyPatchDirs(createdDirs)
-	return errors.Join(errs...)
+	outcome := &commitOutcomeError{cause: errors.Join(errs...), unchanged: len(errs) == 1}
+	if !outcome.unchanged {
+		outcome.partial = residualPatchStatistics(prepared)
+	}
+	return outcome
 }
 
 func inspectInstalledPatchFile(item preparedPatchFile) installedPatchState {
 	if item.file.Content == nil {
+		return installedPatchChanged
+	}
+	info, err := os.Lstat(item.file.Abs)
+	if errors.Is(err, os.ErrNotExist) {
+		return installedPatchMissing
+	}
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 		return installedPatchChanged
 	}
 	file, err := os.Open(item.file.Abs)
@@ -282,12 +310,12 @@ func inspectInstalledPatchFile(item preparedPatchFile) installedPatchState {
 		return installedPatchChanged
 	}
 	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || info.Mode().Perm() != item.file.Mode.Perm() || info.Size() != int64(len(*item.file.Content)) {
+	info, err = file.Stat()
+	if err != nil || !patchModeMatches(info.Mode(), patchTargetMode(item.file)) || info.Size() != int64(len(*item.file.Content)) {
 		return installedPatchChanged
 	}
 	actualHash := sha256.New()
-	if _, err := io.Copy(actualHash, file); err != nil {
+	if _, err := io.Copy(actualHash, io.LimitReader(file, int64(len(*item.file.Content))+1)); err != nil {
 		return installedPatchChanged
 	}
 	expectedHash := sha256.New()

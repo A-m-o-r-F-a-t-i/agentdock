@@ -1,11 +1,20 @@
 package file
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 )
 
-func stagedDiffPreview(staged map[string]stagedPatchFile, maxBytes int) (string, bool, diffStats, error) {
+type editFileStatistics struct {
+	Path       string `json:"path"`
+	Operation  string `json:"operation"`
+	MoveTo     string `json:"move_to,omitempty"`
+	Insertions int    `json:"insertions"`
+	Deletions  int    `json:"deletions"`
+}
+
+func stagedDiffPreview(staged map[string]stagedPatchFile, maxBytes int, collectors ...*[]editFileStatistics) (string, bool, diffStats, error) {
 	paths := make([]string, 0, len(staged))
 	for path := range staged {
 		paths = append(paths, path)
@@ -13,9 +22,38 @@ func stagedDiffPreview(staged map[string]stagedPatchFile, maxBytes int) (string,
 	sort.Strings(paths)
 	var builder strings.Builder
 	total := diffStats{}
+	movedSources := map[string]bool{}
+	for _, file := range staged {
+		if file.MoveFrom != "" {
+			movedSources[file.MoveFrom] = true
+		}
+	}
 	for _, path := range paths {
 		file := staged[path]
+		if movedSources[path] {
+			continue
+		}
 		oldContent := string(file.Original)
+		originPath := path
+		if file.MoveFrom != "" {
+			source, seen := file.MoveFrom, map[string]bool{path: true}
+			for {
+				if seen[source] {
+					return "", false, diffStats{}, fmt.Errorf("cyclic move in file statistics")
+				}
+				seen[source] = true
+				origin, exists := staged[source]
+				if !exists {
+					return "", false, diffStats{}, fmt.Errorf("missing move origin in file statistics")
+				}
+				oldContent = string(origin.Original)
+				originPath = source
+				if origin.MoveFrom == "" {
+					break
+				}
+				source = origin.MoveFrom
+			}
+		}
 		newContent := ""
 		if file.Content != nil {
 			newContent = *file.Content
@@ -23,6 +61,37 @@ func stagedDiffPreview(staged map[string]stagedPatchFile, maxBytes int) (string,
 		diff, _, stats, err := unifiedDiffPreview(file.Display, oldContent, newContent, 0)
 		if err != nil {
 			return "", false, diffStats{}, err
+		}
+		if file.MoveFrom != "" || file.OriginalExists != (file.Content != nil) || file.Content != nil && file.Mode.Perm() != patchTargetMode(file) {
+			stats.FilesChanged = 1
+		}
+		operation := "update"
+		if !file.OriginalExists {
+			operation = "add"
+		} else if file.Content == nil {
+			operation = "delete"
+		}
+		detail := editFileStatistics{Path: file.Display, Operation: operation, Insertions: stats.Insertions, Deletions: stats.Deletions}
+		if file.MoveFrom != "" {
+			detail.Path, detail.MoveTo, detail.Operation = staged[originPath].Display, file.Display, "move"
+		}
+		for _, collector := range collectors {
+			*collector = append(*collector, detail)
+		}
+		if file.MoveFrom != "" && file.OriginalExists {
+			// The source is relocated, and the overwritten destination is
+			// removed independently of any change to the source's own content.
+			removedLines := logicalLineCount(string(file.Original))
+			stats.Deletions += removedLines
+			for _, collector := range collectors {
+				*collector = append(*collector, editFileStatistics{Path: file.Display, Operation: "overwrite", Deletions: removedLines})
+			}
+			removed, _, _, err := unifiedDiffPreview(file.Display+" (overwritten destination)", string(file.Original), "", 0)
+			if err != nil {
+				return "", false, diffStats{}, err
+			}
+			builder.WriteString(removed)
+			total.FilesChanged++
 		}
 		builder.WriteString(diff)
 		if diff != "" && !strings.HasSuffix(diff, "\n") {

@@ -155,6 +155,15 @@ func (r *Runtime) updateConversationName(ctx context.Context, id, tool string, a
 	if item.TitleSource == "operation" || item.TitleSource == "task" {
 		return
 	}
+	if tool != "" {
+		label := r.executionRedactor(args).Text(tool, 200)
+		if action := stringArg(args, "action"); action != "" {
+			label += " · " + r.executionRedactor(args).Text(action, 100)
+		}
+		label += " · " + item.CreatedAt.Local().Format("15:04:05.000")
+		_ = r.conversations.AutoName(ctx, id, label, "operation")
+		return
+	}
 	workspace := "对话"
 	workspaceID := item.State.WorkspaceID
 	if workspaceID == "" && len(item.WorkspaceIDs) > 0 {
