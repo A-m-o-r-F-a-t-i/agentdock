@@ -44,6 +44,39 @@ func TestDurableOrderedReplayAndThreadIsolation(t *testing.T) {
 		t.Fatalf("replay duplicated: %+v %v", empty, err)
 	}
 }
+func TestAppendBatchPersistsOrderedLifecycleGroup(t *testing.T) {
+	s := testStore(t, Options{})
+	callID, err := NewExecutionID("call_")
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := Binding{CallID: callID}
+	appended, err := s.AppendBatch(t.Context(), []Event{
+		{Binding: binding, Kind: "call.created", Status: "created", ToolName: "agentdock_context"},
+		{Binding: binding, Kind: "call.payload", ToolName: "agentdock_context", Request: &Payload{State: "complete", Ref: strings.Repeat("a", 64)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(appended) != 2 || appended[0].Seq == 0 || appended[1].Seq != appended[0].Seq+1 || appended[0].EventID == "" || appended[1].EventID == "" {
+		t.Fatalf("unexpected batch result: %+v", appended)
+	}
+	page, err := s.Query(t.Context(), Query{CallID: callID})
+	if err != nil || len(page.Events) != 2 || page.Events[0].Kind != "call.created" || page.Events[1].Kind != "call.payload" {
+		t.Fatalf("ordered batch was not replayed intact: %+v %v", page, err)
+	}
+}
+func TestAppendBatchValidatesWholeGroupBeforeWriting(t *testing.T) {
+	s := testStore(t, Options{})
+	_, err := s.AppendBatch(t.Context(), []Event{{Kind: "call.created"}, {Kind: "call.payload", ToolName: strings.Repeat("x", 161)}})
+	if err == nil {
+		t.Fatal("invalid batch was accepted")
+	}
+	page, queryErr := s.Query(t.Context(), Query{})
+	if queryErr != nil || len(page.Events) != 0 || page.LatestSeq != 0 {
+		t.Fatalf("invalid batch partially wrote: %+v %v", page, queryErr)
+	}
+}
 func TestConcurrentStoresAllocateUniqueSequence(t *testing.T) {
 	s := testStore(t, Options{})
 	other, err := New(s.root, Options{})
@@ -96,12 +129,50 @@ func TestCorruptTailRecoveryAndCounterNotReused(t *testing.T) {
 	if err != nil || len(page.Events) != 2 || b.Seq <= a.Seq {
 		t.Fatalf("%+v %v", page, err)
 	}
-	if err = os.Remove(filepath.Join(s.root, "sequence.json")); err != nil {
+	if err = os.Remove(filepath.Join(s.root, "sequence.json")); err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	c := appendTest(t, s, "tsk_a", "main")
 	if c.Seq <= b.Seq {
 		t.Fatal("counter reused")
+	}
+}
+func TestJournalTailReconcilesStaleSequenceState(t *testing.T) {
+	s := testStore(t, Options{})
+	a := appendTest(t, s, "tsk_a", "main")
+	b := appendTest(t, s, "tsk_a", "main")
+	if a.Seq != 1 || b.Seq != 2 {
+		t.Fatalf("unexpected initial sequence: %d %d", a.Seq, b.Seq)
+	}
+	if err := s.saveState(sequenceState{Seq: 1}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := New(s.root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := appendTest(t, reopened, "tsk_a", "main")
+	if c.Seq != 3 {
+		t.Fatalf("stale state reused a committed sequence: got %d want 3", c.Seq)
+	}
+	page, err := reopened.Query(context.Background(), Query{})
+	if err != nil || page.LatestSeq != 3 || len(page.Events) != 3 {
+		t.Fatalf("journal/state reconciliation failed: %+v %v", page, err)
+	}
+}
+func TestAheadSequenceReservationRemainsReserved(t *testing.T) {
+	s := testStore(t, Options{})
+	appendTest(t, s, "tsk_a", "main")
+	if err := s.saveState(sequenceState{Seq: 50}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := New(s.root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	next := appendTest(t, reopened, "tsk_a", "main")
+	if next.Seq != 51 {
+		t.Fatalf("previously reserved sequence was reused: got %d want 51", next.Seq)
 	}
 }
 func TestRotationReportsRetentionGap(t *testing.T) {

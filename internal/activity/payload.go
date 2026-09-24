@@ -23,6 +23,8 @@ import (
 const MaxPayloadBytes = 16 << 20
 const MaxPayloadStorageBytes = 256 << 20
 const PayloadPreviewBytes = 2048
+const payloadPublicationGrace = 5 * time.Minute
+const payloadPublicationSafety = time.Minute
 
 // Payload is part of the canonical call projection. Its immutable local blob is
 // addressed only through an authorized call, never via an arbitrary file path.
@@ -130,10 +132,13 @@ func (s *Store) CapturePayload(ctx context.Context, value any, state string, red
 			return failure("活动输出引用不是普通文件。")
 		}
 		// A reused blob may have outlived its original journal event. Renew its
-		// publication grace period before another Store can collect it.
+		// publication grace only when less than the safety interval remains; hot
+		// repeated calls otherwise avoid an unnecessary metadata write.
 		now := time.Now()
-		if err := os.Chtimes(target, now, now); err != nil {
-			return failure("活动输出引用的保留时间无法更新。")
+		if info.ModTime().Before(now.Add(-(payloadPublicationGrace - payloadPublicationSafety))) {
+			if err := os.Chtimes(target, now, now); err != nil {
+				return failure("活动输出引用的保留时间无法更新。")
+			}
 		}
 		result.Ref = ref
 		return result
@@ -406,7 +411,7 @@ func (s *Store) prunePayloadsLocked(ctx context.Context, root string) (int64, er
 		ref := strings.TrimSuffix(entry.Name(), ".json")
 		// Capture and event publication are separate durable steps. A new blob
 		// must survive that interval even when another process runs collection.
-		if !retained[ref] && info.ModTime().Before(time.Now().Add(-5*time.Minute)) {
+		if !retained[ref] && info.ModTime().Before(time.Now().Add(-payloadPublicationGrace)) {
 			if err := os.Remove(filepath.Join(root, entry.Name())); err != nil {
 				return 0, err
 			}

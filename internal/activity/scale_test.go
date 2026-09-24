@@ -96,8 +96,15 @@ func TestExecutionProjectionScale100k(t *testing.T) {
 	var memory runtime.MemStats
 	runtime.ReadMemStats(&memory)
 	t.Logf("scale: events=100000 calls=20000 conversations=1000 task_ids=1000 cold_query_ms=%.3f warm_task_query_ms=%.3f append_to_query_ms=%.3f process_heap_mib=%.2f", float64(cold.Microseconds())/1000, float64(warm.Microseconds())/1000, float64(update.Microseconds())/1000, float64(memory.HeapAlloc)/(1<<20))
-	if cold > 2*time.Second {
-		t.Errorf("cold execution query exceeded the planned 2s local target: %s", cold)
+	coldLimit := 2 * time.Second
+	if raceDetectorEnabled {
+		// The race runtime instruments every map and synchronization access in the
+		// 100k-event projection. Keep a bounded regression check without treating
+		// that instrumentation cost as the normal production latency target.
+		coldLimit = 20 * time.Second
+	}
+	if cold > coldLimit {
+		t.Errorf("cold execution query exceeded the %s target: %s", coldLimit, cold)
 	}
 	if update > time.Second {
 		t.Errorf("incremental projection exceeded the planned 1s local target: %s", update)

@@ -220,8 +220,15 @@ foreach ($required in @(
     'Initialize-OAuthCredentials',
     'named-server-url.txt',
     'cloudflared-windows-$Architecture.exe',
-    'Wait-QuickTunnelUrl -LogPaths @($cloudflaredStdoutLogPath, $cloudflaredStderrLogPath)',
-    'Wait-QuickTunnelReady -Path $quickTunnelUrlPath -ExpectedUrl $publicUrl',
+    '$tunnelSupervisorPidPath = Join-Path $runtimeDir ''tunnel-supervisor.pid''',
+    '$tunnelStopOutput = @(& $existingGenerationCore tunnel stop --runtime-root $runtimeDir 2>&1)',
+    '$tunnelStartupArguments = "--start-tunnel --runtime-root',
+    '-FilePath $destinationTrayBinary',
+    '-Arguments $tunnelStartupArguments',
+    '$installWarningCode = ''tunnel-start-deferred''',
+    '$installWarningCode = "$installWarningCode,tunnel-start-deferred"',
+    'Public access is starting in the background.',
+    'Tunnel startup continues in the background; readiness is shown in the control panel and logs.',
     'quick-tunnel-url.txt',
     '& ''$escapedBinaryPath'' tunnel launch --runtime-root ''$escapedRuntimeDir''',
     'Write-ProtectedText -Path $PasswordPath',
@@ -242,6 +249,16 @@ foreach ($required in @(
 )) {
     if (-not $content.Contains($required)) {
         throw "$InstallerPath is missing current-user startup logic: $required"
+    }
+}
+foreach ($forbidden in @(
+    '[DateTime]::UtcNow.AddSeconds(45)',
+    'Wait-QuickTunnelReady',
+    'Wait-QuickTunnelUrl',
+    'Wait-CloudflaredRunning'
+)) {
+    if ($content.Contains($forbidden)) {
+        throw "$InstallerPath must keep Tunnel readiness asynchronous and must not contain: $forbidden"
     }
 }
 if ($content.Contains('skill bootstrap --bundle $coreSkillBundle')) {

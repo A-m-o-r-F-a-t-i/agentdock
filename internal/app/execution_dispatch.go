@@ -56,7 +56,15 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 		stamp := received.UTC()
 		created.RequestReceivedAt = &stamp
 	}
-	if err = r.appendExecution(created); err != nil {
+	initialEvents := []activity.Event{created}
+	if resolveErr == nil {
+		payloadCtx, payloadCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		if payloadEvent, ok := r.executionPayloadEvent(payloadCtx, initial, spec.Name, "request", original, r.executionRedactor(original)); ok {
+			initialEvents = append(initialEvents, payloadEvent)
+		}
+		payloadCancel()
+	}
+	if err = r.appendExecutions(initialEvents...); err != nil {
 		return nil, toolError("AUDIT_UNAVAILABLE", "The execution journal is unavailable; the tool was not dispatched.", "runtime")
 	}
 	defer func() {
@@ -93,9 +101,6 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 			}
 		}
 	}()
-	if resolveErr == nil {
-		r.recordExecutionPayload(initial, spec.Name, "request", original, r.executionRedactor(original))
-	}
 	fail := func(failure error) (Result, error) {
 		event := activity.Event{Binding: state.binding, Kind: "call.completed", Status: "failed", ToolName: spec.Name, Title: spec.Title, ElapsedMS: time.Since(state.started).Milliseconds(), Summary: r.executionRedactor(original).Text(failure.Error(), 4096)}
 		if event.Binding.Validate() != nil {
@@ -269,13 +274,18 @@ func cloneExecutionArguments(input map[string]any) (map[string]any, error) {
 	return result, nil
 }
 func (r *Runtime) appendExecution(event activity.Event) error {
-	if event.OwnerInstance == "" {
-		event.OwnerPID = os.Getpid()
-		event.OwnerInstance = r.executionInstance
+	return r.appendExecutions(event)
+}
+func (r *Runtime) appendExecutions(events ...activity.Event) error {
+	for index := range events {
+		if events[index].OwnerInstance == "" {
+			events[index].OwnerPID = os.Getpid()
+			events[index].OwnerInstance = r.executionInstance
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err := r.activity.Append(ctx, event)
+	_, err := r.activity.AppendBatch(ctx, events)
 	return err
 }
 func (r *Runtime) executionError(err error, state executionObservation) error {

@@ -70,7 +70,7 @@ internal static class Program
                 Populate(window);
                 foreach (var mode in new[] {"compact","detailed"})
                 {
-                    Named<ListBox>(window,"CallsList").ItemTemplate = (DataTemplate)window.FindResource(mode=="compact" ? "CallRowTemplate" : "CallDetailedRowTemplate");
+                    Named<ListBox>(window,"CallsList").ItemTemplate = (DataTemplate)window.FindResource(mode=="compact" ? "CallRowTemplate" : "DetailedCallRowTemplate");
                     Named<Button>(window,"CallPresentationButton").Content = mode=="compact" ? "简洁" : "详细";
                     var header = window.FindName("DetailedCallsHeader") as FrameworkElement;
                     if (header is not null) header.Visibility = mode=="detailed" ? Visibility.Visible : Visibility.Collapsed;

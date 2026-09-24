@@ -9,11 +9,21 @@ import (
 )
 
 func (r *Runtime) recordExecutionPayload(binding activity.Binding, name, kind string, value any, redactor activity.Redactor) {
-	if r.activity == nil || binding.CallID == "" || binding.ParentCallID != "" || binding.Visibility == "diagnostic" {
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	event, ok := r.executionPayloadEvent(ctx, binding, name, kind, value, redactor)
+	if !ok {
+		return
+	}
+	if err := r.appendExecution(event); err != nil {
+		slog.Warn("Activity payload reference could not be saved", "call_id", binding.CallID, "kind", kind)
+	}
+}
+
+func (r *Runtime) executionPayloadEvent(ctx context.Context, binding activity.Binding, name, kind string, value any, redactor activity.Redactor) (activity.Event, bool) {
+	if r.activity == nil || binding.CallID == "" || binding.ParentCallID != "" || binding.Visibility == "diagnostic" {
+		return activity.Event{}, false
+	}
 	payload := r.activity.CapturePayload(ctx, value, "complete", redactor)
 	event := activity.Event{Binding: binding, Kind: "call.payload", ToolName: name}
 	if kind == "request" {
@@ -21,9 +31,7 @@ func (r *Runtime) recordExecutionPayload(binding activity.Binding, name, kind st
 	} else {
 		event.Response = payload
 	}
-	if err := r.appendExecution(event); err != nil {
-		slog.Warn("Activity payload reference could not be saved", "call_id", binding.CallID, "kind", kind)
-	}
+	return event, true
 }
 
 func bindResponseAudit(ctx context.Context, binding activity.Binding, name string, redactor activity.Redactor, received time.Time, status string) bool {

@@ -159,6 +159,25 @@ func TestActivityMutexWaitUsesCallerDeadline(t *testing.T) {
 	}
 }
 
+func TestAppendBatchLockContextWaitsForAllCallers(t *testing.T) {
+	shortCtx, cancelShort := context.WithCancel(context.Background())
+	longCtx, cancelLong := context.WithCancel(context.Background())
+	lockCtx, cleanup := appendBatchLockContext([]*appendRequest{{ctx: shortCtx}, {ctx: longCtx}})
+	defer cleanup()
+	cancelShort()
+	select {
+	case <-lockCtx.Done():
+		t.Fatal("one cancelled caller stopped a batch that still had an active waiter")
+	case <-time.After(20 * time.Millisecond):
+	}
+	cancelLong()
+	select {
+	case <-lockCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("batch lock context stayed active after every caller cancelled")
+	}
+}
+
 func TestPayloadDeduplicatesAcrossStoresAndPersistsQuota(t *testing.T) {
 	first := testStore(t, Options{})
 	second, err := New(first.root, Options{})
@@ -293,6 +312,34 @@ func TestPayloadReuseRenewsPublicationGrace(t *testing.T) {
 	release()
 	if err != nil || used != payload.Bytes {
 		t.Fatal("unpublished reused blob was collected", used, err)
+	}
+}
+
+func TestRecentPayloadReuseDoesNotRewriteMetadata(t *testing.T) {
+	store := testStore(t, Options{})
+	payload := store.CapturePayload(t.Context(), "recent reused payload", "complete", NewRedactor())
+	if payload.Ref == "" {
+		t.Fatal(payload)
+	}
+	path := filepath.Join(store.root, "payloads", payload.Ref+".json")
+	recent := time.Now().Add(-30 * time.Second).Truncate(time.Second)
+	if err := os.Chtimes(path, recent, recent); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reused := store.CapturePayload(t.Context(), "recent reused payload", "complete", NewRedactor())
+	if reused.Ref != payload.Ref {
+		t.Fatal(reused)
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Fatalf("recent reuse rewrote metadata: before=%s after=%s", before.ModTime(), after.ModTime())
 	}
 }
 

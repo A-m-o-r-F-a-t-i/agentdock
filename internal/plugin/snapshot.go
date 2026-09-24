@@ -164,33 +164,85 @@ func (s *Store) buildSnapshot(ctx context.Context, requested string) (*Directory
 	if err != nil {
 		return nil, err
 	}
-	records := map[string]packageRecord{}
-	// Disk parsing is outside the writer lock; publishing checks the same version
-	// again. A cancelled scan checks ctx at each package and Skill boundary.
+	type scanResult struct {
+		name    string
+		root    string
+		record  packageRecord
+		metrics BuildMetrics
+		err     error
+	}
+	candidates := make([]os.DirEntry, 0, len(entries))
 	for _, entry := range entries {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
 		if strings.HasPrefix(entry.Name(), ".") || !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
 			continue
 		}
-		root := filepath.Join(s.root, entry.Name())
-		metrics.PluginScans++
-		record, err := readPackageContext(ctx, root, true, true, s.snapshots.files.Add, &metrics)
+		candidates = append(candidates, entry)
+	}
+	// Package reads are independent and already occur outside the writer lock.
+	// Bound filesystem concurrency so large plugin sets do not make Runtime
+	// startup depend on one long serial chain, while avoiding an unbounded burst
+	// of handles on hosts with hundreds of packages.
+	parallelism := len(candidates)
+	if parallelism > 8 {
+		parallelism = 8
+	}
+	results := make(chan scanResult, len(candidates))
+	semaphore := make(chan struct{}, parallelism)
+	var workers sync.WaitGroup
+	for _, entry := range candidates {
+		entry := entry
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-ctx.Done():
+				results <- scanResult{name: entry.Name(), err: ctx.Err()}
+				return
+			}
+			root := filepath.Join(s.root, entry.Name())
+			localMetrics := BuildMetrics{PluginScans: 1}
+			record, scanErr := readPackageContext(ctx, root, true, true, s.snapshots.files.Add, &localMetrics)
+			results <- scanResult{name: entry.Name(), root: root, record: record, metrics: localMetrics, err: scanErr}
+		}()
+	}
+	workers.Wait()
+	close(results)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	scanned := make(map[string]scanResult, len(candidates))
+	for result := range results {
+		metrics.PluginScans += result.metrics.PluginScans
+		metrics.SkillDocuments += result.metrics.SkillDocuments
+		scanned[result.name] = result
+	}
+	records := map[string]packageRecord{}
+	// Disk parsing is outside the writer lock; publishing checks the same version
+	// again. A cancelled scan checks ctx at each package and Skill boundary.
+	// Results are committed in stable name order so diagnostics and ownership
+	// conflicts remain deterministic regardless of worker completion order.
+	for _, name := range sortedKeys(scanned) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		result := scanned[name]
+		record, err := result.record, result.err
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		if err != nil {
-			records[entry.Name()] = packageRecord{root: root, manifest: Manifest{Name: entry.Name()}, definition: Definition{Name: entry.Name(), Path: root, Enabled: false, Diagnostics: []string{err.Error()}}}
+			records[name] = packageRecord{root: result.root, manifest: Manifest{Name: name}, definition: Definition{Name: name, Path: result.root, Enabled: false, Diagnostics: []string{err.Error()}}}
 			continue
 		}
-		if record.manifest.Name != entry.Name() {
-			return nil, newError("PLUGIN_DIRECTORY_MISMATCH", "plugin directory name must equal manifest name", map[string]any{"directory": entry.Name()}, nil)
+		if record.manifest.Name != name {
+			return nil, newError("PLUGIN_DIRECTORY_MISMATCH", "plugin directory name must equal manifest name", map[string]any{"directory": name}, nil)
 		}
 		if err := ensureUniqueOwnership(records, record, ""); err != nil {
 			return nil, err
 		}
-		records[entry.Name()] = record
+		records[name] = record
 	}
 	release, err = s.acquireSnapshot(ctx, &metrics)
 	if err != nil {
