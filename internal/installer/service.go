@@ -382,13 +382,20 @@ func startWindowsTunnel(_ context.Context, request Request, journal *rollbackJou
 }
 
 func windowsServiceBinary(request Request) string {
+	// Installer-owned control commands must reach the selected Core directly:
+	// the stable shim refuses ordinary commands during an uncommitted trial.
+	// Resolve each call so rollback stops the target, then restarts the restored
+	// source. Task/launch entries in runtime.json still use the stable shim.
+	if binary := desktopruntime.ActiveCoreBinary(request.InstallRoot, desktopruntime.Manifest{}); binary != "" {
+		return binary
+	}
 	candidates := []string{
 		filepath.Join(request.InstallRoot, "agentdock.exe"),
 		filepath.Join(request.InstallRoot, "bin", "agentdock.exe"),
 	}
 	if request.PayloadDir != "" {
-		// stable entry 已存在时必须优先走它，让 service/task 解析 active generation；
-		// payload 只用于首次发布尚未建立 stable entry 的兜底。
+		// No usable selected generation exists yet. Preserve the legacy/stable
+		// entry before falling back to the incoming fresh-install payload.
 		candidates = append(candidates, filepath.Join(request.PayloadDir, "agentdock.exe"))
 	}
 	for _, candidate := range candidates {
