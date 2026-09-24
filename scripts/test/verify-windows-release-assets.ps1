@@ -50,6 +50,42 @@ function Assert-Checksum {
     return $actual
 }
 
+function Invoke-PackagedSkillBootstrap {
+    param([string] $CorePath, [string] $BundleDirectory, [string] $IsolatedHome)
+
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = $CorePath
+    $start.WorkingDirectory = $IsolatedHome
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $start.Environment['AGENTDOCK_HOME'] = $IsolatedHome
+    foreach ($argument in @('skill', 'bootstrap', '--bundle', $BundleDirectory)) {
+        $start.ArgumentList.Add($argument)
+    }
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $start
+    try {
+        if (-not $process.Start()) { throw 'Could not start packaged Skill bootstrap.' }
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        if (-not $process.WaitForExit(60000)) {
+            $process.Kill($true)
+            [void] $process.WaitForExit(5000)
+            throw 'Packaged Skill bootstrap exceeded 60 seconds.'
+        }
+        $output = $stdout.GetAwaiter().GetResult()
+        $errors = $stderr.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne 0) {
+            throw "Packaged Skill bootstrap failed (exit $($process.ExitCode)): $errors $output"
+        }
+        return $output
+    } finally {
+        $process.Dispose()
+    }
+}
+
 $releaseRoot = [IO.Path]::GetFullPath($ReleaseDirectory)
 if (-not (Test-Path -LiteralPath $releaseRoot -PathType Container)) {
     throw "Release directory was not found: $releaseRoot"
@@ -122,6 +158,34 @@ try {
     if ([string]$core.platform -ne 'windows/amd64') {
         throw "Packaged Core platform mismatch: $($core.platform)"
     }
+
+    # Exercise the payload actually shipped to Setup, not a handwritten manifest.
+    # Only this temporary Skill home is changed; no Setup, server or task is started.
+    $bundleDirectory = Join-Path $temporaryRoot 'share/agentdock/core-skills'
+    $skillHome = Join-Path $temporaryRoot 'skill-bootstrap-home'
+    New-Item -ItemType Directory -Path $skillHome | Out-Null
+    foreach ($phase in @('fresh', 'repeat')) {
+        $bootstrap = Invoke-PackagedSkillBootstrap -CorePath $corePath -BundleDirectory $bundleDirectory -IsolatedHome $skillHome
+        $manifest = [IO.File]::ReadAllText((Join-Path $bundleDirectory 'manifest.json')) | ConvertFrom-Json
+        $expectedSkills = @('agentdock-user-guide', 'skill-authoring', 'skill-installation')
+        $actualSkills = @($manifest.skills | ForEach-Object { [string]$_.name } | Sort-Object)
+        if (@(Compare-Object $expectedSkills $actualSkills).Count -ne 0) {
+            throw 'Packaged core Skill inventory does not match the required bundle.'
+        }
+        $expectedLines = @($manifest.skills | ForEach-Object { "bundled skill installed: $($_.name) $($_.version)" } | Sort-Object)
+        $actualLines = @($bootstrap -split '\r?\n' | Where-Object { $_.Length -gt 0 } | Sort-Object)
+        if (@(Compare-Object $expectedLines $actualLines).Count -ne 0) {
+            throw "Packaged Skill bootstrap returned an incomplete $phase result."
+        }
+        foreach ($entry in $manifest.skills) {
+            $selectionPath = Join-Path $skillHome "skills/.state/$($entry.name).json"
+            $selection = [IO.File]::ReadAllText($selectionPath) | ConvertFrom-Json
+            if (-not $selection.system -or [string]$selection.active_version -ne [string]$entry.version) {
+                throw "Packaged Skill was not activated correctly: $($entry.name), phase=$phase"
+            }
+            [void](Resolve-RequiredFile -Path (Join-Path $skillHome "skills/.system/$($entry.name)/SKILL.md") -Description 'Installed core Skill')
+        }
+    }
 } finally {
     Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
@@ -138,6 +202,7 @@ if ($setupVersion -ne $ExpectedVersion) {
     platform = 'windows/amd64'
     agentdock_authenticode = $ExpectedAuthenticode
     cloudflared_authenticode = 'valid'
+    core_skill_bootstrap = @{ fresh = 'passed'; repeat = 'passed'; count = $expectedSkills.Count }
     assets = $digests
     verified_at = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
 } | ConvertTo-Json -Depth 5

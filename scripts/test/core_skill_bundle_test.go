@@ -2,23 +2,28 @@ package scripts
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
-func TestCoreSkillBundleNormalizesTextLineEndings(t *testing.T) {
+func coreSkillBuilder(t *testing.T) (string, string) {
+	t.Helper()
 	python := ""
 	for _, candidate := range []string{"python3", "python"} {
 		path, err := exec.LookPath(candidate)
 		if err != nil {
 			continue
 		}
-		probe := exec.Command(path, "--version")
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		probe := exec.CommandContext(ctx, path, "--version")
 		probe.Dir = t.TempDir()
 		output, err := probe.CombinedOutput()
+		cancel()
 		if err == nil && strings.Contains(string(output), "Python 3") {
 			python = path
 			break
@@ -34,6 +39,11 @@ func TestCoreSkillBundleNormalizesTextLineEndings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return python, script
+}
+
+func TestCoreSkillBundleNormalizesTextLineEndings(t *testing.T) {
+	python, script := coreSkillBuilder(t)
 
 	build := func(lineEnding string) string {
 		t.Helper()
