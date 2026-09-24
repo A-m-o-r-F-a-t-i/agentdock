@@ -103,6 +103,10 @@ func TestCatalogPaginationSharedReadsAndInvalidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	tool := value.Tools["tool_000"]
+	refreshedAt := value.RefreshedAt
+	if refreshedAt.IsZero() || refreshedAt.After(time.Now()) {
+		t.Fatal("catalog omitted its actual refresh time")
+	}
 	if tool.InputSchema["$defs"] == nil || tool.OutputSchema == nil || tool.Annotations == nil || tool.StandardMetadata["_meta"] == nil {
 		t.Fatal("full schema or standard metadata was lost")
 	}
@@ -113,6 +117,9 @@ func TestCatalogPaginationSharedReadsAndInvalidation(t *testing.T) {
 	}
 	if value.Tools["tool_000"].InputSchema["$defs"].(map[string]any)["Number"].(map[string]any)["minimum"] != float64(1) {
 		t.Fatal("returned schema corrupted the dispatch cache")
+	}
+	if !value.RefreshedAt.Equal(refreshedAt) {
+		t.Fatal("a cached read changed the refresh time")
 	}
 	_, _, release, err := m.lockServer("catalog")
 	if err != nil {
@@ -166,8 +173,16 @@ func TestCatalogPaginationSharedReadsAndInvalidation(t *testing.T) {
 	state.refreshedAt = time.Now().Add(-2 * catalogMaxAge)
 	publishStateLocked(state)
 	state.mu.Unlock()
-	if _, err := m.Catalog(t.Context(), "catalog"); err != nil {
+	stale, fresh, err := m.CachedCatalog("catalog")
+	if err != nil || fresh || time.Since(stale.RefreshedAt) < catalogMaxAge {
+		t.Fatalf("expired catalog lost its real age: %+v fresh=%v err=%v", stale.RefreshedAt, fresh, err)
+	}
+	refreshed, err := m.Catalog(t.Context(), "catalog")
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !refreshed.RefreshedAt.After(stale.RefreshedAt) {
+		t.Fatal("TTL refresh did not advance its timestamp")
 	}
 	if lists.Load() != 9 {
 		t.Fatalf("expiry refresh pages=%d", lists.Load())

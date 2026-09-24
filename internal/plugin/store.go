@@ -187,6 +187,13 @@ func (s *Store) installPrepared(root string, replace bool, candidate *PreparedSo
 
 	state := defaultState(sourceRecord)
 	destination := filepath.Join(s.root, sourceRecord.manifest.Name)
+	if info, err := os.Lstat(destination); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return Definition{}, newError("PLUGIN_INSTALL_FAILED", "plugin destination must not be a symlink", map[string]any{"name": sourceRecord.manifest.Name}, nil)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return Definition{}, newError("PLUGIN_INSTALL_FAILED", "inspect plugin destination", map[string]any{"name": sourceRecord.manifest.Name}, err)
+	}
 	var oldRecord packageRecord
 	var hadOld bool
 	if existing, ok := installed[sourceRecord.manifest.Name]; ok {

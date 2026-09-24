@@ -34,6 +34,7 @@ type Store struct {
 	root             string
 	options          Options
 	mu               sync.Mutex
+	payloadMu        sync.Mutex
 	changed          chan struct{}
 	redactor         Redactor
 	payloadDirectory os.FileInfo
@@ -72,15 +73,23 @@ func New(root string, options Options, secrets ...string) (*Store, error) {
 func (s *Store) Changed() <-chan struct{} { s.mu.Lock(); defer s.mu.Unlock(); return s.changed }
 
 func (s *Store) lock(ctx context.Context) (func(), error) {
+	return s.lockResource(ctx, &s.mu, ".activity.lock")
+}
+
+func (s *Store) lockPayload(ctx context.Context) (func(), error) {
+	return s.lockResource(ctx, &s.payloadMu, ".payload.lock")
+}
+
+func (s *Store) lockResource(ctx context.Context, mutex *sync.Mutex, name string) (func(), error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if !s.mu.TryLock() {
+	if !mutex.TryLock() {
 		tick := time.NewTicker(2 * time.Millisecond)
 		defer tick.Stop()
-		for !s.mu.TryLock() {
+		for !mutex.TryLock() {
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -88,12 +97,12 @@ func (s *Store) lock(ctx context.Context) (func(), error) {
 			}
 		}
 	}
-	release, err := filelock.Acquire(ctx, filepath.Join(s.root, ".activity.lock"))
+	release, err := filelock.Acquire(ctx, filepath.Join(s.root, name))
 	if err != nil {
-		s.mu.Unlock()
+		mutex.Unlock()
 		return nil, err
 	}
-	return func() { release(); s.mu.Unlock() }, nil
+	return func() { release(); mutex.Unlock() }, nil
 }
 
 func (s *Store) Append(ctx context.Context, e Event) (Event, error) {

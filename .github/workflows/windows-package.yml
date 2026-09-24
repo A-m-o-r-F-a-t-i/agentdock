@@ -158,6 +158,21 @@ jobs:
           "tag=$tag" | Out-File $env:GITHUB_OUTPUT -Encoding ascii -Append
           "artifact_name=$artifactName" | Out-File $env:GITHUB_OUTPUT -Encoding ascii -Append
 
+      - name: Offscreen desktop layout regression
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project desktop/windows/control-panel-layout-tests/AgentDock.ControlPanel.LayoutTests.csproj --configuration Release -- $PWD (Join-Path $PWD 'dist/layout-validation')
+          if ($LASTEXITCODE -ne 0) { throw 'Offscreen desktop layout validation failed.' }
+
+      - name: Preserve layout evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-layout-${{ github.run_id }}
+          path: dist/layout-validation/*
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Backend regression
         run: |
           $ErrorActionPreference = 'Stop'
@@ -175,21 +190,6 @@ jobs:
           $ErrorActionPreference = 'Stop'
           dotnet run --project desktop/windows/control-panel-tests/AgentDock.ControlPanel.Tests.csproj --configuration Release
           if ($LASTEXITCODE -ne 0) { throw 'Desktop pure-policy tests failed.' }
-
-      - name: Offscreen desktop layout regression
-        run: |
-          $ErrorActionPreference = 'Stop'
-          dotnet run --project desktop/windows/control-panel-layout-tests/AgentDock.ControlPanel.LayoutTests.csproj --configuration Release -- $PWD (Join-Path $PWD 'dist/layout-validation')
-          if ($LASTEXITCODE -ne 0) { throw 'Offscreen desktop layout validation failed.' }
-
-      - name: Preserve layout evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: desktop-layout-${{ github.run_id }}
-          path: dist/layout-validation/*
-          if-no-files-found: warn
-          retention-days: 30
 
       - name: Windows installer contracts
         run: |

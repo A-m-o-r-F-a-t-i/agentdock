@@ -17,6 +17,7 @@ type Catalog struct {
 	Revision      string
 	ServerVersion string
 	Complete      bool
+	RefreshedAt   time.Time
 	Tools         map[string]Tool
 }
 
@@ -53,7 +54,7 @@ func (m *Manager) catalogSnapshot(server string) (Catalog, bool, error) {
 	if view == nil || !view.Known {
 		return Catalog{}, false, nil
 	}
-	catalog := Catalog{Server: server, Revision: fmt.Sprintf("%s:%d", cfg.revision, view.Revision), ServerVersion: view.Version, Complete: true, Tools: view.Tools}
+	catalog := Catalog{Server: server, Revision: fmt.Sprintf("%s:%d", cfg.revision, view.Revision), ServerVersion: view.Version, Complete: true, RefreshedAt: view.RefreshedAt, Tools: view.Tools}
 	return catalog, catalogFresh(view), nil
 }
 

@@ -110,7 +110,7 @@ internal static class Program
                 var own = outlines.Where(border => ReferenceEquals(border.TemplatedParent,groupBox)).ToArray();
                 Check(own.Length==1 && own[0].BorderThickness==new Thickness(2),"GroupBox must have one 2-DIP outline.");
                 Check(Named<ComboBox>(panel,"ThemePreferenceCombo") is not null,"Theme preference was lost during migration.");
-                panel.Close();
+                typeof(MainWindow).GetMethod("CloseForReplacement", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(panel,null);
                 Directory.Delete(root,true);
             }
             File.WriteAllText(Path.Combine(output,"layout-validation.json"),JsonSerializer.Serialize(new { assertions=_assertions, samples=Samples, mode="offscreen-wpf", runtime_started=false, installer_started=false, physical_monitor_dpi_test=false },new JsonSerializerOptions{WriteIndented=true}));
@@ -132,9 +132,9 @@ internal static class Program
         window.Objects.Add(new ExecutionObject{Id="footer:inactive",IsGroupFooter=true,HasMore=false,WorkspaceKey=collapsed});
         var request="{\n  \"workdir\": \"C:/isolated-fixture\"\n}";
         var output="{\n  \"structured_content\": {\"status\": \"ok\", \"items\": 200},\n  \"content\": [{\"type\": \"text\", \"text\": \"工具输出完整保存。\"}]\n}";
-        var row=new ExecutionCallRow(Json(new{call_id="call-fixture",conversation_id="conversation-0",tool_name="agentdock_context",display_title="加载上下文",status="success",rpc_elapsed_ms=123,request_received_at=DateTimeOffset.UtcNow,request=new{state="complete",preview=request,bytes=request.Length,lines=3},response=new{state="complete",preview=output,bytes=output.Length,lines=4}}));
+        var row=new ExecutionCallRow(Json(new{call_id="call-fixture",conversation_id="conversation-0",tool_name="agentdock_context",display_title="加载上下文",status="succeeded",rpc_elapsed_ms=123,request_received_at=DateTimeOffset.UtcNow,request=new{state="complete",preview=request,bytes=request.Length,lines=3},response=new{state="complete",preview=output,bytes=output.Length,lines=4}}));
         window.Calls.Add(row);
-        window.Calls.Add(new ExecutionCallRow(Json(new{tool_name="file_edit",display_title="更新 src/example.go",status="success",rpc_elapsed_ms=218,request_received_at=DateTimeOffset.UtcNow,file_edit=new{stats_state="known",insertions=26,deletions=9}})));
+        window.Calls.Add(new ExecutionCallRow(Json(new{tool_name="file_edit",display_title="更新 src/example.go",status="succeeded",rpc_elapsed_ms=218,request_received_at=DateTimeOffset.UtcNow,file_edit=new{stats_state="known",insertions=26,deletions=9}})));
         window.Calls.Add(new ExecutionCallRow(Json(new{tool_name="mcp_tool_call",display_title="读取服务状态",status="running",request_received_at=DateTimeOffset.UtcNow})));
         Named<TextBlock>(window,"ObjectTitle").Text="修复工具响应与调用记录";
         Named<FrameworkElement>(window,"EmptyPanel").Visibility=Visibility.Collapsed;

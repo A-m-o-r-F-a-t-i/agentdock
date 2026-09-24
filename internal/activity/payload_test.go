@@ -196,7 +196,7 @@ func TestPayloadDeduplicatesAcrossStoresAndPersistsQuota(t *testing.T) {
 	if err != nil || len(files) != 1 {
 		t.Fatalf("unexpected blobs %v %v", files, err)
 	}
-	release, err := second.lock(context.Background())
+	release, err := second.lockPayload(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestPayloadCollectionKeepsReferencedAndInFlightBlobs(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	release, err := s.lock(context.Background())
+	release, err := s.lockPayload(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,5 +234,79 @@ func TestPayloadCollectionKeepsReferencedAndInFlightBlobs(t *testing.T) {
 	}
 	if _, err := s.ReadCallPayload(context.Background(), "call_retained", "response", 0, 32768); err != nil {
 		t.Fatal("retained output lost", err)
+	}
+}
+
+func TestPayloadIOAndJournalHaveIndependentLocks(t *testing.T) {
+	store := testStore(t, Options{})
+	if got := store.CapturePayload(t.Context(), "prime quota", "complete", NewRedactor()); got.Ref == "" {
+		t.Fatal(got)
+	}
+	journalRelease, err := store.lock(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	got := store.CapturePayload(ctx, "write while journal busy", "complete", NewRedactor())
+	cancel()
+	journalRelease()
+	if got.Ref == "" {
+		t.Fatalf("payload blocked on unrelated journal: %+v", got)
+	}
+	payloadRelease, err := store.lockPayload(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel = context.WithTimeout(t.Context(), time.Second)
+	_, err = store.Append(ctx, Event{Kind: "call.created", Binding: Binding{CallID: "call_lock_independent"}})
+	cancel()
+	payloadRelease()
+	if err != nil {
+		t.Fatal("journal blocked on payload I/O", err)
+	}
+}
+
+func TestPayloadReuseRenewsPublicationGrace(t *testing.T) {
+	store := testStore(t, Options{})
+	payload := store.CapturePayload(t.Context(), "reused orphan", "complete", NewRedactor())
+	if payload.Ref == "" {
+		t.Fatal(payload)
+	}
+	path := filepath.Join(store.root, "payloads", payload.Ref+".json")
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	second, err := New(store.root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reused := second.CapturePayload(t.Context(), "reused orphan", "complete", NewRedactor())
+	if reused.Ref != payload.Ref {
+		t.Fatal(reused)
+	}
+	release, err := store.lockPayload(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	used, err := store.prunePayloadsLocked(t.Context(), filepath.Join(store.root, "payloads"))
+	release()
+	if err != nil || used != payload.Bytes {
+		t.Fatal("unpublished reused blob was collected", used, err)
+	}
+}
+
+func TestPayloadAncestorLinksAreRejected(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target")
+	if err := os.MkdirAll(filepath.Join(target, "payloads"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("platform cannot create symlink: %v", err)
+	}
+	if err := rejectPayloadLink(filepath.Join(link, "payloads")); err == nil {
+		t.Fatal("linked ancestor accepted")
 	}
 }

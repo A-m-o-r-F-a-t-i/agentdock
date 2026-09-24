@@ -101,7 +101,7 @@ func (s *Store) CapturePayload(ctx context.Context, value any, state string, red
 		return failure("保存时已取消；原工具状态保持不变。")
 	}
 	path := filepath.Join(s.root, "payloads")
-	release, err := s.lock(ctx)
+	release, err := s.lockPayload(ctx)
 	if err != nil {
 		return failure("活动存储锁不可用；输出未保存。")
 	}
@@ -173,16 +173,23 @@ func rejectPayloadLink(path string) error {
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return errors.New("payload directory is not an ordinary directory")
 	}
-	resolved, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return err
-	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return err
 	}
-	if !strings.EqualFold(filepath.Clean(resolved), filepath.Clean(absolute)) {
-		return errors.New("payload directory resolves outside its store")
+	// Windows 8.3 aliases resolve to different strings without crossing a link.
+	// Check actual directory entries instead of rejecting spelling changes.
+	for parent := filepath.Dir(absolute); ; parent = filepath.Dir(parent) {
+		ancestor, err := os.Lstat(parent)
+		if err != nil {
+			return err
+		}
+		if !ancestor.IsDir() || ancestor.Mode()&os.ModeSymlink != 0 {
+			return errors.New("payload directory has a linked ancestor")
+		}
+		if filepath.Dir(parent) == parent {
+			break
+		}
 	}
 	return nil
 }
@@ -321,7 +328,7 @@ func (r Redactor) PayloadValue(value any) any {
 	}
 }
 
-// Called with the journal file lock held. The tiny durable reservation keeps the
+// Called with the dedicated payload lock held. The durable reservation keeps the
 // aggregate cap valid across processes, including interrupted blob writes.
 func (s *Store) payloadUsageLocked(ctx context.Context, root string) (int64, error) {
 	path := filepath.Join(s.root, "payload-usage.json")
@@ -356,8 +363,16 @@ func (s *Store) savePayloadUsageLocked(bytes int64) error {
 	return atomicfile.Write(filepath.Join(s.root, "payload-usage.json"), data, 0600)
 }
 func (s *Store) prunePayloadsLocked(ctx context.Context, root string) (int64, error) {
+	// Lock ordering is payload -> journal. Copy the retained references under
+	// the journal lock, then release it before scanning or deleting blobs.
+	// Captured, unpublished blobs have a five-minute grace period below.
+	release, err := s.lock(ctx)
+	if err != nil {
+		return 0, err
+	}
 	projection, err := s.projectionLocked(ctx)
 	if err != nil {
+		release()
 		return 0, err
 	}
 	retained := map[string]bool{}
@@ -368,6 +383,7 @@ func (s *Store) prunePayloadsLocked(ctx context.Context, root string) (int64, er
 			}
 		}
 	}
+	release()
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return 0, err

@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,16 +19,17 @@ func TestMCPDiscoveryEndToEndPerformance(t *testing.T) {
 	setUserHomeForTest(t, t.TempDir())
 	fixture := newCatalogFixture(t, 200)
 	type sample struct {
-		Mode       string  `json:"mode"`
-		Index      int     `json:"index"`
-		ContextMS  float64 `json:"context_ms"`
-		ListMS     float64 `json:"list_ms"`
-		InspectMS  float64 `json:"inspect_ms"`
-		BusinessMS float64 `json:"business_ms"`
-		TotalMS    float64 `json:"total_ms"`
-		Bytes      int     `json:"response_bytes"`
-		Pages      int32   `json:"upstream_list_pages"`
-		Error      string  `json:"error,omitempty"`
+		Mode         string  `json:"mode"`
+		Index        int     `json:"index"`
+		ContextMS    float64 `json:"context_ms"`
+		ListMS       float64 `json:"list_ms"`
+		InspectMS    float64 `json:"inspect_ms"`
+		BusinessMS   float64 `json:"business_ms"`
+		TotalMS      float64 `json:"total_ms"`
+		Bytes        int     `json:"response_bytes"`
+		Pages        int32   `json:"upstream_list_pages"`
+		CatalogAgeMS float64 `json:"catalog_age_before_ms"`
+		Error        string  `json:"error,omitempty"`
 	}
 	rows := []sample{}
 	newRuntime := func() *Runtime {
@@ -45,9 +47,16 @@ func TestMCPDiscoveryEndToEndPerformance(t *testing.T) {
 		}
 		return r
 	}
-	measure := func(r *Runtime, mode string, index int) {
+	measure := func(r *Runtime, mode string, index int) bool {
 		row := sample{Mode: mode, Index: index}
 		before := fixture.lists.Load()
+		catalog, _, err := r.capabilityManager.CachedCatalog("catalog")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !catalog.RefreshedAt.IsZero() {
+			row.CatalogAgeMS = float64(time.Since(catalog.RefreshedAt)) / float64(time.Millisecond)
+		}
 		start := time.Now()
 		steps := []struct {
 			name    string
@@ -76,7 +85,6 @@ func TestMCPDiscoveryEndToEndPerformance(t *testing.T) {
 		}
 		row.TotalMS = float64(time.Since(start)) / float64(time.Millisecond)
 		row.Pages = fixture.lists.Load() - before
-		rows = append(rows, row)
 		if row.Error != "" {
 			t.Error(row.Error)
 		}
@@ -84,9 +92,15 @@ func TestMCPDiscoveryEndToEndPerformance(t *testing.T) {
 		if mode == "cold" {
 			want = 3
 		}
-		if row.Pages != want {
-			t.Errorf("%s discovery pages=%d, want %d", mode, row.Pages, want)
+		if mode == "hot" && row.Pages > 0 && row.CatalogAgeMS+row.TotalMS >= 60000 {
+			row.Mode = "warm-ttl-refresh"
+			want = 3
 		}
+		if row.Pages != want {
+			t.Errorf("%s discovery pages=%d, want %d (catalog age %.3f ms)", row.Mode, row.Pages, want, row.CatalogAgeMS)
+		}
+		rows = append(rows, row)
+		return row.Mode == "hot"
 	}
 	for i := 0; i < 20; i++ {
 		r := newRuntime()
@@ -98,17 +112,23 @@ func TestMCPDiscoveryEndToEndPerformance(t *testing.T) {
 	r := newRuntime()
 	defer r.Close()
 	measure(r, "cold", 20)
-	for i := 0; i < 100; i++ {
-		measure(r, "hot", i)
+	hotCount := 0
+	for attempt := 0; hotCount < 100 && attempt < 120; attempt++ {
+		if measure(r, "hot", attempt) {
+			hotCount++
+		}
+	}
+	if hotCount != 100 {
+		t.Errorf("only %d valid-cache hot samples were collected", hotCount)
 	}
 	summary := []map[string]any{}
-	for _, mode := range []string{"cold", "hot"} {
+	for _, mode := range []string{"cold", "hot", "warm-ttl-refresh", "warm-total"} {
 		values := []float64{}
 		list := []float64{}
 		inspect := []float64{}
 		failures := 0
 		for _, row := range rows {
-			if row.Mode == mode {
+			if row.Mode == mode || mode == "warm-total" && (row.Mode == "hot" || strings.HasPrefix(row.Mode, "warm-")) {
 				values = append(values, row.TotalMS)
 				list = append(list, row.ListMS)
 				inspect = append(inspect, row.InspectMS)
@@ -116,6 +136,9 @@ func TestMCPDiscoveryEndToEndPerformance(t *testing.T) {
 					failures++
 				}
 			}
+		}
+		if len(values) == 0 {
+			continue
 		}
 		for _, set := range [][]float64{values, list, inspect} {
 			sort.Float64s(set)
@@ -128,7 +151,7 @@ func TestMCPDiscoveryEndToEndPerformance(t *testing.T) {
 			t.Errorf("hot cached directory/schema root latency exceeds 200 ms: list=%.3f inspect=%.3f", list[index], inspect[index])
 		}
 	}
-	report := map[string]any{"boundary": "Normal Runtime.Call + JSON encoding for context -> full list -> full 200-schema inspect -> first business call. Includes root observation, not external ChatGPT network/rendering. All servers, schemas and data are synthetic.", "cold": "Fresh Runtime and new MCP connection; OS file cache not flushed. Constructor/setup excluded and not reported as process startup.", "percentile": "nearest-rank", "summary": summary, "samples": rows}
+	report := map[string]any{"boundary": "Normal Runtime.Call + JSON encoding for context -> full list -> full 200-schema inspect -> first business call. Includes root observation, not external ChatGPT network/rendering. All servers, schemas and data are synthetic.", "cold": "Fresh Runtime and new MCP connection; OS file cache not flushed. Constructor/setup excluded and not reported as process startup.", "percentile": "nearest-rank", "cache_boundary": "100 valid-cache hot samples plus every observed 60-second TTL refresh; warm-total retains their combined cost", "summary": summary, "samples": rows}
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		t.Fatal(err)

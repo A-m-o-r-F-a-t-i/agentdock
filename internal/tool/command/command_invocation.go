@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -126,6 +127,7 @@ func (svc *Service) newHostCommandInvocation(ctx context.Context, request ExecRe
 	releaseOnError = false
 	return commandInvocation{
 		command: request.Cmd, workdir: workdir, env: commandEnv, skillRelease: lease.Release,
+		execution: session.ExecutionContext{Runtime: runtime.GOOS, Workdir: workdir},
 	}, nil
 }
 

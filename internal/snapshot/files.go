@@ -20,6 +20,7 @@ import (
 // doing their one actual metadata build, including the parent of absent files.
 type Files struct {
 	treeRoot     string
+	treeResolved string
 	treeClose    func()
 	watcher      *fsnotify.Watcher
 	filter       func(string) bool
@@ -53,6 +54,7 @@ func NewTreeFiles(root string, filter func(string) bool) *Files {
 	f := NewFiles(filter)
 	if closeTree, ok := startTreeWatch(filepath.Clean(root), f.event, func() { f.unhealthy.Store(true); f.revision.Add(1) }); ok {
 		f.treeRoot = filepath.Clean(root)
+		f.treeResolved, _ = filepath.EvalSymlinks(root)
 		f.treeClose = closeTree
 	}
 	return f
@@ -107,8 +109,16 @@ func (f *Files) Add(path string) {
 	}
 	path = filepath.Clean(path)
 	if f.treeRoot != "" {
-		if rel, err := filepath.Rel(f.treeRoot, path); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel) {
+		if insideWatchRoot(f.treeRoot, path) {
 			return
+		}
+		// A plugin path may have been canonicalized by its safety checks while
+		// the root still uses a Windows 8.3 alias. Do not open a nested handle.
+		if f.treeResolved != "" {
+			resolved, err := filepath.EvalSymlinks(path)
+			if err == nil && insideWatchRoot(f.treeResolved, resolved) {
+				return
+			}
 		}
 	}
 	f.mu.Lock()
@@ -239,4 +249,9 @@ func MetadataPaths(workdir, global string) []string {
 	}
 	sort.Strings(paths)
 	return paths
+}
+
+func insideWatchRoot(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
