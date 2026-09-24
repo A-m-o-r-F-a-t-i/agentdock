@@ -22,9 +22,9 @@ on:
         default: ''
         type: string
       installation_tests:
-        description: 'Run isolated installer/runtime tests; disable for compile-only delivery'
+        description: 'Explicit opt-in to isolated installer/runtime tests; normal releases never run an installer'
         required: true
-        default: true
+        default: false
         type: boolean
       prerelease:
         description: 'Publish as a prerelease; disabled by default'
@@ -40,6 +40,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  linux-contracts:
+    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
+    name: Linux transaction and concurrency regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Linux backend and WSL helper contracts
+        run: go test -p 2 ./... -count=1 -timeout=8m
+      - name: Race detection on snapshots, plugins and file transactions
+        run: go test -race -p 2 ./internal/snapshot ./internal/plugin ./internal/activity ./internal/wslfilehelper -count=1 -timeout=8m
+
   build:
     if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
     name: Build verified unsigned Windows x64 package
@@ -158,10 +176,25 @@ jobs:
           dotnet run --project desktop/windows/control-panel-tests/AgentDock.ControlPanel.Tests.csproj --configuration Release
           if ($LASTEXITCODE -ne 0) { throw 'Desktop pure-policy tests failed.' }
 
+      - name: Offscreen desktop layout regression
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project desktop/windows/control-panel-layout-tests/AgentDock.ControlPanel.LayoutTests.csproj --configuration Release -- $PWD (Join-Path $PWD 'dist/layout-validation')
+          if ($LASTEXITCODE -ne 0) { throw 'Offscreen desktop layout validation failed.' }
+
+      - name: Preserve layout evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-layout-${{ github.run_id }}
+          path: dist/layout-validation/*
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Windows installer contracts
         run: |
           $ErrorActionPreference = 'Stop'
-          $staticOnly = '${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.installation_tests }}' -ne 'true'
+          $staticOnly = '${{ inputs.installation_tests }}' -ne 'true'
           & .\scripts\test\test-install-windows.ps1 -StaticOnly:$staticOnly
 
       - name: Build Windows x64 ZIP and offline Setup
@@ -196,7 +229,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Build modified tracked source.' }
 
       - name: Verify offline Setup installation and uninstall
-        if: github.event_name != 'workflow_dispatch' || inputs.installation_tests == true
+        if: github.event_name == 'workflow_dispatch' && inputs.installation_tests == true
         run: |
           $ErrorActionPreference = 'Stop'
           & .\scripts\test\test-windows-setup-e2e.ps1 `
@@ -207,7 +240,7 @@ jobs:
 
       - name: Record verification scope
         run: |
-          $installed = '${{ github.event_name }}' -ne 'workflow_dispatch' -or '${{ inputs.installation_tests }}' -eq 'true'
+          $installed = '${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.installation_tests }}' -eq 'true'
           $scope = @{ automated_regression = 'passed'; metadata_checksums = 'passed'; installation_tests = $(if ($installed) { 'passed' } else { 'not_run_user_requested' }); manual_desktop_tests = 'not_run'; commit = '${{ steps.metadata.outputs.commit }}' }
           $scope | ConvertTo-Json | Set-Content -Encoding utf8 .\dist\windows-package\verification-scope.json
 
@@ -239,7 +272,7 @@ jobs:
 
   publish:
     if: needs.build.outputs.publish == 'true'
-    needs: build
+    needs: [build, linux-contracts]
     name: Publish verified Windows x64 Release
     runs-on: windows-latest
     timeout-minutes: 20
