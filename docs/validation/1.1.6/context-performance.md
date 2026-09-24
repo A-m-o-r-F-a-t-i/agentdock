@@ -38,8 +38,8 @@
 
 ## 原始证据
 
-- context-root-samples.json：960 个原始样本，SHA-256 $contextHash。
+- context-root-samples.json：960 个原始样本，SHA-256 2faa08c22bc431d52ac558c6dc09ef4c055edd44875e398271828088a7b35b0a。
 - context-final-performance.txt：测试进程标准输出与退出结果。
-- performance-environment.txt：源码 SHA、工作树、CPU 空闲探针和阶段时间，SHA-256 $envHash。
+- performance-environment.txt：源码 SHA、工作树、CPU 空闲探针和阶段时间，SHA-256 f101489e98ba7f190a2bb08a68d1eb4f36f9a5f8d3a83b72e0cf90dd7f117e7d。
 
 本报告不包含 ChatGPT 公网传输、模型推理和网页模板渲染，也不证明实际模型调用次数下降。未在用户电脑安装或运行新版二进制。

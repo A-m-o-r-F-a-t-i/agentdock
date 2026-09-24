@@ -20,7 +20,7 @@ mcp_tool_list 返回当前可见服务的完整名称和一行描述。mcp_tool_
 
 ## 原始证据
 
-- mcp-discovery-end-to-end.json：121 个端到端样本，SHA-256 $mcpHash。
+- mcp-discovery-end-to-end.json：121 个端到端样本，SHA-256 2875b969d638c085c0051ecaae09f25083f85ef9f7efdd1461842a40f16c57f3。
 - mcp-final-performance.txt：测试进程标准输出与退出结果。
 - performance-environment.txt：与 Context 测试共用的隔离环境记录。
 

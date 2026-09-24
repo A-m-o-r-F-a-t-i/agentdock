@@ -14,4 +14,4 @@
 | Context 性能 | 960 样本、0 失败，全部门槛通过 |
 | MCP 端到端性能 | 121 样本、0 失败 |
 
-GitHub Actions 的 Windows、Linux、race、离屏、静态安装契约、打包和校验尚未在写入本文件时完成；对应 run ID 将在候选通过后补入验收矩阵。没有运行安装器、启动新版桌面界面或替换生产 AgentDock。
+GitHub Actions 候选 35980716534 已通过，绑定提交 e4ea5c4fc4e0ae539c2f532cabddc3dde147148d；相对上述源码提交仅增加验证文档和样本。Windows 全量 Go 回归、go vet、桌面策略、离屏 WPF、静态安装契约、x64 ZIP/Setup 打包及元信息和校验和核对全部成功。Linux 全量回归及 snapshot/plugin/activity/wslfilehelper race 成功。安装和卸载步骤明确跳过，发布步骤因候选模式跳过。正式 tag 的构建与发布是独立阶段，以 v1.1.6 对应 Actions 和下载后的交付记录为准。没有运行安装器、启动新版桌面界面或替换生产 AgentDock。
