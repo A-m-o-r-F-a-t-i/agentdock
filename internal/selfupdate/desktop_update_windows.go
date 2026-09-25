@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/uvwt/agentdock/internal/bundledrg"
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 )
 
@@ -75,7 +76,7 @@ func desktopUpdateOwnsExecutable(string, string) bool {
 	return false
 }
 
-func extractDesktopUpdateArchive(_ context.Context, archiveData []byte, tempDir, targetVersion string) (string, error) {
+func extractDesktopUpdateArchive(ctx context.Context, archiveData []byte, tempDir, targetVersion string) (string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(archiveData), int64(len(archiveData)))
 	if err != nil {
 		return "", err
@@ -88,10 +89,16 @@ func extractDesktopUpdateArchive(_ context.Context, archiveData []byte, tempDir,
 
 	found := make(map[string]bool, len(windowsDesktopArchiveFiles)+len(windowsGenerationArchiveFiles))
 	for _, file := range reader.File {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		name := filepath.ToSlash(file.Name)
 		mode, wanted := windowsDesktopArchiveFiles[name]
 		if !wanted {
 			mode, wanted = windowsGenerationArchiveFiles[name]
+		}
+		if !wanted && bundledrg.ArchiveFile(name) {
+			mode, wanted = 0o644, true
 		}
 		if !wanted {
 			continue
@@ -135,6 +142,9 @@ func extractDesktopUpdateArchive(_ context.Context, archiveData []byte, tempDir,
 		}
 	}
 
+	if _, err := bundledrg.VerifyIfPresent(ctx, stagedRoot); err != nil {
+		return "", err
+	}
 	version := normalizeVersion(targetVersion)
 	if version == "" {
 		return "", errors.New("Windows 桌面组件目标版本为空")

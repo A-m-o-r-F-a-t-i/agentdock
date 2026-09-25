@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"github.com/uvwt/agentdock/internal/bundledrg"
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
 	"github.com/uvwt/agentdock/internal/updateengine"
@@ -203,6 +204,22 @@ func stageWindowsGeneration(ctx context.Context, layout updateengine.WindowsLayo
 		path := filepath.Join(stagingDir, filepath.FromSlash(relative))
 		if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
 			return fmt.Errorf("Windows generation WSL helper 文件缺失: %s", relative)
+		}
+	}
+	present, err := bundledrg.VerifyIfPresent(ctx, request.DesktopStagedPath)
+	if err != nil {
+		return err
+	}
+	if present {
+		relative := filepath.FromSlash(bundledrg.RelativeDir)
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(stagingDir, relative)), 0o700); err != nil {
+			return err
+		}
+		if err := copyDirectoryWindows(filepath.Join(request.DesktopStagedPath, relative), filepath.Join(stagingDir, relative)); err != nil {
+			return err
+		}
+		if _, err := bundledrg.VerifyIfPresent(ctx, stagingDir); err != nil {
+			return err
 		}
 	}
 	if err := verifyBinaryVersion(ctx, filepath.Join(stagingDir, updateengine.GenerationCoreName), targetVersion); err != nil {

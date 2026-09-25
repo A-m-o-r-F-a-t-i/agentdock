@@ -2,11 +2,13 @@ package installer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/uvwt/agentdock/internal/bundledrg"
 	"github.com/uvwt/agentdock/internal/fs/processlock"
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
@@ -141,6 +143,10 @@ func PrepareWindowsLegacyGeneration(ctx context.Context, request WindowsLegacyBo
 		return WindowsLegacyBootstrapResult{}, err
 	}
 
+	if err := preserveLegacySearchBundle(ctx, filepath.Dir(request.CorePath), staging); err != nil {
+		return WindowsLegacyBootstrapResult{}, err
+	}
+
 	// With no active pointer the final generation cannot be live. Replacing an orphan
 	// left by a crash is therefore safe and makes retry idempotent.
 	if err := os.RemoveAll(generation); err != nil {
@@ -192,6 +198,60 @@ func requireRegularFile(path string) error {
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("不是普通文件")
+	}
+	return nil
+}
+
+// The known-good source retains its own search component, not a tool copied
+// from the new target payload. Both layouts stay attached to their Core bytes.
+func preserveLegacySearchBundle(ctx context.Context, source, staging string) error {
+	for _, relative := range []string{bundledrg.RelativeDir, "tools/rg"} {
+		from := filepath.Join(source, filepath.FromSlash(relative))
+		var verified *bundledrg.Verified
+		var err error
+		if relative == bundledrg.RelativeDir {
+			verified, err = bundledrg.Open(ctx, from)
+		} else {
+			verified, err = bundledrg.OpenLegacy(ctx, from)
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		defer verified.Close()
+		to := filepath.Join(staging, filepath.FromSlash(relative))
+		if err := os.MkdirAll(to, 0700); err != nil {
+			return err
+		}
+		names := []string{}
+		if relative == bundledrg.RelativeDir {
+			names = append(names, "manifest.json")
+		}
+		for _, file := range bundledrg.Specification().Files {
+			names = append(names, file.Path)
+		}
+		for _, name := range names {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if err := copyTree(filepath.Join(from, name), filepath.Join(to, name), 0755); err != nil {
+				return err
+			}
+		}
+		var copied *bundledrg.Verified
+		if relative == bundledrg.RelativeDir {
+			copied, err = bundledrg.Open(ctx, to)
+		} else {
+			copied, err = bundledrg.OpenLegacy(ctx, to)
+		}
+		if err != nil {
+			return err
+		}
+		if err := copied.Close(); err != nil {
+			return err
+		}
 	}
 	return nil
 }

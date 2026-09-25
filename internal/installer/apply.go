@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/bundledrg"
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/envstore"
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
@@ -674,6 +675,19 @@ func copyWindowsGenerationPayload(payload, staging string) error {
 	wslSrc := filepath.Join(payload, "wsl-helper")
 	if dirExists(wslSrc) {
 		if err := copyTree(wslSrc, filepath.Join(staging, "wsl-helper"), 0o755); err != nil {
+			return err
+		}
+	}
+	present, err := bundledrg.VerifyIfPresent(context.Background(), payload)
+	if err != nil {
+		return err
+	}
+	if present {
+		relative := filepath.FromSlash(bundledrg.RelativeDir)
+		if err := copyTree(filepath.Join(payload, relative), filepath.Join(staging, relative), 0o755); err != nil {
+			return err
+		}
+		if _, err := bundledrg.VerifyIfPresent(context.Background(), staging); err != nil {
 			return err
 		}
 	}
