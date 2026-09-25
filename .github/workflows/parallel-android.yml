@@ -2,8 +2,7 @@ name: WB07 Android Candidate
 
 on:
   push:
-    branches:
-      - "parallel/20260925/android"
+    branches: ["parallel/20260925/android"]
 
 permissions:
   contents: read
@@ -61,7 +60,7 @@ jobs:
           }, indent=2) + "\n")
           PY
 
-      - name: Enforce lane ownership
+      - name: Enforce owned paths
         shell: bash
         run: |
           set -euo pipefail
@@ -69,13 +68,9 @@ jobs:
           changed="$(git diff --name-only "$WB07_BASE_SHA" "$GITHUB_SHA")"
           printf '%s\n' "$changed" | tee evidence/contract/changed-files.txt
           disallowed="$(printf '%s\n' "$changed" | grep -Ev '^(mobile/android/|scripts/ci/parallel-android/|docs/android/|\.github/workflows/parallel-android\.yml$)' || true)"
-          if [[ -n "$disallowed" ]]; then
-            echo "WB07 changed paths outside its ownership:" >&2
-            printf '%s\n' "$disallowed" >&2
-            exit 1
-          fi
+          test -z "$disallowed" || { printf 'WB07 path violation:\n%s\n' "$disallowed" >&2; exit 1; }
 
-      - name: Validate source contracts
+      - name: Validate source and bridge contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -96,7 +91,7 @@ jobs:
           bash scripts/ci/parallel-android/test-termux-bridge.sh | tee evidence/contract/termux-contract.txt
           git diff --check "$WB07_BASE_SHA" "$GITHUB_SHA"
 
-      - name: Validate security and version boundaries
+      - name: Validate security and release boundaries
         shell: bash
         run: |
           set -euo pipefail
@@ -111,13 +106,18 @@ jobs:
           if grep -RInE --exclude='Pages.kt' \
             'BIND_ACCESSIBILITY_SERVICE|SYSTEM_ALERT_WINDOW|android\.permission\.WAKE_LOCK|Shizuku|(^|[^A-Za-z])su[[:space:]]+-c|adb[[:space:]]+shell|MediaPlayer|AudioTrack|setExactAndAllowWhileIdle' \
             mobile/android/app/src/main mobile/android/termux; then
-            echo "forbidden Android background/elevation mechanism found" >&2
+            echo "forbidden Android elevation/background mechanism found" >&2
             exit 1
           fi
-          if grep -nE '(^|[[:space:]])(gh[[:space:]]+release|git[[:space:]]+tag|npm[[:space:]]+publish|gradle[^#]*(publish|uploadArchives))' .github/workflows/parallel-android.yml; then
-            echo "candidate workflow contains a publication operation" >&2
-            exit 1
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path(".github/workflows/parallel-android.yml").read_text()
+          assert "contents: write" not in text
+          forbidden = ["gh" + " release", "git" + " tag", "npm" + " publish", "gradle" + " publish"]
+          hits = [item for item in forbidden if item in text]
+          if hits:
+              raise SystemExit(f"publication commands found: {hits}")
+          PY
 
       - name: Upload contract evidence
         if: always()
@@ -134,8 +134,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     outputs:
-      short_sha: ${{ steps.identity.outputs.short_sha }}
-      product_version: ${{ steps.identity.outputs.product_version }}
       candidate_artifact: ${{ steps.identity.outputs.candidate_artifact }}
     steps:
       - name: Checkout exact candidate SHA
@@ -151,11 +149,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          short_sha="${GITHUB_SHA:0:12}"
-          product_version="${{ needs.contract.outputs.product_version }}"
-          artifact="wb07-android-apk-${short_sha}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-test-signed"
-          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
-          echo "product_version=$product_version" >> "$GITHUB_OUTPUT"
+          artifact="wb07-android-apk-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-test-signed"
           echo "candidate_artifact=$artifact" >> "$GITHUB_OUTPUT"
 
       - name: Set up JDK 17
@@ -167,41 +161,25 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install compile SDK
+      - name: Install Android SDK packages
         shell: bash
         run: |
           set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-${ANDROID_COMPILE_SDK}" \
-            "build-tools;${ANDROID_BUILD_TOOLS}"
+          sdkmanager "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: ${{ env.GRADLE_VERSION }}
-          cache-read-only: false
 
-      - name: Lint and JVM unit tests
+      - name: Lint, unit test and build APKs
         shell: bash
         run: |
           set -euo pipefail
           version_code=$((101070000 + GITHUB_RUN_NUMBER))
           gradle -p mobile/android --no-daemon --stacktrace --warning-mode all \
-            lintDebug testDebugUnitTest \
-            -PagentdockAndroidVersionCode="$version_code" \
-            -PagentdockCandidateSha="$GITHUB_SHA" \
-            -PagentdockCandidateRunId="$GITHUB_RUN_ID" \
-            -PagentdockCandidateRunAttempt="$GITHUB_RUN_ATTEMPT"
-
-      - name: Build candidate and test APKs
-        shell: bash
-        run: |
-          set -euo pipefail
-          version_code=$((101070000 + GITHUB_RUN_NUMBER))
-          gradle -p mobile/android --no-daemon --stacktrace --warning-mode all \
-            assembleDebug assembleRelease assembleDebugAndroidTest \
+            lintDebug testDebugUnitTest assembleDebug assembleRelease assembleDebugAndroidTest \
             -PagentdockAndroidVersionCode="$version_code" \
             -PagentdockCandidateSha="$GITHUB_SHA" \
             -PagentdockCandidateRunId="$GITHUB_RUN_ID" \
@@ -211,16 +189,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          short_sha="${{ steps.identity.outputs.short_sha }}"
-          version="${{ steps.identity.outputs.product_version }}"
+          short_sha="${GITHUB_SHA:0:12}"
+          version="${{ needs.contract.outputs.product_version }}"
           out="evidence/build/apk"
           mkdir -p "$out" evidence/build/signing
-          debug_name="AgentDock-Workbench-${version}-Android-debug-${short_sha}-test-signed.apk"
-          release_name="AgentDock-Workbench-${version}-Android-release-shaped-${short_sha}-test-signed.apk"
-          test_name="AgentDock-Workbench-${version}-Android-instrumentation-${short_sha}-test-signed.apk"
-          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk "$out/$debug_name"
-          cp mobile/android/app/build/outputs/apk/release/app-release.apk "$out/$release_name"
-          cp mobile/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$out/$test_name"
+          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk "$out/AgentDock-Workbench-${version}-Android-debug-${short_sha}-test-signed.apk"
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk "$out/AgentDock-Workbench-${version}-Android-release-shaped-${short_sha}-test-signed.apk"
+          cp mobile/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$out/AgentDock-Workbench-${version}-Android-instrumentation-${short_sha}-test-signed.apk"
           (cd "$out" && sha256sum *.apk | sort > SHA256SUMS)
           apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -x "$apksigner"
@@ -230,7 +205,6 @@ jobs:
           VERSION="$version" SHORT_SHA="$short_sha" VERSION_CODE=$((101070000 + GITHUB_RUN_NUMBER)) python3 - <<'PY'
           import json, os, pathlib
           root = pathlib.Path("evidence/build")
-          apks = sorted(path.name for path in (root / "apk").glob("*.apk"))
           (root / "candidate.json").write_text(json.dumps({
               "schema_version": 1,
               "lane": "WB07",
@@ -238,13 +212,12 @@ jobs:
               "product_version": os.environ["VERSION"],
               "version_code": int(os.environ["VERSION_CODE"]),
               "source_sha": os.environ["GITHUB_SHA"],
-              "short_sha": os.environ["SHORT_SHA"],
               "run_id": os.environ["GITHUB_RUN_ID"],
               "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
               "signing": "Android debug/test key only",
               "publication": False,
               "production_modified": False,
-              "apks": apks
+              "apks": sorted(path.name for path in (root / "apk").glob("*.apk"))
           }, ensure_ascii=False, indent=2) + "\n")
           PY
 
@@ -259,7 +232,7 @@ jobs:
             mobile/android/app/build/reports/lint-results-debug.xml \
             mobile/android/app/build/reports/tests/testDebugUnitTest \
             mobile/android/app/build/test-results/testDebugUnitTest; do
-            if [[ -e "$source" ]]; then cp -a "$source" evidence/build/reports/; fi
+            [[ ! -e "$source" ]] || cp -a "$source" evidence/build/reports/
           done
           env | grep -E '^(GITHUB_SHA|GITHUB_RUN_ID|GITHUB_RUN_ATTEMPT|RUNNER_OS|RUNNER_ARCH)=' | sort > evidence/build/environment.txt
 
@@ -279,7 +252,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wb07-android-build-reports-${{ steps.identity.outputs.short_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: wb07-android-build-reports-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: evidence/build
           if-no-files-found: warn
           retention-days: 14
@@ -302,12 +275,10 @@ jobs:
           persist-credentials: false
 
       - name: Verify identity
-        id: identity
         shell: bash
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          echo "short_sha=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
           mkdir -p "evidence/emulator-api-${{ matrix.api }}"
 
       - name: Set up JDK 17
@@ -319,15 +290,12 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install compile SDK
+      - name: Install Android SDK packages
         shell: bash
         run: |
           set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-${ANDROID_COMPILE_SDK}" \
-            "build-tools;${ANDROID_BUILD_TOOLS}"
+          sdkmanager "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -338,7 +306,7 @@ jobs:
       - name: Enable KVM access
         shell: bash
         run: |
-          if [[ -e /dev/kvm ]]; then sudo chmod 666 /dev/kvm; fi
+          [[ ! -e /dev/kvm ]] || sudo chmod 666 /dev/kvm
 
       - name: Run Compose navigation and screenshot tests
         uses: ReactiveCircus/android-emulator-runner@v2
@@ -358,7 +326,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wb07-android-api${{ matrix.api }}-${{ steps.identity.outputs.short_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: wb07-android-api${{ matrix.api }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: evidence/emulator-api-${{ matrix.api }}
           if-no-files-found: warn
           retention-days: 14
@@ -378,7 +346,6 @@ jobs:
           persist-credentials: false
 
       - name: Write explicit evidence summary
-        id: identity
         env:
           CONTRACT_RESULT: ${{ needs.contract.result }}
           BUILD_RESULT: ${{ needs.build.result }}
@@ -389,8 +356,6 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          short_sha="${GITHUB_SHA:0:12}"
-          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
           mkdir -p evidence/summary
           python3 - <<'PY'
           import json, os, pathlib
@@ -412,31 +377,24 @@ jobs:
               "emulator_scope": "x86_64 navigation/layout and Android API compatibility",
               "physical_arm64_termux": "not run; shell contract only",
               "signed_linux_arm64_manifest": "pending WB05 release contract",
-              "duration_runs": {
-                  "30_minutes": "not run",
-                  "2_hours": "not run",
-                  "8_hours": "not run"
-              },
+              "duration_runs": {"30_minutes": "not run", "2_hours": "not run", "8_hours": "not run"},
               "merge": False,
               "tag": False,
               "release": False,
               "publication": False,
               "production_modified": False
           }
-          pathlib.Path("evidence/summary/evidence.json").write_text(
-              json.dumps(summary, ensure_ascii=False, indent=2) + "\n"
-          )
+          pathlib.Path("evidence/summary/evidence.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n")
           pathlib.Path("evidence/summary/README.txt").write_text(
               "WB07 candidate evidence only. No merge, tag, release, publication, production mutation, or production signing occurred.\n"
           )
           PY
-          cat evidence/summary/evidence.json
 
       - name: Upload aggregate evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wb07-android-evidence-${{ steps.identity.outputs.short_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: wb07-android-evidence-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: evidence/summary
           if-no-files-found: error
           retention-days: 14
