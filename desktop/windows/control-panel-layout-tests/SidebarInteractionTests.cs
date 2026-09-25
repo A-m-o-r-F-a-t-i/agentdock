@@ -140,7 +140,11 @@ internal static class SidebarInteractionTests
                 check(navigation.For("A").HistoryLimit == 40 && window.Objects.Select(row => row.Id).Distinct().Count() == window.Objects.Count, "Expand/collapse cycle produced duplicate rows or incorrect pagination.");
             }
             handler.Failure="empty";Click(window,"A");Settled(window);
-            check(!window.Objects.Any(row=>row.IsGroupFooter&&row.WorkspaceKey.Id=="A"),"Empty final page retained a nonfunctional more button");
+            var emptyFooter=window.Objects.Single(row=>row.IsGroupFooter&&row.WorkspaceKey.Id=="A");
+            check(!emptyFooter.HasMore&&!emptyFooter.CanLoadMore,"Empty final page remained pageable");
+            var objectList=(ListBox)window.FindName("ObjectsList");objectList.UpdateLayout();
+            if(objectList.ItemContainerGenerator.ContainerFromItem(emptyFooter) is ListBoxItem emptyContainer)
+                check(emptyContainer.Visibility==Visibility.Collapsed&&emptyContainer.Height==0,"Empty footer anchor is visible instead of collapsed");
             Reload(window);
             handler.DeletedId="A-1";Reload(window);
             check(!window.Objects.Any(row=>row.Id=="A-1")&&window.Objects.Select(row=>row.Id).Distinct().Count()==window.Objects.Count,"Deleted history row survived a replacement page");

@@ -169,3 +169,62 @@ func TestWindowsRecoveryRejectsChangedACLBeforeMovingCurrent(t *testing.T) {
 		t.Fatal("recovery evidence removed")
 	}
 }
+
+func TestWindowsBackupPreservesLegacyAndAutomaticInheritanceModes(t *testing.T) {
+	nativeBackupTest(t)
+	for _, automatic := range []bool{false, true} {
+		t.Run(map[bool]string{false: "legacy", true: "automatic"}[automatic], func(t *testing.T) {
+			root := t.TempDir()
+			source := filepath.Join(root, "source.txt")
+			if err := os.WriteFile(source, []byte("retained"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			metadata, err := readBackupNativeMetadata(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			descriptor, err := windows.SecurityDescriptorFromString(metadata.Security)
+			if err != nil {
+				t.Fatal(err)
+			}
+			flags := windows.SECURITY_DESCRIPTOR_CONTROL(windows.SE_DACL_AUTO_INHERITED)
+			value := windows.SECURITY_DESCRIPTOR_CONTROL(0)
+			if automatic {
+				value = flags
+			}
+			if err = descriptor.SetControl(flags, value); err != nil {
+				t.Fatal(err)
+			}
+			metadata.Security = descriptor.String()
+			if err = applyBackupNativeMetadata(source, metadata); err != nil {
+				t.Fatal(err)
+			}
+			expected, err := readBackupNativeMetadata(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := windows.SecurityDescriptorFromString(expected.Security)
+			if err != nil {
+				t.Fatal(err)
+			}
+			control, _, err := parsed.Control()
+			if err != nil || (control&flags != 0) != automatic {
+				t.Fatalf("fixture did not establish requested native mode: %#x %v", control, err)
+			}
+			j := newJournal(filepath.Join(root, "state"), "inheritance-mode")
+			if err = j.Snapshot(source); err != nil {
+				t.Fatal(err)
+			}
+			if err = os.WriteFile(source, []byte("changed"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err = j.Restore(t.Context(), Request{}); err != nil {
+				t.Fatal(err)
+			}
+			actual, err := readBackupNativeMetadata(source)
+			if err != nil || !equalBackupNativeMetadata(actual, expected) {
+				t.Fatalf("native ACL mode changed: %s %v", backupNativeMetadataDifference(actual, expected), err)
+			}
+		})
+	}
+}

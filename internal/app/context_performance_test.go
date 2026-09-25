@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/config"
 	pluginregistry "github.com/uvwt/agentdock/internal/plugin"
 	"github.com/uvwt/agentdock/internal/snapshot"
@@ -41,16 +42,18 @@ type contextPerfSample struct {
 }
 
 type contextPerfGroup struct {
-	Fixture          string         `json:"fixture"`
-	Mode             string         `json:"mode"`
-	Round            int            `json:"round"`
-	Requests         int            `json:"requests"`
-	WallMS           float64        `json:"wall_ms"`
-	PluginBefore     snapshot.Stats `json:"plugin_before"`
-	PluginAfter      snapshot.Stats `json:"plugin_after"`
-	SkillBefore      snapshot.Stats `json:"skill_before"`
-	SkillAfter       snapshot.Stats `json:"skill_after"`
-	ExternalRequests int32          `json:"external_requests"`
+	Fixture          string                              `json:"fixture"`
+	Mode             string                              `json:"mode"`
+	Round            int                                 `json:"round"`
+	Requests         int                                 `json:"requests"`
+	WallMS           float64                             `json:"wall_ms"`
+	PluginBefore     snapshot.Stats                      `json:"plugin_before"`
+	PluginAfter      snapshot.Stats                      `json:"plugin_after"`
+	SkillBefore      snapshot.Stats                      `json:"skill_before"`
+	SkillAfter       snapshot.Stats                      `json:"skill_after"`
+	ExternalRequests int32                               `json:"external_requests"`
+	RegistryBefore   activity.ConversationReadStatistics `json:"registry_before"`
+	RegistryAfter    activity.ConversationReadStatistics `json:"registry_after"`
 }
 
 type contextPerfSummary struct {
@@ -196,7 +199,7 @@ func TestContextPerformanceSamples(t *testing.T) {
 			}
 			measure := func(rt *Runtime, mode string, round, request int) {
 				started := time.Now()
-				ctx, cancel := context.WithTimeout(t.Context(), cfg.ContextBudget())
+				ctx, cancel := context.WithTimeout(activity.WithSource(t.Context(), activity.Source{Principal: "context-perf", HostConversationID: fixture}), cfg.ContextBudget())
 				defer cancel()
 				result, err := rt.Call(ctx, "agentdock_context", map[string]any{"workdir": workspace})
 				sample := contextPerfSample{Fixture: fixture, Mode: mode, Round: round, Request: request}
@@ -243,6 +246,7 @@ func TestContextPerformanceSamples(t *testing.T) {
 			}
 			group := func(rt *Runtime, mode string, round, n int, concurrent bool) {
 				g := contextPerfGroup{Fixture: fixture, Mode: mode, Round: round, Requests: n, PluginBefore: rt.pluginStore.SnapshotStats(), SkillBefore: rt.contextSnapshots.skills.Stats()}
+				g.RegistryBefore = rt.conversations.ReadStatistics()
 				networkBefore := external.Load()
 				started := time.Now()
 				if concurrent {
@@ -262,6 +266,7 @@ func TestContextPerformanceSamples(t *testing.T) {
 				g.WallMS = float64(time.Since(started)) / float64(time.Millisecond)
 				g.PluginAfter, g.SkillAfter = rt.pluginStore.SnapshotStats(), rt.contextSnapshots.skills.Stats()
 				g.ExternalRequests = external.Load() - networkBefore
+				g.RegistryAfter = rt.conversations.ReadStatistics()
 				report.Groups = append(report.Groups, g)
 				expectedBuilds := uint64(0)
 				if strings.Contains(mode, "cold") {
@@ -272,6 +277,9 @@ func TestContextPerformanceSamples(t *testing.T) {
 				}
 				if g.ExternalRequests != 0 {
 					t.Errorf("context contacted unselected service %d times", g.ExternalRequests)
+				}
+				if g.RegistryAfter.Decodes-g.RegistryBefore.Decodes > 1 {
+					t.Errorf("%s/%s reparsed unchanged registry", fixture, mode)
 				}
 			}
 			for i := 0; i < coldN; i++ {
@@ -284,7 +292,7 @@ func TestContextPerformanceSamples(t *testing.T) {
 			}
 			rt := newRuntime()
 			defer rt.Close()
-			if _, err := rt.Call(t.Context(), "agentdock_context", map[string]any{"workdir": workspace}); err != nil {
+			if _, err := rt.Call(activity.WithSource(t.Context(), activity.Source{Principal: "context-perf", HostConversationID: fixture}), "agentdock_context", map[string]any{"workdir": workspace}); err != nil {
 				t.Fatal(err)
 			}
 			group(rt, "hot", 0, hotN, false)

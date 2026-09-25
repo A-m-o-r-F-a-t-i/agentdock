@@ -85,6 +85,8 @@ func (r *ConversationRegistry) readSnapshot(ctx context.Context, path string) (*
 			return nil, err
 		}
 	}
+	r.verifiedReads.Add(1)
+	r.verifiedBytes.Add(uint64(total))
 	if matching && total == len(cached.serialized) {
 		return cached, nil
 	}

@@ -21,6 +21,8 @@ type backupNativeMetadata struct {
 	Attributes uint32 `json:"attributes"`
 }
 
+var setLegacyBackupSecurity = windows.NewLazySystemDLL("advapi32.dll").NewProc("SetFileSecurityW")
+
 func readBackupNativeMetadata(path string) (*backupNativeMetadata, error) {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
@@ -133,7 +135,22 @@ func applyBackupNativeMetadata(path string, metadata *backupNativeMetadata) erro
 	// The modern ACL API retains auto-inheritance control. All destinations
 	// remain inside a private stage and parent-before-child application is
 	// followed by exact read-back of owner, group, DACL and supported attributes.
-	err = windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.SECURITY_INFORMATION(information), owner, group, dacl, nil)
+	if control&windows.SE_DACL_AUTO_INHERITED != 0 {
+		err = windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.SECURITY_INFORMATION(information), owner, group, dacl, nil)
+	} else {
+		// A legacy descriptor must not acquire the auto-inherited control bit.
+		// This API intentionally does not propagate ACLs to children; every
+		// child is restored separately and exact read-back remains mandatory.
+		legacyInformation := uint32(backupSecurityInformation)
+		if control&windows.SE_DACL_PROTECTED != 0 {
+			legacyInformation |= windows.PROTECTED_DACL_SECURITY_INFORMATION
+		}
+		result, _, failure := setLegacyBackupSecurity.Call(uintptr(unsafe.Pointer(name)), uintptr(legacyInformation), uintptr(unsafe.Pointer(security)))
+		runtime.KeepAlive(name)
+		if result == 0 {
+			err = fmt.Errorf("restore legacy Windows security metadata: %w", failure)
+		}
+	}
 	runtime.KeepAlive(security)
 	if err != nil {
 		return fmt.Errorf("restore Windows security metadata: %w", err)

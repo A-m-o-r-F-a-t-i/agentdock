@@ -97,7 +97,9 @@ func TestAppendBudgetCountBytesCancellationAndRecovery(t *testing.T) {
 				t.Fatalf("cancelled events committed: %+v %v", written, err)
 			}
 			stats = waitAppendState(t, s, func(stats AppendStatistics) bool { return stats.ReservedEvents == 0 })
-			if stats.CommittedEvents != 1 || stats.CancelledEvents != 103 || stats.RejectedEvents != 37 || stats.PersistNS == 0 {
+			// Coarse native clocks can legitimately measure a fast batch as zero.
+			// The count verifies instrumentation without inventing elapsed time.
+			if stats.CommittedEvents != 1 || stats.CancelledEvents != 103 || stats.RejectedEvents != 37 || stats.PersistBatches == 0 {
 				t.Fatalf("incorrect accounting: %+v", stats)
 			}
 		}()

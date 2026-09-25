@@ -108,9 +108,11 @@ type conversationState struct {
 type ConversationRegistry struct {
 	root string
 	// Cache access uses the same cancellable file lock as disk access.
-	cached      *conversationSnapshot
-	readBuffer  []byte
-	decodeCount atomic.Uint64
+	cached        *conversationSnapshot
+	readBuffer    []byte
+	decodeCount   atomic.Uint64
+	verifiedReads atomic.Uint64
+	verifiedBytes atomic.Uint64
 }
 
 func NewConversationRegistry(root string) (*ConversationRegistry, error) {

@@ -27,6 +27,7 @@ type AppendStatistics struct {
 	FailedEvents    uint64 `json:"failed_events"`
 	QueueWaitNS     uint64 `json:"queue_wait_ns"`
 	PersistNS       uint64 `json:"persist_ns"`
+	PersistBatches  uint64 `json:"persist_batches"`
 }
 
 type appendBudget struct {
@@ -140,6 +141,7 @@ func (s *Store) measureAppend(requests []*appendRequest, started time.Time) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.stats.PersistNS += uint64(max(0, time.Since(started).Nanoseconds()))
+	b.stats.PersistBatches++
 	for _, request := range requests {
 		if !request.enqueued.IsZero() {
 			b.stats.QueueWaitNS += uint64(max(0, started.Sub(request.enqueued).Nanoseconds()))
