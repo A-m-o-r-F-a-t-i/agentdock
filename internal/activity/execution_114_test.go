@@ -116,7 +116,7 @@ func TestWB04InteractionStopsAtRPCReturnWhileExecutionContinues(t *testing.T) {
 	apply(base.Add(11*time.Minute), Event{Binding: binding, Kind: "call.bound", ToolName: "exec_command"})
 	apply(base.Add(12*time.Minute), Event{Binding: binding, Kind: "call.recovered", ToolName: "exec_command"})
 	outputAt := base.Add(20 * time.Minute)
-	apply(outputAt, Event{Binding: binding, Kind: "command.output", Status: "running", ToolName: "exec_command", Output: "still alive"})
+	apply(outputAt, Event{Binding: binding, Kind: "command.output", Status: "running", ToolName: "exec_command", OutputPreview: "still alive"})
 	completedAt := outputAt.Add(5 * time.Second)
 	processElapsed := int64((20*time.Minute + 5*time.Second) / time.Millisecond)
 	apply(completedAt, Event{Binding: binding, Kind: "command.completed", Status: "succeeded", ToolName: "exec_command", ElapsedMS: processElapsed})
