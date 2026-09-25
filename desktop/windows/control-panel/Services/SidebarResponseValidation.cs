@@ -8,7 +8,10 @@ internal sealed class SidebarProtocolException : JsonException
     internal string Scope { get; }
     internal string RowType { get; }
     internal long ResponseGeneration { get; }
-    internal string Fingerprint => $"{Code}|{Scope}|{RowType}|{ResponseGeneration}";
+    // Generation remains reportable evidence, but is excluded from the
+    // diagnostic key so an unchanged malformed stream cannot bypass log
+    // throttling merely by incrementing latest_seq.
+    internal string Fingerprint => $"{Code}|{Scope}|{RowType}";
     internal bool IsPageWide => Scope == "page";
     internal string UserMessage => IsPageWide
         ? $"对话列表响应无效，已保留上次可信列表（{Code}，响应代次 {ResponseGeneration}）。"
@@ -44,6 +47,10 @@ internal static class SidebarResponseValidation
         var generation = page.Number("latest_seq");
         if (page.ValueKind != JsonValueKind.Object || page.Field("groups").ValueKind != JsonValueKind.Array)
             throw Failure("SIDEBAR_RESPONSE_GROUPS_MISSING", "page", "response", generation);
+        ValidateOptionalWindow(page, "recent_interaction_window_ms", (long)ConversationActivityPolicy.ActivityWindow.TotalMilliseconds, generation);
+        ValidateOptionalWindow(page, "insertion_eligibility_window_ms", (long)ConversationActivityPolicy.InsertionWindow.TotalMilliseconds, generation);
+        ValidateOptionalWindow(page, "unclaimed_insertion_expiry_ms", (long)ConversationActivityPolicy.UnclaimedInsertionExpiry.TotalMilliseconds, generation);
+        ValidateOptionalWindow(page, "receipt_wait_ms", (long)ConversationActivityPolicy.ReceiptWait.TotalMilliseconds, generation);
 
         var result = new SidebarParseResult();
         var groupIds = new HashSet<string>(StringComparer.Ordinal);
@@ -134,6 +141,14 @@ internal static class SidebarResponseValidation
 
     internal static SidebarProtocolException TransportFailure(string code, string rowType, long generation = 0) =>
         Failure(code, "page", rowType, generation);
+
+    private static void ValidateOptionalWindow(JsonElement page, string field, long expected, long generation)
+    {
+        var raw = page.Field(field);
+        if (raw.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null) return;
+        if (raw.ValueKind != JsonValueKind.Number || !raw.TryGetInt64(out var value) || value != expected)
+            throw Failure("SIDEBAR_TIMING_CONTRACT_INVALID", "page", "contract", generation);
+    }
 
     private static SidebarProtocolException Failure(string code, string scope, string rowType, long generation) =>
         new(code, scope, rowType, generation);

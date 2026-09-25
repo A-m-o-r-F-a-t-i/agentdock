@@ -30,21 +30,22 @@
           </TextBlock>
           <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TitleTooltip}" VerticalAlignment="Center" Margin="7,0,14,0"/>
 		  <ContentControl Grid.Column="2" Content="{Binding}" ContentTemplate="{StaticResource EditStatsTemplate}" Margin="0,0,8,0"/>
-          <TextBlock Grid.Column="3" Text="{Binding Duration}" Style="{StaticResource MutedText}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
+          <TextBlock Grid.Column="3" Text="{Binding Duration}" Style="{StaticResource MutedText}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0" ToolTip="{Binding TimingDetails}"/>
           <TextBlock Grid.Column="4" Width="78" Text="{Binding When}" Style="{StaticResource MutedText}" VerticalAlignment="Center" HorizontalAlignment="Right" TextAlignment="Right" Visibility="{Binding ShowTimestamps, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/>
         </Grid>
       </DataTemplate>
       <DataTemplate x:Key="DetailedCallRowTemplate">
         <Grid Height="{StaticResource ExecutionRowHeight}" Margin="6,0">
-		  <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="112"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+		  <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="112"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TitleTooltip}" VerticalAlignment="Center" Margin="8,0"/>
 		  <ContentControl Grid.Column="1" Content="{Binding}" ContentTemplate="{StaticResource EditStatsTemplate}" Margin="0,0,8,0"/>
           <TextBlock Grid.Column="2" Width="84" Text="{Binding Started}" FontSize="12" VerticalAlignment="Center" Visibility="{Binding ShowTimestamps, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/>
           <TextBlock Grid.Column="3" Text="{Binding State}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding State}" VerticalAlignment="Center"/>
-          <TextBlock Grid.Column="4" Text="{Binding Duration}" FontSize="12" VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="4" Text="{Binding Duration}" FontSize="12" VerticalAlignment="Center" ToolTip="{Binding TotalTimingDetails}"/>
           <TextBlock Grid.Column="5" Text="{Binding ExecutionDuration}" FontSize="12" VerticalAlignment="Center"/>
           <TextBlock Grid.Column="6" Text="{Binding WaitDuration}" FontSize="12" VerticalAlignment="Center"/>
-          <TextBlock Grid.Column="7" Text="{Binding SourceType}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceType}" VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="7" Text="{Binding ProcessDuration}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding ProcessTimingDetails}" VerticalAlignment="Center"/>
+          <TextBlock Grid.Column="8" Text="{Binding SourceType}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding SourceType}" VerticalAlignment="Center"/>
         </Grid>
       </DataTemplate>
       <DataTemplate x:Key="InsertionRowTemplate">
@@ -115,7 +116,7 @@
 			  <Setter Property="Height" Value="{x:Static local:ExecutionLayout.ConversationRowHeight}"/>
 			  <Style.Triggers><DataTrigger Binding="{Binding IsGroupFooter}" Value="True"><Setter Property="Focusable" Value="False"/><Setter Property="Height" Value="{x:Static local:ExecutionLayout.MoreRowHeight}"/></DataTrigger>
                 <MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding IsGroupFooter}" Value="True"/><Condition Binding="{Binding HasMore}" Value="False"/></MultiDataTrigger.Conditions><Setter Property="Height" Value="0"/><Setter Property="Visibility" Value="Collapsed"/></MultiDataTrigger>
-			    <MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding IsGroupFooter}" Value="False"/><Condition Binding="{Binding WorkspaceKey.Mode}" Value="auto"/><Condition Binding="{Binding RecentlyActive}" Value="False"/></MultiDataTrigger.Conditions><Setter Property="Height" Value="0"/><Setter Property="Visibility" Value="Collapsed"/></MultiDataTrigger>
+			    <MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding IsGroupFooter}" Value="False"/><Condition Binding="{Binding WorkspaceKey.Mode}" Value="auto"/><Condition Binding="{Binding VisibleInAuto}" Value="False"/></MultiDataTrigger.Conditions><Setter Property="Height" Value="0"/><Setter Property="Visibility" Value="Collapsed"/></MultiDataTrigger>
               </Style.Triggers>
             </Style></ListBox.ItemContainerStyle>
             <ListBox.ItemTemplate><DataTemplate>
@@ -123,10 +124,8 @@
                 <Grid x:Name="ConversationRow">
                   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="20"/></Grid.ColumnDefinitions>
                   <TextBlock Text="{Binding Title}" Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}"/>
-                  <TextBlock Grid.Column="1" Text="{Binding PendingCount}" FontSize="12" Margin="6,0,2,0" VerticalAlignment="Center" Foreground="{DynamicResource DangerBrush}">
-                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Visible"/><Style.Triggers><DataTrigger Binding="{Binding PendingCount}" Value="0"><Setter Property="Visibility" Value="Collapsed"/></DataTrigger></Style.Triggers></Style></TextBlock.Style>
-                  </TextBlock>
-                  <TextBlock Grid.Column="2" Text="···" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="最近 2 分钟有执行更新" AutomationProperties.Name="最近 2 分钟有执行更新" Visibility="{Binding RecentlyActive, Converter={StaticResource BoolVisibility}}"/>
+                  <TextBlock Grid.Column="1" Text="{Binding ExecutionStateText}" FontSize="12" Margin="6,0,2,0" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryText}" ToolTip="{Binding ExecutionStateHint}"/>
+                  <TextBlock Grid.Column="2" Text="···" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center" ToolTip="最近 2 分钟有新的外部交互" AutomationProperties.Name="最近 2 分钟有新的外部交互" Visibility="{Binding RecentlyActive, Converter={StaticResource BoolVisibility}}"/>
                 </Grid>
 			    <Button x:Name="ProjectMore" Content="…" Click="SidebarMore_Click" IsEnabled="{Binding CanLoadMore}" Visibility="Collapsed" BorderThickness="0" MinHeight="0" Padding="0" Margin="0" FontSize="12" HorizontalAlignment="Stretch" ToolTip="展开更多对话" AutomationProperties.Name="展开更多对话"/>
               </Grid>
@@ -182,8 +181,8 @@
       <Grid x:Name="CallTable">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <Grid x:Name="DetailedCallsHeader" Height="26" Margin="7,0,19,0" Visibility="Collapsed">
-          <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="112"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-		  <TextBlock Text="工具与动作" Style="{StaticResource MutedText}" Margin="8,0"/><TextBlock Grid.Column="1" Text="修改" Style="{StaticResource MutedText}" HorizontalAlignment="Right" Margin="0,0,8,0"/><TextBlock Grid.Column="2" Width="84" Text="开始" Style="{StaticResource MutedText}" Visibility="{Binding ShowTimestamps, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/><TextBlock Grid.Column="3" Text="状态" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="4" Text="总耗时" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="5" Text="执行" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="6" Text="等待" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="7" Text="来源" Style="{StaticResource MutedText}"/>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="112"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+		  <TextBlock Text="工具与动作" Style="{StaticResource MutedText}" Margin="8,0"/><TextBlock Grid.Column="1" Text="修改" Style="{StaticResource MutedText}" HorizontalAlignment="Right" Margin="0,0,8,0"/><TextBlock Grid.Column="2" Width="84" Text="开始" Style="{StaticResource MutedText}" Visibility="{Binding ShowTimestamps, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/><TextBlock Grid.Column="3" Text="状态" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="4" Text="RPC" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="5" Text="执行" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="6" Text="等待" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="7" Text="后台" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="8" Text="来源" Style="{StaticResource MutedText}"/>
         </Grid>
         <ListBox x:Name="CallsList" Grid.Row="1" ItemsSource="{Binding Calls}" ItemTemplateSelector="{StaticResource CompactTimelineSelector}" SelectionMode="Extended"
                  Padding="0" ScrollViewer.VerticalScrollBarVisibility="Visible"

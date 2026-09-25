@@ -131,6 +131,12 @@ public partial class ExecutionWindow
         return Stopwatch.GetElapsedTime(now, state.RetryAfter);
     }
 
+    private bool SidebarAutomaticRefreshAllowed()
+    {
+        var scope = SidebarScope();
+        return !_sidebarFailures.TryGetValue(scope, out var state) || state.Attempts <= 5 && SidebarRetryDelay(scope) <= TimeSpan.Zero;
+    }
+
     private SidebarNavigationState CurrentNavigation()
     {
         var search = SearchBox.Text.Trim();
@@ -240,7 +246,7 @@ public partial class ExecutionWindow
                 if (!_sidebarGroups.TryGetValue(id, out var key)) _sidebarGroups[id] = key = new(id, group.Text("title"));
                 key.Apply(group); incomingGroups.Add(key);
                 var state = target.For(id);
-                key.IsExpanded = group.Text("mode") == "history" || state.Expanded(key.RecentCount);
+                key.IsExpanded = group.Text("mode") == "history" || state.Expanded(key.VisibleActivityCount);
                 var rows = parsed.Groups[id];
                 foreach (var incoming in rows)
                 {
@@ -404,7 +410,7 @@ public partial class ExecutionWindow
     {
         if (_closed || !_initialized || _updating || _initializingGroup) return;
         var navigation = CurrentNavigation();
-        var active = Objects.Where(item => !item.IsGroupFooter && item.RecentlyActive).GroupBy(item => item.WorkspaceKey.Id).ToDictionary(group => group.Key, group => group.Count());
+        var active = Objects.Where(item => !item.IsGroupFooter && item.VisibleInAuto).GroupBy(item => item.WorkspaceKey.Id).ToDictionary(group => group.Key, group => group.Count());
         _initializingGroup = true;
         try
         {

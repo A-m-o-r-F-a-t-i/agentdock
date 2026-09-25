@@ -99,8 +99,18 @@ public partial class ExecutionWindow
     {
         var requested = call.Date("request_received_at");
         var changed = call.Date("last_activity_at") ?? requested;
+        var interaction = call.Date("last_interaction_at") ?? requested;
+        DateTimeOffset? expires = interaction is { } interactionAt ? interactionAt + ConversationActivityPolicy.ActivityWindow : null;
         if (requested is not null && (item.LastToolCallAt is null || requested > item.LastToolCallAt)) item.LastToolCallAt = requested;
         if (changed is not null && (item.LastActivityAt is null || changed > item.LastActivityAt)) item.LastActivityAt = item.SortActivityAt = changed;
+        if (interaction is not null && (item.LastInteractionAt is null || interaction > item.LastInteractionAt))
+        {
+            item.LastInteractionAt = interaction;
+            item.InteractionExpiresAt = call.Date("interaction_expires_at") ?? expires;
+        }
+        var status = call.Text("status");
+        if (status is "created" or "running" or "pending_approval") item.InFlight = true;
+        else if (status is "succeeded" or "partial" or "failed" or "cancelled" or "unknown") item.InFlight = false;
         item.RefreshActivity();
     }
 
@@ -118,18 +128,24 @@ public partial class ExecutionWindow
             if (_provisionalTitles.Count > 4096) _provisionalTitles.Remove(_provisionalTitles.Keys.First());
         }
         var state = navigation.For(workspace);
+        var requested = call.Date("request_received_at");
+        var interaction = call.Date("last_interaction_at") ?? requested;
+        DateTimeOffset? expires = call.Date("interaction_expires_at") ?? (interaction is { } interactionAt ? interactionAt + ConversationActivityPolicy.ActivityWindow : null);
+        var inFlight = call.Text("status") is "created" or "running" or "pending_approval";
+        var recent = _activityClock.ServerNow is { } serverNow && ConversationActivityPolicy.IsRecent(interaction, expires, serverNow, false);
         if (!_sidebarGroups.TryGetValue(workspace, out var key))
         {
             var name = _workspaceNames.GetValueOrDefault(workspace, workspace == "unassigned" ? "未关联项目" : "项目");
             _sidebarGroups[workspace] = key = new(workspace, name);
-            key.Apply(JsonSerializer.SerializeToElement(new { title = name, workspace_id = workspace, total = 1, recent_count = 1, mode = state.ProtocolMode, last_activity_at = call.Date("last_activity_at") ?? call.Date("request_received_at") }));
+            key.Apply(JsonSerializer.SerializeToElement(new { title = name, workspace_id = workspace, total = 1, recent_count = recent ? 1 : 0, execution_count = inFlight ? 1 : 0, mode = state.ProtocolMode, last_activity_at = call.Date("last_activity_at") ?? requested }));
         }
-        key.IsExpanded = state.Expanded(1);
+        key.IsExpanded = state.Expanded(recent || inFlight ? 1 : 0);
         var snapshot = JsonSerializer.SerializeToElement(new
         {
-            conversation_id = id, title, source = call.Text("source"), created_at = call.Date("request_received_at"),
+            conversation_id = id, title, source = call.Text("source"), created_at = requested,
+            in_flight = inFlight, recently_active = recent, last_interaction_at = interaction, interaction_expires_at = expires,
             state = new { workspace_id = workspace }, task_ids = Array.Empty<string>(),
-            statistics = new { last_tool_call_at = call.Date("request_received_at"), last_activity_at = call.Date("last_activity_at") ?? call.Date("request_received_at") }
+            statistics = new { last_tool_call_at = requested, last_interaction_at = interaction, last_activity_at = call.Date("last_activity_at") ?? requested }
         });
         var item = ExecutionObject.From(snapshot, "conversation"); item.WorkspaceKey = key;
         _conversationTitles[id] = title;

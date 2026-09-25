@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"time"
+
+	"github.com/uvwt/agentdock/internal/insertion"
 )
 
 const (
@@ -31,6 +34,7 @@ type SidebarGroup struct {
 	Root           string             `json:"root,omitempty"`
 	Total          int                `json:"total"`
 	RecentCount    int                `json:"recent_count"`
+	ExecutionCount int                `json:"execution_count"`
 	LastActivityAt time.Time          `json:"last_activity_at"`
 	Conversations  []ConversationItem `json:"conversations"`
 	HasMore        bool               `json:"has_more"`
@@ -42,11 +46,15 @@ type SidebarGroup struct {
 }
 
 type SidebarPage struct {
-	ServerNow time.Time         `json:"server_now"`
-	LatestSeq uint64            `json:"latest_seq"`
-	Groups    []SidebarGroup    `json:"groups"`
-	Selected  *ConversationItem `json:"selected,omitempty"`
-	Total     int               `json:"total"`
+	ServerNow                    time.Time         `json:"server_now"`
+	LatestSeq                    uint64            `json:"latest_seq"`
+	RecentInteractionWindowMS    int64             `json:"recent_interaction_window_ms"`
+	InsertionEligibilityWindowMS int64             `json:"insertion_eligibility_window_ms"`
+	UnclaimedInsertionExpiryMS   int64             `json:"unclaimed_insertion_expiry_ms"`
+	ReceiptWaitMS                int64             `json:"receipt_wait_ms"`
+	Groups                       []SidebarGroup    `json:"groups"`
+	Selected                     *ConversationItem `json:"selected,omitempty"`
+	Total                        int               `json:"total"`
 }
 
 func conversationWorkspace(item ConversationItem) string {
@@ -63,17 +71,29 @@ func conversationWorkspace(item ConversationItem) string {
 }
 
 func sidebarActive(item ConversationItem, now time.Time) bool {
-	if item.IsUnattributed || item.TerminatedAt != nil || item.TrashedAt != nil {
+	if item.IsUnattributed || item.TerminatedAt != nil || item.TrashedAt != nil || item.ArchivedAt != nil {
 		return false
 	}
-	if item.InFlight {
-		return true
+	return item.LastInteractionAt != nil && !item.LastInteractionAt.IsZero() && !item.LastInteractionAt.After(now) && now.Sub(*item.LastInteractionAt) < SidebarRecentWindow
+}
+
+func sidebarExecutionVisible(item ConversationItem) bool {
+	return item.InFlight && !item.IsUnattributed && item.TerminatedAt == nil && item.TrashedAt == nil && item.ArchivedAt == nil
+}
+
+func sidebarPageAt(now time.Time) SidebarPage {
+	return SidebarPage{
+		ServerNow:                    now,
+		RecentInteractionWindowMS:    int64(SidebarRecentWindow / time.Millisecond),
+		InsertionEligibilityWindowMS: int64(InsertionEligibility / time.Millisecond),
+		UnclaimedInsertionExpiryMS:   int64(insertion.Lifetime / time.Millisecond),
+		ReceiptWaitMS:                int64(insertion.ReceiptWait / time.Millisecond),
+		Groups:                       []SidebarGroup{},
 	}
-	return !item.LastActivityAt.IsZero() && !item.LastActivityAt.After(now) && now.Sub(item.LastActivityAt) < SidebarRecentWindow
 }
 
 func (r *Runtime) RuntimeConversationSidebar(ctx context.Context, request SidebarRequest) (SidebarPage, error) {
-	result := SidebarPage{ServerNow: time.Now().UTC(), Groups: []SidebarGroup{}}
+	result := sidebarPageAt(time.Now().UTC())
 	if len(request.Limits) > SidebarMaxItems || len(request.Modes) > SidebarMaxItems || len(request.Cursors) > SidebarMaxItems {
 		return result, errors.New("too many sidebar project selectors")
 	}
@@ -95,7 +115,7 @@ func (r *Runtime) RuntimeConversationSidebar(ctx context.Context, request Sideba
 			return result, errors.New("invalid sidebar history cursor")
 		}
 	}
-	if request.SelectedID == "unattributed" {
+	if request.SelectedID == "unattributed" || strings.HasPrefix(request.SelectedID, "footer:") {
 		return result, errors.New("SIDEBAR_RESERVED_KEY")
 	}
 	// Capture the stream boundary first: a call arriving during projection is
@@ -130,6 +150,9 @@ func (r *Runtime) RuntimeConversationSidebar(ctx context.Context, request Sideba
 		}
 		navigationKeys[key] = struct{}{}
 		id := conversationWorkspace(item)
+		if strings.HasPrefix(id, "footer:") {
+			return result, errors.New("SIDEBAR_RESERVED_KEY")
+		}
 		if id == "unattributed" && !item.IsUnattributed {
 			return result, errors.New("SIDEBAR_UNATTRIBUTED_GROUP_INVALID")
 		}
@@ -152,7 +175,11 @@ func (r *Runtime) RuntimeConversationSidebar(ctx context.Context, request Sideba
 			if summary.LastActivityAt != nil {
 				last = *summary.LastActivityAt
 			}
-			result.Selected = &ConversationItem{Conversation: selected, Statistics: summary, LastActivityAt: last, InFlight: r.confirmedConversationActivity()[selected.ID]}
+			lastInteraction, interactionExpires, recentlyActive := projectedConversationInteraction(summary, result.ServerNow,
+				selected.TerminatedAt != nil || selected.TrashedAt != nil || selected.ArchivedAt != nil)
+			result.Selected = &ConversationItem{Conversation: selected, Statistics: summary, LastActivityAt: last,
+				LastInteractionAt: lastInteraction, InteractionExpiresAt: interactionExpires, RecentlyActive: recentlyActive,
+				InFlight: r.confirmedConversationActivity()[selected.ID]}
 		}
 	}
 	for id, items := range grouped {
@@ -236,10 +263,14 @@ func projectSidebarRows(group *SidebarGroup, items []ConversationItem, limit int
 		if active {
 			group.RecentCount++
 		}
+		executing := sidebarExecutionVisible(item)
+		if executing {
+			group.ExecutionCount++
+		}
 		if group.Mode == "collapsed" {
 			continue
 		}
-		if history && len(group.Conversations) < limit || !history && active {
+		if history && len(group.Conversations) < limit || !history && (active || executing) {
 			group.Conversations = append(group.Conversations, item)
 		}
 	}

@@ -3,8 +3,17 @@ using AgentDock.ControlPanel;
 var assertions = 0;
 void Check(bool condition, string name) { if (!condition) throw new InvalidOperationException(name); assertions++; }
 var now = DateTimeOffset.Parse("2026-09-22T12:00:00Z");
+Check(ConversationActivityPolicy.ActivityWindow.TotalMilliseconds == 120000 &&
+      ConversationActivityPolicy.InsertionWindow.TotalMilliseconds == 180000 &&
+      ConversationActivityPolicy.UnclaimedInsertionExpiry.TotalMilliseconds == 300000 &&
+      ConversationActivityPolicy.ReceiptWait.TotalMilliseconds == 30000,
+    "shared timing constants diverged");
 foreach (var test in new[] { (119999d, true), (120000d, false), (120001d, false) })
     Check(ConversationActivityPolicy.IsRecent(now.AddMilliseconds(-test.Item1), now, false) == test.Item2, "activity boundary " + test.Item1);
+var interactionStart = now.AddMinutes(-10);
+var interactionExpiry = interactionStart.AddSeconds(120);
+Check(ConversationActivityPolicy.IsRecent(interactionStart, interactionExpiry, interactionExpiry.AddMilliseconds(-1), false), "explicit server expiry remains half-open before deadline");
+Check(!ConversationActivityPolicy.IsRecent(interactionStart, interactionExpiry, interactionExpiry, false), "explicit server expiry closes exactly at deadline");
 foreach (var test in new[] { (179999d, true), (180000d, false), (180001d, false) })
     Check(ConversationActivityPolicy.CanInsert(now.AddMilliseconds(-test.Item1), now, false) == test.Item2, "composer boundary " + test.Item1);
 Check(!ConversationActivityPolicy.IsRecent(null, now, false), "unknown activity");
@@ -38,6 +47,11 @@ foreach (var test in new[] { ("{\"rpc_elapsed_ms\":0,\"elapsed_ms\":99}", "rpc",
     var row = new ExecutionCallRow(json.RootElement);
     Check(row.DurationSource == test.Item2 && row.TotalElapsedMs == test.Item3, "zero/unknown/source distinction");
 }
+var daemonTiming = new ExecutionCallRow(System.Text.Json.JsonDocument.Parse("{\"status\":\"succeeded\",\"rpc_elapsed_ms\":232,\"process_elapsed_ms\":1200005}").RootElement);
+Check(daemonTiming.Duration == "0.232 s" && daemonTiming.ProcessDuration == "1200.005 s", "RPC and daemon process timing stay separate");
+Check(daemonTiming.TotalTimingDetails.Contains("RPC 耗时") && daemonTiming.ProcessTimingDetails.Contains("后台命令进程"), "timing labels identify separate sources");
+var liveDaemonTiming = new ExecutionCallRow(System.Text.Json.JsonDocument.Parse("{\"status\":\"running\",\"rpc_elapsed_ms\":232}").RootElement);
+Check(liveDaemonTiming.ProcessDuration == "仍在运行" && liveDaemonTiming.ProcessTimingDetails.Contains("RPC 已返回"), "live background process is not reported as RPC duration");
 var navigation = new SidebarNavigationState();
 var projectA = navigation.For("A"); var projectB = navigation.For("B");
 Check(!projectA.Expanded(0) && projectA.Expanded(12), "auto navigation respects actual activity without a five-row cap");
@@ -79,6 +93,22 @@ Check(!footer.CanLoadMore, "in-flight footer disabled"); footer.IsPaging = false
 Check(footer.CanLoadMore, "failure releases footer");
 
 System.Text.Json.JsonElement Json(string text) { using var parsed = System.Text.Json.JsonDocument.Parse(text); return parsed.RootElement.Clone(); }
+var separatedActivity = ExecutionObject.From(Json("""
+{"conversation_id":"conv_daemon","in_flight":true,"recently_active":false,
+ "last_interaction_at":"2026-09-22T11:40:00Z","interaction_expires_at":"2026-09-22T11:42:00Z",
+ "statistics":{"last_tool_call_at":"2026-09-22T11:40:00Z","last_interaction_at":"2026-09-22T11:40:00Z",
+ "last_activity_at":"2026-09-22T12:00:00Z","pending":1,"running":1}}
+"""), "conversation");
+Check(!separatedActivity.RecentlyActive && separatedActivity.InFlight && separatedActivity.VisibleInAuto,
+    "expired interaction and live execution were collapsed into one state");
+Check(separatedActivity.LastInteractionAt == DateTimeOffset.Parse("2026-09-22T11:40:00Z") && separatedActivity.LastActivityAt == now,
+    "interaction time was overwritten by asynchronous execution activity");
+Check(separatedActivity.ExecutionStateText == "待审批 1" && separatedActivity.ExecutionStateHint.Contains("独立过期"),
+    "live approval state is not separately visible");
+var activeGroup = new WorkspaceGroupKey("wsp_a", "A");
+activeGroup.Apply(Json("{\"recent_count\":0,\"execution_count\":1,\"mode\":\"auto\"}"));
+Check(activeGroup.RecentCount == 0 && activeGroup.ExecutionCount == 1 && activeGroup.VisibleActivityCount == 1,
+    "project execution liveness was folded into recent interaction count");
 SidebarProtocolException SidebarFailure(string text)
 {
     try { SidebarResponseValidation.Parse(Json(text)); }
@@ -125,6 +155,11 @@ var reservedSidebar = SidebarFailure("""
 {"latest_seq":34,"groups":[{"workspace_id":"A","history_limit":5,"conversations":[{"conversation_id":"unattributed"}]}]}
 """);
 Check(reservedSidebar.Code == "SIDEBAR_RESERVED_KEY", "reserved navigation key collision was accepted");
+var mismatchedTiming = SidebarFailure("""
+{"latest_seq":35,"recent_interaction_window_ms":119999,"groups":[]}
+""");
+Check(mismatchedTiming.Code == "SIDEBAR_TIMING_CONTRACT_INVALID" && mismatchedTiming.IsPageWide && mismatchedTiming.RowType == "contract",
+    "a present but incompatible timing contract was accepted");
 var missingOutput = new ExecutionCallRow(Json("{\"tool_name\":\"agentdock_context\",\"display_title\":\"加载上下文\",\"summary\":\"pretend output\"}"));
 missingOutput.ApplyDetail(Json("{\"tool_name\":\"agentdock_context\",\"display_title\":\"加载上下文\",\"summary\":\"pretend output\"}"));
 Check(missingOutput.Title.Contains("agentdock_context") && missingOutput.Title.Contains("加载上下文"), "friendly label cannot hide registered tool name");
