@@ -84,10 +84,12 @@ public partial class ExecutionWindow : Window
         catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or InvalidOperationException or UnauthorizedAccessException or ArgumentException)
         { if (!_closed) Warn(ex.Message); }
     }
-    private string _warningCode = "";
+    private string _warningCode = "", _warningOwner = "";
     private void Warn(string text, string code = "")
     {
+        if (string.IsNullOrWhiteSpace(text) && _warningOwner.StartsWith("sidebar:", StringComparison.Ordinal)) return;
         if (code.Length > 0 && _preferences.DismissedNotices.Contains(code)) return;
+        _warningOwner = "general";
         _warningCode = code;
         WarningText.Text = text; WarningPanel.Visibility = string.IsNullOrWhiteSpace(text) ? Visibility.Collapsed : Visibility.Visible;
     }
@@ -458,10 +460,20 @@ public partial class ExecutionWindow : Window
 		_following = false; UpdateFollowButton();
 		await TryLoadOlderCallsAsync();
 	}
-    private async void Refresh_Click(object sender, RoutedEventArgs e) => await GuardAsync(async () => { await LoadWorkspacesAsync(); await LoadObjectsAsync(); await LoadCallsAsync(false); await RefreshOverviewAsync(); });
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await GuardAsync(async () => { ResetSidebarRecoveryBudget(); await LoadWorkspacesAsync(); await LoadObjectsAsync(); await LoadCallsAsync(false); await RefreshOverviewAsync(); });
     private void CloseDetails_Click(object sender, RoutedEventArgs e) => CloseDetails();
     private void DismissWarning_Click(object sender, RoutedEventArgs e)
     {
+        if (_warningOwner.StartsWith("sidebar:", StringComparison.Ordinal))
+        {
+            var scope = _warningOwner["sidebar:".Length..];
+            if (_sidebarFailures.TryGetValue(scope, out var state)) state.Dismissed = true;
+            _visibleSidebarFailureScope = "";
+            _warningOwner = "";
+            WarningText.Text = "";
+            WarningPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
         var code = _warningCode;
         Warn("");
         if (code.Length > 0) { _preferences.DismissedNotices.Add(code); SavePreferences(); }

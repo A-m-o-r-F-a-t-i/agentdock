@@ -17,6 +17,8 @@ public partial class ExecutionWindow
         {
             _sidebarRefresh.Stop();
             if (_closed || !_sidebarDirty || _sidebarLoading) return;
+            var remaining = SidebarRetryDelay(SidebarScope());
+            if (remaining > TimeSpan.Zero) { QueueSidebarRefresh(); return; }
             await GuardAsync(LoadSidebarAsync);
         };
     }
@@ -24,7 +26,11 @@ public partial class ExecutionWindow
     {
         if (_closed) return;
         _sidebarDirty = true;
-        if (!_sidebarLoading && !_sidebarRefresh.IsEnabled) _sidebarRefresh.Start();
+        if (_sidebarLoading || _sidebarRefresh.IsEnabled) return;
+        if (_sidebarFailures.TryGetValue(SidebarScope(), out var failure) && failure.Attempts > 5) return;
+        var remaining = SidebarRetryDelay(SidebarScope());
+        _sidebarRefresh.Interval = remaining > TimeSpan.FromMilliseconds(100) ? remaining : TimeSpan.FromMilliseconds(100);
+        _sidebarRefresh.Start();
     }
     private void StartSidebarStream(ulong cursor)
     {
@@ -39,7 +45,7 @@ public partial class ExecutionWindow
             {
                 if (_closed) return;
                 if (message.Kind == "call") ObserveSidebarRoot(message.Value);
-                else if (message.Kind is "connected" or "reset" or "gap") QueueSidebarRefresh();
+                else if (message.Kind is "connected" or "reset" or "gap") { ResetSidebarRecoveryBudget(); QueueSidebarRefresh(); }
             }, DispatcherPriority.DataBind);
         }, _lifetime.Token));
     }
@@ -58,6 +64,7 @@ public partial class ExecutionWindow
     private void ObserveSidebarRoot(JsonElement call)
     {
         if (!IsSidebarRoot(call)) return;
+        ResetSidebarRecoveryBudget();
         var id = call.Text("conversation_id");
         if (_sidebarUnacknowledged.TryGetValue(id, out var previous) && previous.Number("updated_seq") >= call.Number("updated_seq")) return;
         _sidebarUnacknowledged[id] = call.Clone();
@@ -129,12 +136,14 @@ public partial class ExecutionWindow
         return item;
     }
 
-    private void MergeUnacknowledgedSidebarCalls(long acknowledged, SidebarNavigationState navigation, List<WorkspaceGroupKey> groups, Dictionary<string, List<ExecutionObject>> rows)
+    private void MergeUnacknowledgedSidebarCalls(long acknowledged, SidebarNavigationState navigation, List<WorkspaceGroupKey> groups, Dictionary<string, List<ExecutionObject>> rows, IReadOnlySet<string> protectedGroups)
     {
         foreach (var id in _sidebarUnacknowledged.Where(pair => pair.Value.Number("updated_seq") <= acknowledged).Select(pair => pair.Key).ToArray()) _sidebarUnacknowledged.Remove(id);
         if (_conversationView != "active" || SearchBox.Text.Trim().Length > 0) return;
         foreach (var call in _sidebarUnacknowledged.Values.OrderBy(value => value.Number("updated_seq")))
         {
+            var protectedWorkspace = call.Text("workspace_id"); if (protectedWorkspace.Length == 0) protectedWorkspace = "unassigned";
+            if (protectedGroups.Contains(protectedWorkspace)) continue;
             var existing = rows.Values.SelectMany(value => value).FirstOrDefault(item => !item.IsGroupFooter && item.Id == call.Text("conversation_id"));
             if (existing is not null) { ApplySidebarActivity(existing, call); continue; }
             var workspace = call.Text("workspace_id"); if (workspace.Length == 0) workspace = "unassigned";

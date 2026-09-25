@@ -133,3 +133,38 @@ func TestSidebarHistoryCacheHasBoundedLifetimeAndCapacity(t *testing.T) {
 		t.Fatal("expired IDs were retained")
 	}
 }
+
+func TestSidebarNavigationIdentityIsTypedAndUnique(t *testing.T) {
+	ordinary := ConversationItem{Conversation: activity.Conversation{ID: "conv_ordinary"}}
+	unattributed := ConversationItem{IsUnattributed: true}
+	if key, err := sidebarNavigationKey(ordinary); err != nil || key != ordinary.ID {
+		t.Fatalf("ordinary identity changed: key=%q err=%v", key, err)
+	}
+	if key, err := sidebarNavigationKey(unattributed); err != nil || key != sidebarUnattributedKey {
+		t.Fatalf("typed unattributed identity rejected: key=%q err=%v", key, err)
+	}
+	invalid := []ConversationItem{
+		{},
+		{Conversation: activity.Conversation{ID: "conv_illegal"}, IsUnattributed: true},
+		{Conversation: activity.Conversation{ID: "unattributed"}},
+		{Conversation: activity.Conversation{ID: "footer:wsp_a"}},
+	}
+	for index, item := range invalid {
+		if _, err := sidebarNavigationKey(item); err == nil {
+			t.Fatalf("invalid navigation identity %d was accepted", index)
+		}
+	}
+
+	cache := sidebarHistoryCache{}
+	now := time.Now().UTC()
+	ordered, arrivals, token, reset, err := cache.order("typed", "", []ConversationItem{ordinary, unattributed}, now)
+	if err != nil || token == "" || reset || len(ordered) != 2 || len(arrivals) != 0 || !ordered[1].IsUnattributed {
+		t.Fatalf("typed identity did not survive frozen history: ordered=%+v arrivals=%+v reset=%v err=%v", ordered, arrivals, reset, err)
+	}
+	if _, _, _, _, err := cache.order("duplicate-special", "", []ConversationItem{unattributed, unattributed}, now); err == nil {
+		t.Fatal("duplicate unattributed rows were silently collapsed")
+	}
+	if _, _, _, _, err := cache.order("duplicate-real", "", []ConversationItem{ordinary, ordinary}, now); err == nil {
+		t.Fatal("duplicate real conversation IDs were silently collapsed")
+	}
+}

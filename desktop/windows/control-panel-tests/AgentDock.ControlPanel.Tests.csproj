@@ -3,6 +3,7 @@
   <ItemGroup><Compile Include="../control-panel/Services/ConversationActivityPolicy.cs" Link="ConversationActivityPolicy.cs"/><Compile Include="../control-panel/Services/SidebarOrdering.cs" Link="SidebarOrdering.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../control-panel/Models/ExecutionModels.cs" Link="ExecutionModels.cs"/><Compile Include="../control-panel/Models/ExecutionTitleFormatter.cs" Link="ExecutionTitleFormatter.cs"/></ItemGroup>
 	<ItemGroup><Compile Include="../control-panel/Models/ExecutionPayloadView.cs" Link="ExecutionPayloadView.cs"/><Compile Include="../control-panel/Services/SidebarNavigationState.cs" Link="SidebarNavigationState.cs"/></ItemGroup>
+  <ItemGroup><Compile Include="../control-panel/Services/SidebarResponseValidation.cs" Link="SidebarResponseValidation.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../control-panel/Services/PrivilegeTransition.cs" Link="PrivilegeTransition.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../control-panel/Models/ToolOutputSettings.cs" Link="ToolOutputSettings.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../control-panel/Models/InsertionPresentation.cs" Link="InsertionPresentation.cs"/><Compile Include="../control-panel/Models/InsertionTimeline.cs" Link="InsertionTimeline.cs"/></ItemGroup>

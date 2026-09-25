@@ -79,6 +79,52 @@ Check(!footer.CanLoadMore, "in-flight footer disabled"); footer.IsPaging = false
 Check(footer.CanLoadMore, "failure releases footer");
 
 System.Text.Json.JsonElement Json(string text) { using var parsed = System.Text.Json.JsonDocument.Parse(text); return parsed.RootElement.Clone(); }
+SidebarProtocolException SidebarFailure(string text)
+{
+    try { SidebarResponseValidation.Parse(Json(text)); }
+    catch (SidebarProtocolException error) { assertions++; return error; }
+    throw new InvalidOperationException("Expected a typed sidebar protocol failure.");
+}
+var legalSidebar = SidebarResponseValidation.Parse(Json("""
+{"latest_seq":17,"groups":[
+  {"workspace_id":"wsp_a","history_limit":5,"conversations":[{"conversation_id":"conv_a","title":"A","state":{"workspace_id":"wsp_a"}}]},
+  {"workspace_id":"unattributed","history_limit":5,"conversations":[{"conversation_id":"","is_unattributed":true,"title":"未归属调用"}]}
+]}
+"""));
+Check(legalSidebar.Groups["unattributed"].Single().SelectionKey == "unattributed", "legal unattributed navigation row was rejected or assigned a fake ID");
+Check(legalSidebar.Groups["wsp_a"].Single().SelectionKey == "conv_a", "ordinary navigation identity changed");
+var isolatedSidebar = SidebarResponseValidation.Parse(Json("""
+{"latest_seq":23,"groups":[
+  {"workspace_id":"bad","history_limit":5,"conversations":[{"conversation_id":"","title":"missing"}]},
+  {"workspace_id":"good","history_limit":5,"conversations":[{"conversation_id":"conv_good","state":{"workspace_id":"good"}}]}
+]}
+"""));
+Check(isolatedSidebar.GroupFailures["bad"].Code == "SIDEBAR_CONVERSATION_ID_MISSING" && isolatedSidebar.GroupFailures["bad"].ResponseGeneration == 23,
+    "group-local failure lost its stable code or response generation");
+Check(isolatedSidebar.Groups["good"].Single().Id == "conv_good", "group-local isolation discarded a healthy project");
+var duplicateSidebar = SidebarFailure("""
+{"latest_seq":31,"groups":[
+  {"workspace_id":"A","history_limit":5,"conversations":[{"conversation_id":"conv_same"}]},
+  {"workspace_id":"B","history_limit":5,"conversations":[{"conversation_id":"conv_same"}]}
+]}
+""");
+Check(duplicateSidebar.Code == "SIDEBAR_CONVERSATION_ID_DUPLICATE" && duplicateSidebar.IsPageWide && duplicateSidebar.RowType == "conversation",
+    "duplicate real ID was not rejected page-wide");
+var duplicateUnattributed = SidebarFailure("""
+{"latest_seq":32,"groups":[{"workspace_id":"unattributed","history_limit":5,"conversations":[
+  {"conversation_id":"","is_unattributed":true},{"conversation_id":"","is_unattributed":true}
+]}]}
+""");
+Check(duplicateUnattributed.Code == "SIDEBAR_UNATTRIBUTED_DUPLICATE" && duplicateUnattributed.RowType == "unattributed",
+    "duplicate unattributed rows were silently deduplicated");
+var malformedUnattributed = SidebarFailure("""
+{"latest_seq":33,"groups":[{"workspace_id":"A","history_limit":5,"conversations":[{"conversation_id":"","is_unattributed":true}]}]}
+""");
+Check(malformedUnattributed.Code == "SIDEBAR_UNATTRIBUTED_IDENTITY_INVALID", "unattributed row outside its typed group was accepted");
+var reservedSidebar = SidebarFailure("""
+{"latest_seq":34,"groups":[{"workspace_id":"A","history_limit":5,"conversations":[{"conversation_id":"unattributed"}]}]}
+""");
+Check(reservedSidebar.Code == "SIDEBAR_RESERVED_KEY", "reserved navigation key collision was accepted");
 var missingOutput = new ExecutionCallRow(Json("{\"tool_name\":\"agentdock_context\",\"display_title\":\"加载上下文\",\"summary\":\"pretend output\"}"));
 missingOutput.ApplyDetail(Json("{\"tool_name\":\"agentdock_context\",\"display_title\":\"加载上下文\",\"summary\":\"pretend output\"}"));
 Check(missingOutput.Title.Contains("agentdock_context") && missingOutput.Title.Contains("加载上下文"), "friendly label cannot hide registered tool name");

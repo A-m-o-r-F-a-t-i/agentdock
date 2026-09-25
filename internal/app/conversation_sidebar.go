@@ -95,6 +95,9 @@ func (r *Runtime) RuntimeConversationSidebar(ctx context.Context, request Sideba
 			return result, errors.New("invalid sidebar history cursor")
 		}
 	}
+	if request.SelectedID == "unattributed" {
+		return result, errors.New("SIDEBAR_RESERVED_KEY")
+	}
 	// Capture the stream boundary first: a call arriving during projection is
 	// either in this snapshot or replayed after this cursor, never missed.
 	cursor, err := r.activity.CallCursor(ctx)
@@ -116,8 +119,20 @@ func (r *Runtime) RuntimeConversationSidebar(ctx context.Context, request Sideba
 		names[workspace.ID], roots[workspace.ID] = workspace.Name, workspace.Root
 	}
 	grouped := map[string][]ConversationItem{}
+	navigationKeys := map[string]struct{}{}
 	for _, item := range page.Conversations {
+		key, keyErr := sidebarNavigationKey(item)
+		if keyErr != nil {
+			return result, keyErr
+		}
+		if _, duplicate := navigationKeys[key]; duplicate {
+			return result, errors.New("SIDEBAR_NAVIGATION_KEY_DUPLICATE")
+		}
+		navigationKeys[key] = struct{}{}
 		id := conversationWorkspace(item)
+		if id == "unattributed" && !item.IsUnattributed {
+			return result, errors.New("SIDEBAR_UNATTRIBUTED_GROUP_INVALID")
+		}
 		grouped[id] = append(grouped[id], item)
 		if item.ID != "" && item.ID == request.SelectedID {
 			copy := item
