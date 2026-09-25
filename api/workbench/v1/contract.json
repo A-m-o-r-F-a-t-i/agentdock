@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "name": "AgentDock Workbench Local Control API",
+  "base_path": "/internal/runtime",
+  "transport": {
+    "http": [
+      "http",
+      "https"
+    ],
+    "local_write_policy": "mutating management requests require direct loopback plus authentication"
+  },
+  "authentication": {
+    "header": "Authorization: Bearer <token>",
+    "sources": [
+      "token_file",
+      "AGENTDOCK_AUTH_TOKEN",
+      "OAuth access-token file"
+    ],
+    "forbidden_cli_source": "command-line token value"
+  },
+  "errors": {
+    "envelope": {
+      "ok": false,
+      "code": "STABLE_CODE",
+      "error": "human-readable message"
+    },
+    "http_to_exit": {
+      "400": 2,
+      "401": 3,
+      "403": 3,
+      "404": 2,
+      "409": 4,
+      "412": 4,
+      "429": 4,
+      "500": 5,
+      "502": 5,
+      "503": 5,
+      "504": 5
+    },
+    "exit_codes": {
+      "0": "success",
+      "2": "invalid arguments or missing object",
+      "3": "authentication or permission denied",
+      "4": "conflict, precondition or partial result",
+      "5": "transport or service failure"
+    }
+  },
+  "pagination": {
+    "offset": {
+      "request": [
+        "offset",
+        "limit"
+      ],
+      "response": [
+        "total",
+        "has_more",
+        "next_offset"
+      ]
+    },
+    "sequence": {
+      "request": [
+        "after",
+        "before",
+        "limit"
+      ],
+      "response": [
+        "has_more",
+        "next_seq"
+      ]
+    },
+    "maximum_page_size": 200
+  },
+  "events": {
+    "content_type": "text/event-stream",
+    "fields": [
+      "id",
+      "event",
+      "data"
+    ],
+    "resume": [
+      "Last-Event-ID",
+      "after"
+    ],
+    "cli_stream_format": "one JSON object per event when --jsonl is selected"
+  },
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/status",
+      "command": "status"
+    },
+    {
+      "method": "GET",
+      "path": "/tasks",
+      "command": "task list"
+    },
+    {
+      "method": "GET",
+      "path": "/tasks/{task_id}",
+      "command": "task show"
+    },
+    {
+      "method": "POST",
+      "path": "/tasks",
+      "command": "task create|checkpoint",
+      "local_write": true,
+      "body": "task_manage input"
+    },
+    {
+      "method": "GET",
+      "path": "/activity",
+      "command": "activity list"
+    },
+    {
+      "method": "GET",
+      "path": "/activity/stream",
+      "command": "activity watch",
+      "stream": true
+    },
+    {
+      "method": "GET",
+      "path": "/calls/export",
+      "command": "activity export"
+    },
+    {
+      "method": "GET",
+      "path": "/workspaces",
+      "command": "workspace list"
+    },
+    {
+      "method": "GET",
+      "path": "/workspaces/{workspace_id}",
+      "command": "workspace show|status"
+    },
+    {
+      "method": "GET",
+      "path": "/skills",
+      "command": "skill list"
+    },
+    {
+      "method": "GET",
+      "path": "/skills/{skill}",
+      "command": "skill show|status"
+    },
+    {
+      "method": "GET",
+      "path": "/plugins",
+      "command": "plugin list"
+    },
+    {
+      "method": "GET",
+      "path": "/plugins/{plugin}",
+      "command": "plugin show|status|test"
+    },
+    {
+      "method": "GET",
+      "path": "/conversations",
+      "command": "conversation list"
+    },
+    {
+      "method": "GET",
+      "path": "/conversations/{id}",
+      "command": "conversation show"
+    },
+    {
+      "method": "GET",
+      "path": "/approvals",
+      "command": "approval list"
+    },
+    {
+      "method": "GET",
+      "path": "/approvals/{id}",
+      "command": "approval show"
+    },
+    {
+      "method": "GET",
+      "path": "/permissions/effective",
+      "command": "permission show"
+    },
+    {
+      "method": "GET",
+      "path": "/conversations/{id}/insertions",
+      "command": "insertion list"
+    }
+  ],
+  "output": {
+    "human": "stable labels; no secrets",
+    "json": "one deterministic JSON value",
+    "jsonl": "one deterministic JSON value per record or event",
+    "quiet": "suppress successful normal output",
+    "verbose": "request metadata to stderr with authorization redacted"
+  },
+  "configuration_precedence": [
+    "command flag",
+    "environment",
+    "selected local profile",
+    "built-in default"
+  ]
+}

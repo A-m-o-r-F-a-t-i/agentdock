@@ -1,0 +1,4 @@
+id: 42
+event: activity
+data: {"seq":42,"kind":"call.completed","status":"succeeded"}
+
