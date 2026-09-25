@@ -105,6 +105,8 @@ def assemble(inputs: Path,dist: Path,version: str,commit: str) -> dict:
     scope=read_report(inputs/'windows','verification-scope.json');identity(scope,version,commit)
     if scope.get('resolved_commit')!=commit or scope.get('linux_tested_commit')!=commit:
         raise RuntimeError('Windows workflow lost its immutable validation source')
+    if enhanced_acceptance and scope.get('installation_tests')!='passed':
+        raise RuntimeError('Missing Windows x64 isolated installation/uninstall evidence')
     dist.mkdir(parents=True,exist_ok=True)
     payloads=expected_payloads(version)
     for name in payloads:

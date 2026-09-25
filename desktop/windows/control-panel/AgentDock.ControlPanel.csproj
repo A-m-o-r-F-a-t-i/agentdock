@@ -9,7 +9,7 @@
     <AssemblyName>agentdock-tray</AssemblyName>
     <AssemblyTitle>AgentDock Workbench</AssemblyTitle>
     <Product>AgentDock Workbench</Product>
-    <Version>1.1.7</Version>
+    <Version>1.1.8</Version>
     <Description>AgentDock Workbench Control Panel</Description>
     <RootNamespace>AgentDock.ControlPanel</RootNamespace>
     <ApplicationIcon>..\..\..\packaging\windows\assets\agentdock.ico</ApplicationIcon>

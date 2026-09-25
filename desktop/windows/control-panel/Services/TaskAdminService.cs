@@ -322,6 +322,8 @@ internal static class TaskAdminService
             state.WasEnabled = task.Enabled;
             state.WasRunning = Convert.ToInt32(task.State) == 4;
             state.SecurityDescriptor = task.GetSecurityDescriptor(DaclSecurityInformation);
+            if (string.IsNullOrWhiteSpace(state.SecurityDescriptor)) throw new IOException("未取得计划任务权限描述符，未开始变更。");
+            _ = new RawSecurityDescriptor(state.SecurityDescriptor);
             var xml = (string)task.Xml;
             _ = ReadTaskUserId(xml);
             state.XmlDigest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(xml)));
@@ -345,6 +347,8 @@ internal static class TaskAdminService
             ?? throw new InvalidOperationException(UiText.Get("TaskBackupStateReadFailed"));
         if (state.SchemaVersion is not (0 or 2)) throw new IOException("不支持的计划任务备份格式。");
         if (!state.Exists) return (state, "", "");
+        if (state.SchemaVersion != 2 || string.IsNullOrWhiteSpace(state.SecurityDescriptor))
+            throw new IOException("旧备份缺少可验证的计划任务权限或完整性记录，未停止或删除当前任务；请保留材料并用对应版本核对恢复。");
         var xmlPath = Path.Combine(backupDirectory, "task.xml");
         if (!File.Exists(xmlPath) || new FileInfo(xmlPath).Length > 1048576)
             throw new InvalidOperationException(UiText.Format("TaskBackupXmlMissing", xmlPath));

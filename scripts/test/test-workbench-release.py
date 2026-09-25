@@ -83,6 +83,7 @@ class EnhancedReleaseGate(ReleaseGate):
             self.reports[f'verification-linux-{arch}.json']['package_installation']={'deb':'native_installed_verified_removed','rpm':'isolated_root_installed_verified_removed'}
             self.reports[f'acceptance-source-{arch}.json']={'version':self.version,'commit':self.commit,'platform':f'windows/{arch}','native_privilege':'passed','native_backup':'passed','keyboard':'passed' if arch=='amd64' else 'tested_on_x64'}
         self.reports['verification-native-windows-arm64.json']={'version':self.version,'commit':self.commit,'platform':'windows/arm64','native_execution':'passed','native_installation':'passed'}
+        self.reports['windows/verification-scope.json']['installation_tests']='passed'
         self.flush()
     def test_missing_linux_installation_cannot_publish(self):
         self.reports['verification-linux-arm64.json']['package_installation']='not_run';self.flush()
@@ -93,6 +94,9 @@ class EnhancedReleaseGate(ReleaseGate):
     def test_failed_arm_installation_cannot_publish(self):
         self.reports['verification-native-windows-arm64.json']['native_installation']='failed';self.flush()
         with self.assertRaisesRegex(RuntimeError,'ARM64 installation'):self.assemble()
+    def test_missing_x64_installation_cannot_publish(self):
+        self.reports['windows/verification-scope.json']['installation_tests']='not_run';self.flush()
+        with self.assertRaisesRegex(RuntimeError,'x64 isolated installation'):self.assemble()
     def test_native_evidence_cannot_mix_source_generations(self):
         self.reports['acceptance-source-arm64.json']['commit']='b'*40;self.flush()
         with self.assertRaisesRegex(RuntimeError,'different source'):self.assemble()

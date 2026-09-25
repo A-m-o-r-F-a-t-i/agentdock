@@ -1,4 +1,7 @@
 using System.Security.AccessControl;
+using System.IO;
+using System.Reflection;
+using System.Text.Json;
 using AgentDock.ControlPanel;
 
 internal static class TaskSecurityDescriptorTests
@@ -52,5 +55,21 @@ internal static class TaskSecurityDescriptorTests
             ace.AccessMask ^= unchecked((int)(1u << bit));
             check(TaskSecurityDescriptor.Compare(old, descriptor.GetSddlForm(AccessControlSections.Access)) == TaskSecurityMatch.Mismatch, "Every changed access bit is rejected");
         }
+        var directory = Path.Combine(Path.GetTempPath(), "workbench-backup-contract-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var read = typeof(TaskAdminService).GetMethod("ReadBackup", BindingFlags.Static | BindingFlags.NonPublic)!;
+            foreach (var version in new[] { 0, 2 })
+            {
+                var state = Path.Combine(directory, "state.json");
+                File.WriteAllText(state, JsonSerializer.Serialize(new { SchemaVersion = version, Exists = true }));
+                var rejected = false;
+                try { read.Invoke(null, [directory]); }
+                catch (TargetInvocationException error) when (error.InnerException is IOException e && e.Message.Contains("旧备份")) { rejected = true; }
+                check(rejected && File.Exists(state), "Missing task security metadata is refused before any scheduler action");
+            }
+        }
+        finally { Directory.Delete(directory, true); }
     }
 }

@@ -6,7 +6,7 @@
 
 # AgentDock Workbench
 
-　　**AgentDock Workbench 1.1.7** · [版本说明与各平台安装包](./docs/releases/v1.1.7.md) · [分层权限](./docs/permission-profiles.md) · [插入投递](./docs/insertion-delivery-1.1.7.md)。本分支基于[上游 AgentDock](https://github.com/uvwt/agentdock)，增加任务与执行工作台。从本版起提供 Windows、Linux、macOS 的 x64/ARM64 原生载荷，Windows 活动中心界面保持平台限定。
+　　**AgentDock Workbench 1.1.8** · [版本说明与各平台安装包](./docs/releases/v1.1.8.md) · [原计划验收矩阵](./docs/acceptance-1.1.8.md) · [分层权限](./docs/permission-profiles.md) · [插入投递](./docs/insertion-delivery-1.1.7.md)。本分支基于[上游 AgentDock](https://github.com/uvwt/agentdock)，增加任务与执行工作台。发行覆盖 Windows、Linux、macOS 的 x64/ARM64 原生载荷，Windows 活动中心界面保持平台限定。
 
 **让 AI 的双手，真正触达你的每一台设备。**
 
