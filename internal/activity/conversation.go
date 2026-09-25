@@ -183,7 +183,7 @@ func (r *ConversationRegistry) state(ctx context.Context, change func(*conversat
 	if err = atomicfile.Write(path, data, 0600); err != nil {
 		return err
 	}
-	r.cached = &conversationSnapshot{state: state, digest: sha256.Sum256(data), exists: true}
+	r.cached = &conversationSnapshot{state: state, serialized: data, exists: true}
 	return nil
 }
 

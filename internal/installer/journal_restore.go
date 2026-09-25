@@ -85,6 +85,9 @@ func (j *rollbackJournal) restoreTargets() ([]journalRestoreEntry, error) {
 	}
 	for i := len(j.Backups) - 1; i >= 0; i-- {
 		backup := j.Backups[i]
+		if backup.Existed && backup.NativeVersion != backupNativeMetadataVersion {
+			return nil, errors.New("backup does not contain this platform's supported metadata; preserve it for version-matched recovery")
+		}
 		if seen[restorePathKey(backup.Original)] {
 			return nil, fmt.Errorf("duplicate restore target: %s", backup.Original)
 		}

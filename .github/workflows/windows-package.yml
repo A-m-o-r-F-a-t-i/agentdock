@@ -130,8 +130,14 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
+  native-acceptance:
+    needs: resolve-source
+    uses: ./.github/workflows/workbench-acceptance.yml
+    with:
+      ref: ${{ needs.resolve-source.outputs.commit }}
+
   build:
-    needs: [resolve-source, linux-contracts]
+    needs: [resolve-source, linux-contracts, native-acceptance]
     if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
     name: Build verified unsigned Windows packages
     runs-on: windows-latest

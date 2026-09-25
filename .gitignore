@@ -25,6 +25,8 @@
 /desktop/windows/control-panel-tests/obj/
 /desktop/windows/control-panel-layout-tests/bin/
 /desktop/windows/control-panel-layout-tests/obj/
+/desktop/windows/control-panel-native-tests/bin/
+/desktop/windows/control-panel-native-tests/obj/
 
 # Python 辅助脚本的本地缓存不得进入 Skill 源码和发布包。
 __pycache__/

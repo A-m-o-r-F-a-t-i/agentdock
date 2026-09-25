@@ -22,6 +22,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="AgentDock.ControlPanel.LayoutTests" />
+    <InternalsVisibleTo Include="AgentDock.ControlPanel.NativeTests" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,78 @@
+name: AgentDock Workbench Native Acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Exact source SHA to validate without publishing'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  native-windows:
+    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: amd64
+            rid: win-x64
+          - runner: windows-11-arm
+            arch: arm64
+            rid: win-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CGO_ENABLED: '0'
+      AGENTDOCK_NATIVE_ACCEPTANCE: '1'
+      EXPECTED_COMMIT: ${{ inputs.ref }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Verify isolated native target
+        run: |
+          if ($env:EXPECTED_COMMIT -notmatch '^[a-f0-9]{40}$' -or (git rev-parse HEAD) -ne $env:EXPECTED_COMMIT) { throw 'Source must match exact SHA' }
+          if ((go env GOARCH) -ne '${{ matrix.arch }}') { throw 'Native toolchain architecture mismatch' }
+          New-Item -ItemType Directory -Force dist/native-validation | Out-Null
+      - name: Native backup fidelity and restoration
+        run: |
+          go test -p 1 ./internal/installer ./internal/activity ./internal/fs/... -count=1 -timeout=8m -json > dist/native-validation/go-native.jsonl
+          if ($LASTEXITCODE -ne 0) { Get-Content dist/native-validation/go-native.jsonl -Tail 100; throw 'Native Go recovery tests failed' }
+      - name: Actual scheduled task and native process recovery
+        run: |
+          dotnet run --project desktop/windows/control-panel-native-tests/AgentDock.ControlPanel.NativeTests.csproj -c Release -r ${{ matrix.rid }} -- dist/native-validation
+          if ($LASTEXITCODE -ne 0) { throw 'Native task/privilege recovery failed' }
+      - name: WPF input and all existing layout contracts
+        if: matrix.arch == 'amd64'
+        run: |
+          dotnet run --project desktop/windows/control-panel-layout-tests/AgentDock.ControlPanel.LayoutTests.csproj -c Release -- $PWD (Join-Path $PWD 'dist/layout-validation')
+          if ($LASTEXITCODE -ne 0) { throw 'Actual WPF input validation failed' }
+      - name: Record source and completed native evidence
+        run: |
+          @{commit=$env:EXPECTED_COMMIT;platform='windows/${{ matrix.arch }}';native_privilege='passed';native_backup='passed';keyboard=$(if('${{ matrix.arch }}'-eq'amd64'){'passed'}else{'tested_on_x64'});production_touched=$false} | ConvertTo-Json | Set-Content dist/native-validation/acceptance-source.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: workbench-native-${{ matrix.arch }}-${{ github.run_id }}
+          path: |
+            dist/native-validation/*
+            dist/layout-validation/*
+          if-no-files-found: warn
+          retention-days: 30

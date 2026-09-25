@@ -3,6 +3,7 @@ package atomicfile
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -10,6 +11,28 @@ import (
 // Write replaces path with data only after the complete payload has been
 // written and synced to a temporary file in the same directory.
 func Write(path string, data []byte, mode os.FileMode) (returnErr error) {
+	return writeUsing(path, data, mode, writeOperations{
+		create: func(dir string) (atomicTemporary, error) { return os.CreateTemp(dir, ".agentdock-atomic-*") },
+		secure: secureWrittenFile, replace: replaceFile,
+	})
+}
+
+// A narrow, request-local seam exercises real files at every failure boundary.
+// There are no global fault switches or production environment overrides.
+type atomicTemporary interface {
+	Name() string
+	Chmod(os.FileMode) error
+	Write([]byte) (int, error)
+	Sync() error
+	Close() error
+}
+type writeOperations struct {
+	create  func(string) (atomicTemporary, error)
+	secure  func(string, os.FileMode) error
+	replace func(string, string) error
+}
+
+func writeUsing(path string, data []byte, mode os.FileMode, ops writeOperations) (returnErr error) {
 	if path == "" {
 		return fmt.Errorf("atomic file path is required")
 	}
@@ -17,7 +40,7 @@ func Write(path string, data []byte, mode os.FileMode) (returnErr error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create atomic file directory: %w", err)
 	}
-	tmp, err := os.CreateTemp(dir, ".agentdock-atomic-*")
+	tmp, err := ops.create(dir)
 	if err != nil {
 		return fmt.Errorf("create atomic temp file: %w", err)
 	}
@@ -39,10 +62,13 @@ func Write(path string, data []byte, mode os.FileMode) (returnErr error) {
 	}
 	// Windows 必须在写入敏感内容前收紧临时文件 DACL；Unix 在创建后已具备
 	// 私有临时权限，secureWrittenFile 在对应平台为空操作。
-	if err := secureWrittenFile(tmpPath, mode); err != nil {
+	if err := ops.secure(tmpPath, mode); err != nil {
 		return fmt.Errorf("secure atomic temp file: %w", err)
 	}
-	if _, err := tmp.Write(data); err != nil {
+	if count, err := tmp.Write(data); err != nil || count != len(data) {
+		if err == nil {
+			err = io.ErrShortWrite
+		}
 		return fmt.Errorf("write atomic temp file: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
@@ -53,7 +79,7 @@ func Write(path string, data []byte, mode os.FileMode) (returnErr error) {
 	if closeErr != nil {
 		return fmt.Errorf("close atomic temp file: %w", closeErr)
 	}
-	if err := replaceFile(tmpPath, path); err != nil {
+	if err := ops.replace(tmpPath, path); err != nil {
 		return fmt.Errorf("replace atomic file: %w", err)
 	}
 	return nil

@@ -9,6 +9,7 @@ using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using AgentDock.ControlPanel;
@@ -63,6 +64,15 @@ internal static class SidebarInteractionTests
         else button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
     }
     private static void Settled(ExecutionWindow window) => PumpUntil(() => !Field<bool>(window, "_sidebarLoading") && Field<HashSet<string>>(window, "_sidebarPaging").Count == 0);
+
+    private static void KeyboardPage(ExecutionWindow window,string project,Key key)
+    {
+        var button=More(window,project);
+        var source=PresentationSource.FromVisual(button) ?? throw new InvalidOperationException("Keyboard test needs an actual presentation source");
+        button.Focus();Keyboard.Focus(button);
+        button.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,source,Environment.TickCount,key){RoutedEvent=Keyboard.KeyDownEvent});
+        button.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,source,Environment.TickCount,key){RoutedEvent=Keyboard.KeyUpEvent});
+    }
 
     internal static void Run(Action<bool, string> check)
     {
@@ -129,6 +139,24 @@ internal static class SidebarInteractionTests
                 Click(window, "A"); Settled(window);
                 check(navigation.For("A").HistoryLimit == 40 && window.Objects.Select(row => row.Id).Distinct().Count() == window.Objects.Count, "Expand/collapse cycle produced duplicate rows or incorrect pagination.");
             }
+            handler.Failure="empty";Click(window,"A");Settled(window);
+            check(!window.Objects.Any(row=>row.IsGroupFooter&&row.WorkspaceKey.Id=="A"),"Empty final page retained a nonfunctional more button");
+            Reload(window);
+            handler.DeletedId="A-1";Reload(window);
+            check(!window.Objects.Any(row=>row.Id=="A-1")&&window.Objects.Select(row=>row.Id).Distinct().Count()==window.Objects.Count,"Deleted history row survived a replacement page");
+            handler.DeletedId="";Reload(window);
+            // A real HWND is created only in the isolated runner, offscreen and
+            // without application startup. Use the actual Button class handlers;
+            // never call its click handler directly to claim keyboard coverage.
+            window.ShowInTaskbar=false;window.ShowActivated=false;window.Left=-10000;window.Top=-10000;window.Show();
+            var handle=new WindowInteropHelper(window).Handle;
+            check(handle!=IntPtr.Zero,"Keyboard fixture has no native WPF window");
+            foreach(var key in new[]{Key.Return,Key.Space})
+            {
+                before=handler.Requests;var limit=navigation.For("B").HistoryLimit;
+                KeyboardPage(window,"B",key);Settled(window);
+                check(handler.Requests==before+1&&navigation.For("B").HistoryLimit==limit+20,"Keyboard input did not advance exactly once: "+key);
+            }
             completion = handler.DelayNext(); Click(window, "A");
             window.Close(); closed = true;
             completion.TrySetResult(); Settled(window);
@@ -147,6 +175,7 @@ internal static class SidebarInteractionTests
     {
         internal int Requests, InFlight, MaximumInFlight, Cancelled, UnexpectedRequests;
         internal string Failure = "";
+        internal string DeletedId = "";
         private TaskCompletionSource? _next;
         internal TaskCompletionSource DelayNext() => _next = new(TaskCreationOptions.RunContinuationsAsynchronously);
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
@@ -171,8 +200,9 @@ internal static class SidebarInteractionTests
                 {
                     var mode = modes.TryGetProperty(id, out var value) ? value.GetString() : "auto";
                     var limit = limits.TryGetProperty(id, out value) ? value.GetInt32() : 5;
-                    var count = mode == "collapsed" ? 0 : limit;
-                    return new { workspace_id = id, title = "Project " + id, total = 500, recent_count = 5, mode, history_limit = limit, history_cursor = "cursor_" + id, has_more = mode != "collapsed", conversations = Enumerable.Range(0, count).Select(index => new { conversation_id = id + "-" + index, title = "Conversation " + index, task_ids = Array.Empty<string>(), state = new { workspace_id = id }, statistics = new { } }).ToArray() };
+                    var empty = id=="A"&&failure=="empty";
+                    var count = mode == "collapsed" || empty ? 0 : limit;
+                    return new { workspace_id = id, title = "Project " + id, total = 500, recent_count = 5, mode, history_limit = limit, history_cursor = "cursor_" + id, has_more = mode != "collapsed"&&!empty, conversations = Enumerable.Range(0, count).Where(index=>id+"-"+index!=DeletedId).Select(index => new { conversation_id = id + "-" + index, title = "Conversation " + index, task_ids = Array.Empty<string>(), state = new { workspace_id = id }, statistics = new { } }).ToArray() };
                 }).ToArray();
                 // The service preserves the requested selected conversation even
                 // when its group is collapsed or a search does not show its row.

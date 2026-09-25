@@ -43,10 +43,11 @@ type journalService struct {
 }
 
 type journalBackup struct {
-	Original string `json:"original"`
-	Backup   string `json:"backup,omitempty"`
-	Existed  bool   `json:"existed"`
-	Digest   string `json:"digest,omitempty"`
+	NativeVersion int    `json:"native_metadata_version,omitempty"`
+	Original      string `json:"original"`
+	Backup        string `json:"backup,omitempty"`
+	Existed       bool   `json:"existed"`
+	Digest        string `json:"digest,omitempty"`
 }
 
 func newJournal(stateRoot, transactionID string) *rollbackJournal {
@@ -137,7 +138,7 @@ func (journal *rollbackJournal) Snapshot(path string) error {
 		return fmt.Errorf("snapshot verification failed: %s: %w", path, errors.Join(err, errors.New("digest mismatch")))
 	}
 	next := journal.nextState()
-	next.Backups = append(next.Backups, journalBackup{Original: path, Backup: backup, Existed: true, Digest: digest})
+	next.Backups = append(next.Backups, journalBackup{Original: path, Backup: backup, Existed: true, Digest: digest, NativeVersion: backupNativeMetadataVersion})
 	return journal.commit(next)
 }
 

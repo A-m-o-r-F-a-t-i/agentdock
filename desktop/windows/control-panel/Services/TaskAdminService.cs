@@ -409,6 +409,15 @@ internal static class TaskAdminService
         if (task is null || (bool)task.Enabled != state.WasEnabled ||
             !string.Equals(ReadTaskUserId((string)task.Xml), userId, StringComparison.OrdinalIgnoreCase))
             throw new IOException("计划任务恢复后的身份或启用状态不符。");
+        var expectedDefinition = System.Xml.Linq.XDocument.Parse(xml);
+        var actualDefinition = System.Xml.Linq.XDocument.Parse((string)task.Xml);
+        foreach (var section in new[] { "Principals", "Triggers", "Settings", "Actions" })
+        {
+            var expectedSection = expectedDefinition.Root?.Elements().SingleOrDefault(element => element.Name.LocalName == section);
+            var actualSection = actualDefinition.Root?.Elements().SingleOrDefault(element => element.Name.LocalName == section);
+            if (!System.Xml.Linq.XNode.DeepEquals(expectedSection, actualSection))
+                throw new IOException($"计划任务恢复后的 {section} 定义不符，保留恢复材料。");
+        }
         if (!string.IsNullOrWhiteSpace(state.SecurityDescriptor))
         {
             var expected = new RawSecurityDescriptor(state.SecurityDescriptor).GetSddlForm(AccessControlSections.Access);
