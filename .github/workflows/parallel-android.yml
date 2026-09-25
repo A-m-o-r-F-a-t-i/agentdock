@@ -93,7 +93,7 @@ jobs:
           sh -n mobile/android/termux/agentdock-workbench-bootstrap.sh
           bash -n scripts/ci/parallel-android/test-termux-bridge.sh
           bash -n scripts/ci/parallel-android/run-emulator-tests.sh
-          scripts/ci/parallel-android/test-termux-bridge.sh | tee evidence/contract/termux-contract.txt
+          bash scripts/ci/parallel-android/test-termux-bridge.sh | tee evidence/contract/termux-contract.txt
           git diff --check "$WB07_BASE_SHA" "$GITHUB_SHA"
 
       - name: Validate security and version boundaries
@@ -352,7 +352,7 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900
           disk-size: 6000M
-          script: scripts/ci/parallel-android/run-emulator-tests.sh
+          script: bash scripts/ci/parallel-android/run-emulator-tests.sh
 
       - name: Upload emulator evidence
         if: always()
