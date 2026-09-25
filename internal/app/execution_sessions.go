@@ -64,6 +64,9 @@ func (r *Runtime) executeSessionSelection(ctx context.Context, p *preparedExecut
 	return Result{"status": status, "sessions": results, "count": len(results), "failed": failed, "scope": "frozen_current_conversation_or_explicit_task"}, nil
 }
 func (r *Runtime) revalidatePrepared(ctx context.Context, p *preparedExecution) error {
+	if err := r.revalidatePermission(ctx, p); err != nil {
+		return err
+	}
 	if err := r.checkConversationGate(ctx, p.state.binding.ConversationID); err != nil {
 		return err
 	}

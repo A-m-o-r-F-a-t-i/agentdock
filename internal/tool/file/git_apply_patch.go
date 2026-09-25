@@ -20,6 +20,9 @@ func (svc *Service) applyPatch(ctx context.Context, request EditRequest) (Result
 	if strings.HasPrefix(strings.TrimSpace(patch), "*** Begin Patch") {
 		return svc.applyEnvelopePatch(patch, request.DryRun, workdir.Display)
 	}
+	if restrictedFileTools(ctx) {
+		return nil, toolError("PERMISSION_DENIED", "restricted profiles require a structured native patch; external Git is not started", "permission")
+	}
 	return svc.applyGitPatch(ctx, request, workdir)
 }
 

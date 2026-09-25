@@ -1,0 +1,73 @@
+name: Permission profile validation
+
+on:
+  push:
+    branches: ['feat/permission-profiles-*']
+  pull_request:
+    branches: [main, 'feat/1.1.6-release']
+    paths:
+      - 'internal/permission/**'
+      - 'internal/app/execution*'
+      - 'internal/tool/file/**'
+      - 'desktop/windows/control-panel/PermissionSettingsEditor.cs'
+      - 'desktop/windows/control-panel/ExecutionDialogs.cs'
+      - 'desktop/windows/control-panel-layout-tests/**'
+      - '.github/workflows/permission-profiles.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: permission-profiles-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Permission regression (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Go formatting
+        shell: bash
+        run: |
+          unformatted="$(git ls-files '*.go' | while IFS= read -r file; do gofmt -l "$file"; done)"
+          test -z "$unformatted" || { printf '%s\n' "$unformatted"; exit 1; }
+      - name: Permission and execution regression
+        run: go test -p 2 ./internal/permission ./internal/app ./internal/httpx ./internal/tool/file -count=1 -timeout=8m
+      - name: Permission concurrency regression
+        if: runner.os == 'Linux'
+        run: go test -race ./internal/permission -count=1 -timeout=3m
+      - name: Vet
+        run: go vet ./internal/permission ./internal/app ./internal/tool/file
+      - name: Build core without starting it
+        run: go build ./cmd/agentdock
+
+  desktop:
+    name: Permission editor and offscreen WPF
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+      - name: Pure desktop policy regression
+        run: dotnet run --project desktop/windows/control-panel-tests/AgentDock.ControlPanel.Tests.csproj --configuration Release
+      - name: Offscreen editor and layout regression
+        run: dotnet run --project desktop/windows/control-panel-layout-tests/AgentDock.ControlPanel.LayoutTests.csproj --configuration Release -- . dist/permission-layout
+      - name: Preserve offscreen validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: permission-layout-validation
+          path: dist/permission-layout
+          if-no-files-found: ignore

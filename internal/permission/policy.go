@@ -39,11 +39,13 @@ type Rule struct {
 	Reason      string `json:"reason"`
 }
 type Scope struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
-	Mode string `json:"mode"`
+	Settings *Settings `json:"settings,omitempty"`
+	Kind     string    `json:"kind"`
+	ID       string    `json:"id"`
+	Mode     string    `json:"mode"`
 }
 type Policy struct {
+	Settings      *Settings `json:"settings,omitempty"`
 	SchemaVersion int       `json:"schema_version"`
 	Revision      uint64    `json:"revision"`
 	GlobalMode    string    `json:"global_mode"`
@@ -52,29 +54,38 @@ type Policy struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 type Effective struct {
-	Mode     string `json:"mode"`
-	Scope    string `json:"scope"`
-	ScopeID  string `json:"scope_id,omitempty"`
-	Revision uint64 `json:"revision"`
+	Settings        Settings `json:"settings"`
+	SettingsScope   string   `json:"settings_scope"`
+	SettingsScopeID string   `json:"settings_scope_id,omitempty"`
+	Mode            string   `json:"mode"`
+	Scope           string   `json:"scope"`
+	ScopeID         string   `json:"scope_id,omitempty"`
+	Revision        uint64   `json:"revision"`
 }
 type Change struct {
-	Scope            string  `json:"scope"`
-	ScopeID          string  `json:"scope_id,omitempty"`
-	Mode             string  `json:"mode,omitempty"`
-	ExpectedRevision uint64  `json:"expected_revision"`
-	ConfirmFull      bool    `json:"confirm_full,omitempty"`
-	Rules            *[]Rule `json:"rules,omitempty"`
+	Settings         *Settings `json:"settings,omitempty"`
+	InheritSettings  bool      `json:"inherit_settings,omitempty"`
+	Scope            string    `json:"scope"`
+	ScopeID          string    `json:"scope_id,omitempty"`
+	Mode             string    `json:"mode,omitempty"`
+	ExpectedRevision uint64    `json:"expected_revision"`
+	ConfirmFull      bool      `json:"confirm_full,omitempty"`
+	Rules            *[]Rule   `json:"rules,omitempty"`
 }
 
 // Facts must be computed by the runtime, never accepted as caller-supplied
 // read-only hints. Third-party MCP annotations are not a trusted classification.
 type Facts struct {
-	Binding    activity.Binding
-	Tool       string
-	Action     string
-	ReadOnly   bool
-	Management bool
-	Reason     string
+	EffectsKnown   bool
+	Filesystem     string
+	Network        bool
+	WorkspaceBound bool
+	Binding        activity.Binding
+	Tool           string
+	Action         string
+	ReadOnly       bool
+	Management     bool
+	Reason         string
 }
 type Decision struct {
 	Effective
@@ -83,8 +94,9 @@ type Decision struct {
 	Reason string `json:"reason"`
 }
 type Store struct {
-	instance string
-	root     string
+	reviewSlots chan struct{}
+	instance    string
+	root        string
 }
 
 func New(root string) (*Store, error) {
@@ -106,7 +118,7 @@ func New(root string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	store := &Store{root: root, instance: instance}
+	store := &Store{root: root, instance: instance, reviewSlots: make(chan struct{}, 2)}
 	if _, err = store.Get(context.Background()); err != nil {
 		return nil, err
 	}
@@ -155,16 +167,32 @@ func writeJSON(ctx context.Context, path string, value any) error {
 }
 func validMode(mode string) bool { return mode == ReadOnly || mode == Rules || mode == Full }
 func validatePolicy(p Policy) error {
-	if p.SchemaVersion != 1 || p.Revision == 0 || !validMode(p.GlobalMode) {
+	if (p.SchemaVersion != 1 && p.SchemaVersion != 2) || p.Revision == 0 || !validMode(p.GlobalMode) {
 		return errors.New("invalid permission policy schema or mode")
+	}
+	if p.Settings != nil {
+		if p.SchemaVersion != 2 {
+			return errors.New("profile settings require schema version 2")
+		}
+		if err := p.Settings.Validate(); err != nil {
+			return err
+		}
 	}
 	if len(p.Scopes) > 4000 || len(p.Rules) > 512 {
 		return errors.New("permission policy exceeds capacity")
 	}
 	seen := map[string]bool{}
 	for _, scope := range p.Scopes {
-		if (scope.Kind != "workspace" && scope.Kind != "conversation") || !validID.MatchString(scope.ID) || !validMode(scope.Mode) {
+		if (scope.Kind != "workspace" && scope.Kind != "conversation") || !validID.MatchString(scope.ID) || (scope.Mode != "" && !validMode(scope.Mode)) || (scope.Mode == "" && scope.Settings == nil) {
 			return errors.New("invalid permission scope")
+		}
+		if scope.Settings != nil {
+			if p.SchemaVersion != 2 || scope.Kind != "workspace" {
+				return errors.New("profile overrides require a workspace and schema version 2")
+			}
+			if err := scope.Settings.Validate(); err != nil {
+				return err
+			}
 		}
 		key := scope.Kind + ":" + scope.ID
 		if scope.Kind == "conversation" && scope.Mode == Full {
@@ -197,7 +225,10 @@ func (s *Store) Get(ctx context.Context) (Policy, error) {
 	return p, err
 }
 func effectivePolicy(p Policy, binding activity.Binding) Effective {
-	result := Effective{Mode: p.GlobalMode, Scope: "global", Revision: p.Revision}
+	result := Effective{Mode: p.GlobalMode, Scope: "global", Revision: p.Revision, Settings: DefaultSettings(), SettingsScope: "global"}
+	if p.Settings != nil {
+		result.Settings = *p.Settings
+	}
 	for _, kind := range []string{"workspace", "conversation"} {
 		id := binding.WorkspaceID
 		if kind == "conversation" {
@@ -205,7 +236,12 @@ func effectivePolicy(p Policy, binding activity.Binding) Effective {
 		}
 		for _, scope := range p.Scopes {
 			if scope.Kind == kind && scope.ID == id {
-				result.Mode, result.Scope, result.ScopeID = scope.Mode, kind, id
+				if scope.Mode != "" {
+					result.Mode, result.Scope, result.ScopeID = scope.Mode, kind, id
+				}
+				if scope.Settings != nil {
+					result.Settings, result.SettingsScope, result.SettingsScopeID = *scope.Settings, kind, id
+				}
 			}
 		}
 	}
@@ -218,12 +254,17 @@ func (s *Store) Effective(ctx context.Context, binding activity.Binding) (Effect
 	}
 	return effectivePolicy(p, binding), nil
 }
-func (s *Store) Decide(ctx context.Context, facts Facts) (Decision, error) {
+func (s *Store) Decide(ctx context.Context, facts Facts) (decision Decision, returnErr error) {
 	p, err := s.Get(ctx)
 	if err != nil {
 		return Decision{}, err
 	}
-	decision := Decision{Effective: effectivePolicy(p, facts.Binding)}
+	decision = Decision{Effective: effectivePolicy(p, facts.Binding)}
+	defer func() {
+		if returnErr == nil {
+			decision = approvalDecision(decision, facts)
+		}
+	}()
 	matches := func(rule Rule) bool {
 		return rule.Tool == facts.Tool && (rule.Action == "" || rule.Action == facts.Action) && (rule.WorkspaceID == "" || rule.WorkspaceID == facts.Binding.WorkspaceID)
 	}
@@ -232,6 +273,10 @@ func (s *Store) Decide(ctx context.Context, facts Facts) (Decision, error) {
 			decision.Effect, decision.RuleID, decision.Reason = Deny, rule.ID, rule.Reason
 			return decision, nil
 		}
+	}
+	decision = profileDecision(decision, facts)
+	if decision.Effect == Deny {
+		return decision, nil
 	}
 	if decision.Mode == ReadOnly {
 		decision.Effect, decision.RuleID, decision.Reason = Deny, "readonly-write", "只读检查模式禁止尚未确认只读的操作。"
@@ -301,7 +346,10 @@ func (s *Store) Update(ctx context.Context, change Change) (Policy, error) {
 		if change.Rules != nil {
 			p.Rules = append([]Rule(nil), (*change.Rules)...)
 		}
-		if change.Mode == "" && change.Rules == nil {
+		if err = applySettingsChange(&p, change); err != nil {
+			return err
+		}
+		if change.Mode == "" && change.Rules == nil && change.Settings == nil && !change.InheritSettings {
 			return errors.New("permission change is empty")
 		}
 		p.Revision++

@@ -13,6 +13,7 @@ import (
 	"github.com/uvwt/agentdock/internal/config"
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 	"github.com/uvwt/agentdock/internal/permission"
+	toolfile "github.com/uvwt/agentdock/internal/tool/file"
 	"github.com/uvwt/agentdock/internal/workspace"
 )
 
@@ -28,6 +29,7 @@ type preparedExecution struct {
 	state               executionObservation
 	source              activity.Source
 	decision            permission.Decision
+	approvalInline      bool
 	approvalID          string
 	approvalRequestedAt time.Time
 	executionStartedAt  time.Time
@@ -216,7 +218,7 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 	prepared := &preparedExecution{spec: spec, args: args, state: state, source: activity.SourceFromContext(ctx), decision: decision, outputPolicy: outputPolicy}
 	if decision.Effect == permission.Deny {
 		r.executionMu.Unlock()
-		return fail(toolErrorDetails("PERMISSION_DENIED", decision.Reason, "permission", map[string]any{"rule_id": decision.RuleID, "mode": decision.Mode, "executed": false}))
+		return fail(toolErrorDetails("PERMISSION_DENIED", decision.Reason, "permission", map[string]any{"rule_id": decision.RuleID, "mode": decision.Mode, "permission": decision, "executed": false}))
 	}
 	if spec.Name == "mcp_tool_call" {
 		prepared.mcpTarget, err = r.dynamicMCP.PermissionTargetFingerprint(ctx, stringArg(args, "name"))
@@ -239,7 +241,7 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 			operation = command
 		}
 		redactor := r.executionRedactor(args)
-		a := permission.Approval{Binding: state.binding, Tool: spec.Name, Action: stringArg(args, "action"), Operation: redactor.Text(operation, 16384), ScopeDescription: redactor.Text(r.executionScope(prepared), 4096), RuleID: decision.RuleID, Reason: decision.Reason, Mode: decision.Mode, PolicyRevision: decision.Revision}
+		a := permission.Approval{Reviewer: decision.Settings.Reviewer, Settings: &decision.Settings, Binding: state.binding, Tool: spec.Name, Action: stringArg(args, "action"), Operation: redactor.Text(operation, 16384), ScopeDescription: redactor.Text(r.executionScope(prepared), 4096), RuleID: decision.RuleID, Reason: decision.Reason, Mode: decision.Mode, PolicyRevision: decision.Revision}
 		if state.selected != nil {
 			a.WorkspaceRevision = state.selected.RulesRevision
 		}
@@ -258,6 +260,9 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 		r.executionMu.Unlock()
 		if err != nil {
 			return fail(err)
+		}
+		if decision.Settings.Reviewer == permission.ReviewerAuto {
+			return r.autoReviewPrepared(ctx, prepared, approval)
 		}
 		return r.decorateExecution(Result{"status": "pending_approval", "executed": false, "approval_id": approval.ID, "approval": approval, "next_required_action": "Wait for the local user to approve or reject this fixed request. Do not change arguments or retry to bypass approval."}, prepared), nil
 	}
@@ -429,7 +434,7 @@ func (r *Runtime) executionFacts(name string, args map[string]any, state executi
 		f.ReadOnly = args["dry_run"] == true
 		f.Reason = "文件变更将在指定目标执行；请确认修改内容、删除范围及工作区。"
 	}
-	return f
+	return r.profileFacts(f, args, state)
 }
 func (r *Runtime) executionAdmissionLocked(ctx context.Context, binding activity.Binding, name, action, exclude string) error {
 	if err := r.checkConversationGate(ctx, binding.ConversationID); err != nil {
@@ -516,7 +521,7 @@ func (r *Runtime) executePrepared(ctx context.Context, p *preparedExecution) (re
 	defer func() {
 		// The approval response has already returned. Preserve the eventual
 		// outcome of the fixed approved operation on its original root call.
-		if p.approvalID != "" {
+		if p.approvalID != "" && !p.approvalInline {
 			value := map[string]any{"result": result, "isError": returnErr != nil || resultReportsFailure(result)}
 			if returnErr != nil {
 				value["error"] = returnErr.Error()
@@ -548,6 +553,9 @@ func (r *Runtime) executePrepared(ctx context.Context, p *preparedExecution) (re
 	ctx = activity.WithSource(ctx, p.source)
 	ctx = activity.WithBinding(ctx, state.binding)
 	ctx = context.WithValue(ctx, outputPolicyContextKey{}, p.outputPolicy)
+	if p.decision.Settings.Profile.Restricted() {
+		ctx = toolfile.WithRestrictedFileTools(ctx)
+	}
 	if p.mcpTarget != "" {
 		ctx = mcpclient.WithApprovedToolTarget(ctx, p.mcpTarget)
 	}
@@ -699,6 +707,9 @@ func (r *Runtime) decorateExecution(result Result, p *preparedExecution) Result 
 	}
 	if p.state.target != nil {
 		decorated["workspace_target"] = *p.state.target
+	}
+	if p.approvalID != "" {
+		decorated["approval_id"] = p.approvalID
 	}
 	decorated["permission"] = p.decision
 	decorated["agentdock_guidance"] = r.executionGuidance(p.spec.Name, p.state, result, false)

@@ -149,7 +149,7 @@ func (svc *Service) ListDir(ctx context.Context, request ListRequest) (Result, e
 		return nil, toolError("NOT_A_DIRECTORY", "list_dir path is not a directory", "validation")
 	}
 
-	ignore := loadIgnoreMatcher(svc.ws.Root())
+	ignore := loadContextIgnoreMatcher(ctx, svc.ws.Root())
 
 	items := make([]map[string]any, 0, min(opts.MaxEntries, 200))
 	skippedPaths := make([]string, 0)
