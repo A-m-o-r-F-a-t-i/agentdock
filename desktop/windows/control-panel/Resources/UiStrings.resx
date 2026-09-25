@@ -921,4 +921,6 @@ Update now?</value>
   <data name="PublicMetadataMismatch" xml:space="preserve"><value>Metadata does not match the current origin</value></data>
   <data name="PublicDiscoveryAuthorizationRequired" xml:space="preserve"><value>Public endpoint reachable; authentication discovery passed</value></data>
   <data name="PublicOAuthCapabilitiesMissing" xml:space="preserve"><value>OAuth metadata is missing authorization code, S256 or refresh support.</value></data>
+  <data name="LocalHealthyPublicUnavailable" xml:space="preserve"><value>Local Core is healthy; managed public transport is not ready</value></data>
+  <data name="LocalHealthyPublicUnknown" xml:space="preserve"><value>Local Core is healthy; public transport status is unknown</value></data>
 </root>

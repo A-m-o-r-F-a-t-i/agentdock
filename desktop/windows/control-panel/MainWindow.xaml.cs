@@ -49,6 +49,7 @@ public partial class MainWindow : Window
         SelectUiLanguage(UiText.ReadPreference());
         _updatingUi = false;
         Closing += MainWindow_Closing;
+        Closed += (_, _) => _statusWindowClosed = true;
     }
 
     internal void CloseForReplacement()
@@ -67,11 +68,12 @@ public partial class MainWindow : Window
         // Inventory does not depend on the slower service/Nexus status probe.
         var capabilitiesTask = RefreshCapabilitiesAsync(showErrors: false);
         var revision = _accessRevision;
+        var observationStarted = DateTimeOffset.Now;
         try
         {
             FooterStatusText.Text = UiText.Get("Refreshing");
             var snapshot = await Task.Run(() => _runtime.GetSnapshotAsync(includeNexusConnection: true));
-            if (revision != _accessRevision) return;
+            if (revision != _accessRevision || _statusWindowClosed || !_runtimeObservation.Accept(snapshot.CheckedAt)) return;
             if (_snapshot?.PublicOrigin != snapshot.PublicOrigin || _snapshot?.TunnelMode != snapshot.TunnelMode)
             {
                 InvalidateAccessChecks();
@@ -89,8 +91,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             FooterStatusText.Text = ex.Message;
-            HeaderStatusText.Text = UiText.Get("StatusReadFailed");
-            StatusDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, "DangerBrush");
+            ApplyRuntimeStatusUnavailable(observationStarted);
             NexusStatusText.Text = UiText.Get("StatusReadFailed");
         }
         finally
@@ -105,8 +106,7 @@ public partial class MainWindow : Window
         _updatingUi = true;
         try
         {
-            HeaderStatusText.Text = snapshot.Healthy ? UiText.Get("RunningNormally") : snapshot.CoreRunning ? UiText.Get("RunningHealthFailed") : UiText.Get("Stopped");
-            StatusDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, snapshot.Healthy ? "SuccessBrush" : snapshot.CoreRunning ? "WarningBrush" : "SecondaryText");
+            RenderRuntimeStatus(snapshot);
 
             NexusStatusText.Text = !string.IsNullOrWhiteSpace(snapshot.Nexus.Error)
                 ? UiText.Get("ConfigurationError")
@@ -114,11 +114,6 @@ public partial class MainWindow : Window
                     ? UiText.Get("NotConfigured")
                     : snapshot.NexusConnected ? UiText.Get("Connected") : UiText.Get("NotConnected");
 
-            ServiceStatusText.Text = snapshot.CoreRunning ? UiText.Get("Running") : UiText.Get("Stopped");
-            HealthStatusText.Text = snapshot.Healthy ? UiText.Get("Healthy") : UiText.Get("Unavailable");
-            VersionText.Text = string.IsNullOrWhiteSpace(snapshot.Version) ? UiText.Get("Unknown") : snapshot.Version;
-            LocalMcpTextBox.Text = snapshot.LocalMcpUrl;
-            PublicMcpTextBox.Text = _tunnelChangeInProgress && SelectedTunnelMode() == "quick" ? "" : snapshot.PublicMcpUrl;
             UpdateCredentialText();
 
             if (!_tunnelSelectionDirty && !_tunnelChangeInProgress)
