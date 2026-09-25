@@ -60,7 +60,7 @@ jobs:
           jobs={job['name']:job for job in response['jobs']}
           required=['resolve-source','windows / Resolve requested ref once','windows / Linux transaction and concurrency regression','windows / Build verified unsigned Windows packages','Universal macOS Workbench application']
           required += [f'Native {system} {arch}' for system in ['linux','darwin'] for arch in ['amd64','arm64']]
-          if tuple(map(int,version.split('.'))) >= (1,1,8):
+          if tuple(map(int,version.split('.'))) >= (1,1,7):
               required += ['windows / native-acceptance / native-windows (windows-11-arm, arm64, win-arm64)',
                            'windows / native-acceptance / native-windows (windows-latest, amd64, win-x64)',
                            'Native Windows ARM64 install and uninstall']

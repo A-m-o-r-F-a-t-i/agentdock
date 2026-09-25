@@ -6,7 +6,7 @@ English | [简体中文](./README.zh-CN.md)
 
 # AgentDock Workbench
 
-**AgentDock Workbench 1.1.8** · [Release notes and platform packages](./docs/releases/v1.1.8.md) · [Acceptance matrix](./docs/acceptance-1.1.8.md) · [Layered permissions](./docs/permission-profiles.md) · [Insertion delivery](./docs/insertion-delivery-1.1.7.md). This fork extends [upstream AgentDock](https://github.com/uvwt/agentdock) with its task and execution workbench. Native Windows, Linux and macOS x64/ARM64 packages are built in this repository; the Windows activity-center UI remains platform-specific.
+**AgentDock Workbench 1.1.7** · [Release notes and platform packages](./docs/releases/v1.1.7.md) · [Acceptance matrix](./docs/acceptance-1.1.7.md) · [Layered permissions](./docs/permission-profiles.md) · [Insertion delivery](./docs/insertion-delivery-1.1.7.md). This fork extends [upstream AgentDock](https://github.com/uvwt/agentdock) with its task and execution workbench. Native Windows, Linux and macOS x64/ARM64 packages are built in this repository; the Windows activity-center UI remains platform-specific.
 
 **Give AI agents secure, controlled access to every machine you operate.**
 

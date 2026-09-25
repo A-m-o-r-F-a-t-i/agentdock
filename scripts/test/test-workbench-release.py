@@ -27,7 +27,7 @@ class ReleaseGate(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name); self.inputs=self.root/'input'; self.inputs.mkdir()
-        self.dist=self.root/'dist';self.version=getattr(self,'target_version','1.1.7');self.commit='a'*40
+        self.dist=self.root/'dist';self.version=getattr(self,'target_version','1.1.6');self.commit='a'*40
         (self.inputs/'windows').mkdir()
         self.payloads=release.expected_payloads(self.version)
         for name in self.payloads:
@@ -76,7 +76,20 @@ class ReleaseGate(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'unexpected artifacts'):self.assemble()
 
 class EnhancedReleaseGate(ReleaseGate):
-    target_version='1.1.8'
+    target_version='1.1.7'
+    def test_corrected_117_keeps_enhanced_acceptance(self):
+        self.assertEqual(self.version,'1.1.7')
+        manifest=self.assemble()
+        native=[item for item in manifest['validation'] if item.get('native_privilege')=='passed']
+        self.assertEqual({item['platform'] for item in native},{'windows/amd64','windows/arm64'})
+        self.assertTrue(any(item.get('native_installation')=='passed' for item in manifest['validation']))
+        workflow=(ROOT/'.github/workflows/workbench-release.yml').read_text()
+        self.assertIn("github.event.forced != true",workflow)
+        self.assertIn("github.event.deleted != true",workflow)
+        self.assertIn('needs: [resolve-source, windows, windows-arm-package, unix, macos-app]',workflow)
+        recovery=(ROOT/'.github/workflows/workbench-publish-existing.yml').read_text()
+        self.assertIn(">= (1,1,7)",recovery)
+        self.assertIn('Native Windows ARM64 install and uninstall',recovery)
     def setUp(self):
         super().setUp()
         for arch in ['amd64','arm64']:

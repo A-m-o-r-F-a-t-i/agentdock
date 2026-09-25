@@ -62,7 +62,7 @@ def assemble(inputs: Path,dist: Path,version: str,commit: str) -> dict:
     if run('git','status','--porcelain','--untracked-files=no'):
         raise RuntimeError('Verified build tracked sources were modified')
     reports=[]
-    enhanced_acceptance=tuple(map(int,version.split('.'))) >= (1,1,8)
+    enhanced_acceptance=tuple(map(int,version.split('.'))) >= (1,1,7)
     for platform in ['linux','darwin']:
         for arch in ['amd64','arm64']:
             report=read_report(inputs,f'verification-{platform}-{arch}.json')
