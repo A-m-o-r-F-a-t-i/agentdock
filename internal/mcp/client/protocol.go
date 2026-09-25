@@ -62,6 +62,7 @@ func (c *sdkProtocolClient) initialize(ctx context.Context) error {
 		&mcpsdk.Implementation{Name: config.ServerName, Version: buildinfo.Version},
 		&mcpsdk.ClientOptions{Capabilities: &mcpsdk.ClientCapabilities{}, ProgressNotificationHandler: c.receiveProgress},
 	)
+	client.AddSendingMiddleware(c.validateDiscoveryResponse)
 	client.AddReceivingMiddleware(func(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
 		return func(ctx context.Context, method string, request mcpsdk.Request) (mcpsdk.Result, error) {
 			if method == "notifications/tools/list_changed" {
@@ -148,7 +149,7 @@ func (c *sdkProtocolClient) listTools(ctx context.Context) ([]Tool, error) {
 		}
 		tool, err := convertSDKTool(remote)
 		if err != nil {
-			return nil, newError("MCP_INVALID_RESPONSE", "decode MCP tool definition", false, map[string]any{"server": c.cfg.Name, "tool": remote.Name}, err)
+			return nil, newError("MCP_INVALID_RESPONSE", "decode MCP tool definition", false, map[string]any{"server": c.cfg.Name}, err)
 		}
 		tools = append(tools, tool)
 	}
@@ -204,6 +205,10 @@ func (c *sdkProtocolClient) cleanupProcess() error {
 func (c *sdkProtocolClient) wrapSDKError(operation string, err error) error {
 	if err == nil {
 		return nil
+	}
+	var local *Error
+	if errors.As(err, &local) {
+		return err
 	}
 	details := map[string]any{"server": c.cfg.Name}
 	if c.stderr != nil && c.stderr.String() != "" {
@@ -408,4 +413,37 @@ func (c *sdkProtocolClient) ServerVersion() string {
 		return ""
 	}
 	return info.ServerInfo.Version
+}
+
+// Validate before the SDK's ListTools filters header annotations. The pinned
+// SDK dereferences each remote Tool there, so validating only convertSDKTool
+// is too late. Optional request params (including typed nil) are left alone.
+func (c *sdkProtocolClient) validateDiscoveryResponse(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
+	return func(ctx context.Context, method string, request mcpsdk.Request) (mcpsdk.Result, error) {
+		result, err := next(ctx, method, request)
+		if err != nil || method != "tools/list" {
+			return result, err
+		}
+		if err := validDiscoveryResult(result); err != nil {
+			return nil, newError("MCP_INVALID_RESPONSE", "invalid MCP tools/list response", false, map[string]any{"server": c.cfg.Name}, err)
+		}
+		return result, nil
+	}
+}
+
+func validDiscoveryResult(result mcpsdk.Result) error {
+	list, ok := result.(*mcpsdk.ListToolsResult)
+	if !ok || list == nil || list.Tools == nil {
+		return errors.New("tools/list requires a result object with a tools array")
+	}
+	for _, remote := range list.Tools {
+		if remote == nil {
+			return errors.New("tools/list contains a null tool")
+		}
+		input, err := jsonMap(remote.InputSchema)
+		if err != nil || input == nil {
+			return errors.New("tool inputSchema must be an object")
+		}
+	}
+	return nil
 }
