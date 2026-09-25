@@ -3,10 +3,12 @@ package httpx
 import (
 	"context"
 	"encoding/json"
+	"github.com/uvwt/agentdock/internal/buildinfo"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -634,5 +636,30 @@ func TestRequestRemoteIPOnlyTrustsConfiguredProxyChain(t *testing.T) {
 				t.Fatalf("requestRemoteIP() = %q, want %q", got, test.want)
 			}
 		})
+	}
+}
+
+func TestCoreHealthIdentifiesServiceAndProcessWithoutPrivateData(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	coreHealthHandler(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	var body map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusOK || len(body) != 4 || body["ok"] != true || body["version"] != buildinfo.Version || body["service"] != "agentdock" || body["process_id"] != float64(os.Getpid()) {
+		t.Fatalf("invalid health: %v", body)
+	}
+	if recorder.Header().Get("Content-Type") != "application/json" || recorder.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("health headers missing")
+	}
+	for _, method := range []string{http.MethodHead, http.MethodPost} {
+		recorder := httptest.NewRecorder()
+		coreHealthHandler(recorder, httptest.NewRequest(method, "/healthz", nil))
+		if recorder.Body.Len() != 0 {
+			t.Fatal("HEAD/unsupported method leaked a body")
+		}
+		if method == http.MethodPost && (recorder.Code != http.StatusMethodNotAllowed || recorder.Header().Get("Allow") != "GET, HEAD") {
+			t.Fatal("unsupported method accepted")
+		}
 	}
 }

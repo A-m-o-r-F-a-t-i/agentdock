@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -38,10 +39,7 @@ func Serve(ctx context.Context, server *mcp.Server, runtime runtimeapi.Runtime, 
 	}
 	slog.Info("http server configured", "host", cfg.Host, "port", cfg.Port, "auth_required", authRequired, "endpoint", "/mcp")
 	mux.HandleFunc("/", statusPageHandler(server, cfg))
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("content-type", "application/json")
-		writeJSON(w, map[string]any{"ok": true, "version": buildinfo.Version})
-	})
+	mux.HandleFunc("/healthz", coreHealthHandler)
 	mux.HandleFunc("/.well-known/mcp.json", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, serverCard(cfg, r))
 	})
@@ -97,4 +95,20 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
+}
+
+// Public health contains no user, credential, target or path data. A specific
+// service marker and process identity distinguish it from an unrelated HTTP 200.
+func coreHealthHandler(w http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet && request.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	if request.Method == http.MethodHead {
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "version": buildinfo.Version, "service": "agentdock", "process_id": os.Getpid()})
 }
