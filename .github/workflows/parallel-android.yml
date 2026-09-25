@@ -1,0 +1,442 @@
+name: WB07 Android Candidate
+
+on:
+  push:
+    branches:
+      - "parallel/20260925/android"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wb07-android-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  WB07_BASE_SHA: b367eaab95202873fb213b8713440bf7822878c4
+  GRADLE_VERSION: 9.4.1
+  ANDROID_COMPILE_SDK: "37"
+  ANDROID_BUILD_TOOLS: 37.0.0
+
+jobs:
+  contract:
+    name: Source and bridge contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      short_sha: ${{ steps.identity.outputs.short_sha }}
+      product_version: ${{ steps.identity.outputs.product_version }}
+    steps:
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Record immutable identity
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          short_sha="${GITHUB_SHA:0:12}"
+          product_version="$(sed -n 's/^[[:space:]]*const Version = "\([^"]*\)"/\1/p' internal/buildinfo/buildinfo.go)"
+          test -n "$product_version"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+          echo "product_version=$product_version" >> "$GITHUB_OUTPUT"
+          mkdir -p evidence/contract
+          python3 - <<'PY'
+          import json, os, pathlib
+          pathlib.Path("evidence/contract/identity.json").write_text(json.dumps({
+              "schema_version": 1,
+              "lane": "WB07",
+              "source_sha": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "branch": os.environ["GITHUB_REF_NAME"],
+              "checkout_exact": True,
+              "publication": False,
+              "production_modified": False
+          }, indent=2) + "\n")
+          PY
+
+      - name: Enforce lane ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          git cat-file -e "$WB07_BASE_SHA^{commit}"
+          changed="$(git diff --name-only "$WB07_BASE_SHA" "$GITHUB_SHA")"
+          printf '%s\n' "$changed" | tee evidence/contract/changed-files.txt
+          disallowed="$(printf '%s\n' "$changed" | grep -Ev '^(mobile/android/|scripts/ci/parallel-android/|docs/android/|\.github/workflows/parallel-android\.yml$)' || true)"
+          if [[ -n "$disallowed" ]]; then
+            echo "WB07 changed paths outside its ownership:" >&2
+            printf '%s\n' "$disallowed" >&2
+            exit 1
+          fi
+
+      - name: Validate source contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          files = list(Path("mobile/android/app/src/main").rglob("*.xml"))
+          if not files:
+              raise SystemExit("no Android XML resources found")
+          for path in files:
+              ET.parse(path)
+          print(f"parsed {len(files)} Android XML files")
+          PY
+          sh -n mobile/android/termux/agentdock-workbench
+          sh -n mobile/android/termux/agentdock-workbench-bootstrap.sh
+          bash -n scripts/ci/parallel-android/test-termux-bridge.sh
+          bash -n scripts/ci/parallel-android/run-emulator-tests.sh
+          scripts/ci/parallel-android/test-termux-bridge.sh | tee evidence/contract/termux-contract.txt
+          git diff --check "$WB07_BASE_SHA" "$GITHUB_SHA"
+
+      - name: Validate security and version boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.identity.outputs.product_version }}"
+          grep -F 'rootProject.file("../../internal/buildinfo/buildinfo.go")' mobile/android/app/build.gradle.kts
+          grep -F 'compileSdk = 37' mobile/android/app/build.gradle.kts
+          grep -F 'targetSdk = 37' mobile/android/app/build.gradle.kts
+          grep -F 'minSdk = 26' mobile/android/app/build.gradle.kts
+          grep -F 'customPermissionEnabled: Boolean = false' mobile/android/app/src/main/java/dev/agentdock/workbench/model/WorkbenchModels.kt
+          grep -F 'desiredNodeState: String = "stopped"' mobile/android/app/src/main/java/dev/agentdock/workbench/model/WorkbenchModels.kt
+          test "$version" = "$(sed -n 's/^[[:space:]]*const Version = "\([^"]*\)"/\1/p' internal/buildinfo/buildinfo.go)"
+          if grep -RInE --exclude='Pages.kt' \
+            'BIND_ACCESSIBILITY_SERVICE|SYSTEM_ALERT_WINDOW|android\.permission\.WAKE_LOCK|Shizuku|(^|[^A-Za-z])su[[:space:]]+-c|adb[[:space:]]+shell|MediaPlayer|AudioTrack|setExactAndAllowWhileIdle' \
+            mobile/android/app/src/main mobile/android/termux; then
+            echo "forbidden Android background/elevation mechanism found" >&2
+            exit 1
+          fi
+          if grep -nE '(^|[[:space:]])(gh[[:space:]]+release|git[[:space:]]+tag|npm[[:space:]]+publish|gradle[^#]*(publish|uploadArchives))' .github/workflows/parallel-android.yml; then
+            echo "candidate workflow contains a publication operation" >&2
+            exit 1
+          fi
+
+      - name: Upload contract evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wb07-android-contract-${{ steps.identity.outputs.short_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/contract
+          if-no-files-found: warn
+          retention-days: 14
+
+  build:
+    name: Android lint, unit tests and APKs
+    needs: contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      short_sha: ${{ steps.identity.outputs.short_sha }}
+      product_version: ${{ steps.identity.outputs.product_version }}
+      candidate_artifact: ${{ steps.identity.outputs.candidate_artifact }}
+    steps:
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify identity
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          short_sha="${GITHUB_SHA:0:12}"
+          product_version="${{ needs.contract.outputs.product_version }}"
+          artifact="wb07-android-apk-${short_sha}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-test-signed"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+          echo "product_version=$product_version" >> "$GITHUB_OUTPUT"
+          echo "candidate_artifact=$artifact" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install compile SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: false
+
+      - name: Lint and JVM unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_code=$((101070000 + GITHUB_RUN_NUMBER))
+          gradle -p mobile/android --no-daemon --stacktrace --warning-mode all \
+            lintDebug testDebugUnitTest \
+            -PagentdockAndroidVersionCode="$version_code" \
+            -PagentdockCandidateSha="$GITHUB_SHA" \
+            -PagentdockCandidateRunId="$GITHUB_RUN_ID" \
+            -PagentdockCandidateRunAttempt="$GITHUB_RUN_ATTEMPT"
+
+      - name: Build candidate and test APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_code=$((101070000 + GITHUB_RUN_NUMBER))
+          gradle -p mobile/android --no-daemon --stacktrace --warning-mode all \
+            assembleDebug assembleRelease assembleDebugAndroidTest \
+            -PagentdockAndroidVersionCode="$version_code" \
+            -PagentdockCandidateSha="$GITHUB_SHA" \
+            -PagentdockCandidateRunId="$GITHUB_RUN_ID" \
+            -PagentdockCandidateRunAttempt="$GITHUB_RUN_ATTEMPT"
+
+      - name: Stage test-signed candidate evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${{ steps.identity.outputs.short_sha }}"
+          version="${{ steps.identity.outputs.product_version }}"
+          out="evidence/build/apk"
+          mkdir -p "$out" evidence/build/signing
+          debug_name="AgentDock-Workbench-${version}-Android-debug-${short_sha}-test-signed.apk"
+          release_name="AgentDock-Workbench-${version}-Android-release-shaped-${short_sha}-test-signed.apk"
+          test_name="AgentDock-Workbench-${version}-Android-instrumentation-${short_sha}-test-signed.apk"
+          cp mobile/android/app/build/outputs/apk/debug/app-debug.apk "$out/$debug_name"
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk "$out/$release_name"
+          cp mobile/android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk "$out/$test_name"
+          (cd "$out" && sha256sum *.apk | sort > SHA256SUMS)
+          apksigner="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$apksigner"
+          for apk in "$out"/*.apk; do
+            "$apksigner" verify --verbose --print-certs "$apk" >"evidence/build/signing/$(basename "$apk").txt"
+          done
+          VERSION="$version" SHORT_SHA="$short_sha" VERSION_CODE=$((101070000 + GITHUB_RUN_NUMBER)) python3 - <<'PY'
+          import json, os, pathlib
+          root = pathlib.Path("evidence/build")
+          apks = sorted(path.name for path in (root / "apk").glob("*.apk"))
+          (root / "candidate.json").write_text(json.dumps({
+              "schema_version": 1,
+              "lane": "WB07",
+              "product": "AgentDock Workbench",
+              "product_version": os.environ["VERSION"],
+              "version_code": int(os.environ["VERSION_CODE"]),
+              "source_sha": os.environ["GITHUB_SHA"],
+              "short_sha": os.environ["SHORT_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "signing": "Android debug/test key only",
+              "publication": False,
+              "production_modified": False,
+              "apks": apks
+          }, ensure_ascii=False, indent=2) + "\n")
+          PY
+
+      - name: Collect build reports
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/build/reports
+          for source in \
+            mobile/android/app/build/reports/lint-results-debug.html \
+            mobile/android/app/build/reports/lint-results-debug.xml \
+            mobile/android/app/build/reports/tests/testDebugUnitTest \
+            mobile/android/app/build/test-results/testDebugUnitTest; do
+            if [[ -e "$source" ]]; then cp -a "$source" evidence/build/reports/; fi
+          done
+          env | grep -E '^(GITHUB_SHA|GITHUB_RUN_ID|GITHUB_RUN_ATTEMPT|RUNNER_OS|RUNNER_ARCH)=' | sort > evidence/build/environment.txt
+
+      - name: Upload APK candidates
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.identity.outputs.candidate_artifact }}
+          path: |
+            evidence/build/apk
+            evidence/build/signing
+            evidence/build/candidate.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wb07-android-build-reports-${{ steps.identity.outputs.short_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/build
+          if-no-files-found: warn
+          retention-days: 14
+
+  emulator:
+    name: Emulator API ${{ matrix.api }}
+    needs: [contract, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [33, 34, 35, 37]
+    steps:
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify identity
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "short_sha=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+          mkdir -p "evidence/emulator-api-${{ matrix.api }}"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install compile SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: true
+
+      - name: Enable KVM access
+        shell: bash
+        run: |
+          if [[ -e /dev/kvm ]]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: Run Compose navigation and screenshot tests
+        uses: ReactiveCircus/android-emulator-runner@v2
+        env:
+          ANDROID_API_LEVEL: ${{ matrix.api }}
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-boot-timeout: 900
+          disk-size: 6000M
+          script: scripts/ci/parallel-android/run-emulator-tests.sh
+
+      - name: Upload emulator evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wb07-android-api${{ matrix.api }}-${{ steps.identity.outputs.short_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/emulator-api-${{ matrix.api }}
+          if-no-files-found: warn
+          retention-days: 14
+
+  evidence:
+    name: Aggregate candidate evidence
+    if: always()
+    needs: [contract, build, emulator]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Write explicit evidence summary
+        id: identity
+        env:
+          CONTRACT_RESULT: ${{ needs.contract.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          EMULATOR_RESULT: ${{ needs.emulator.result }}
+          CANDIDATE_ARTIFACT: ${{ needs.build.outputs.candidate_artifact }}
+          PRODUCT_VERSION: ${{ needs.contract.outputs.product_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          short_sha="${GITHUB_SHA:0:12}"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+          mkdir -p evidence/summary
+          python3 - <<'PY'
+          import json, os, pathlib
+          summary = {
+              "schema_version": 1,
+              "lane": "WB07",
+              "product": "AgentDock Workbench",
+              "product_version": os.environ.get("PRODUCT_VERSION", ""),
+              "source_sha": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "jobs": {
+                  "contract": os.environ.get("CONTRACT_RESULT", "unknown"),
+                  "build": os.environ.get("BUILD_RESULT", "unknown"),
+                  "emulator_api_33_34_35_37_matrix": os.environ.get("EMULATOR_RESULT", "unknown")
+              },
+              "candidate_artifact": os.environ.get("CANDIDATE_ARTIFACT", ""),
+              "signing": "test-signed with Android debug key; not production signing evidence",
+              "emulator_scope": "x86_64 navigation/layout and Android API compatibility",
+              "physical_arm64_termux": "not run; shell contract only",
+              "signed_linux_arm64_manifest": "pending WB05 release contract",
+              "duration_runs": {
+                  "30_minutes": "not run",
+                  "2_hours": "not run",
+                  "8_hours": "not run"
+              },
+              "merge": False,
+              "tag": False,
+              "release": False,
+              "publication": False,
+              "production_modified": False
+          }
+          pathlib.Path("evidence/summary/evidence.json").write_text(
+              json.dumps(summary, ensure_ascii=False, indent=2) + "\n"
+          )
+          pathlib.Path("evidence/summary/README.txt").write_text(
+              "WB07 candidate evidence only. No merge, tag, release, publication, production mutation, or production signing occurred.\n"
+          )
+          PY
+          cat evidence/summary/evidence.json
+
+      - name: Upload aggregate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wb07-android-evidence-${{ steps.identity.outputs.short_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evidence/summary
+          if-no-files-found: error
+          retention-days: 14
