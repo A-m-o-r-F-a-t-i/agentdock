@@ -14,7 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.26.5"
   WB01_BRANCH: parallel/20260925/core-cli
 
 jobs:
@@ -35,7 +34,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           cache: true
 
       - name: Set up Python
@@ -100,7 +99,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           cache: true
 
       - name: Set up Python
@@ -127,31 +126,42 @@ jobs:
         run: python3 scripts/ci/parallel-core-cli/verify_contract.py
 
       - name: Vet all Go packages
-        run: go vet ./...
+        shell: bash
+        run: |
+          set -euo pipefail
+          go vet ./... 2>&1 | tee "$RUNNER_TEMP/wb01-verify/go-vet.log"
 
       - name: Test all Go packages
-        run: go test -p 2 ./... -count=1 -timeout=15m
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -p 2 ./... -count=1 -timeout=15m 2>&1 | tee "$RUNNER_TEMP/wb01-verify/go-test.log"
 
       - name: Race-test changed control paths
-        run: >-
-          go test -race -p 2
-          ./cmd/agentdock
-          ./internal/app
-          ./internal/runtimeapi
-          ./internal/httpx
-          ./internal/desktopruntime
-          ./internal/activity
-          ./internal/permission
-          ./internal/insertion
-          -count=1 -timeout=12m
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -race -p 2 \
+            ./cmd/agentdock \
+            ./internal/app \
+            ./internal/runtimeapi \
+            ./internal/httpx \
+            ./internal/desktopruntime \
+            ./internal/activity \
+            ./internal/permission \
+            ./internal/insertion \
+            -count=1 -timeout=12m \
+            2>&1 | tee "$RUNNER_TEMP/wb01-verify/go-race.log"
 
       - name: Build real CLI subprocess target
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/wb01-verify/bin"
-          go build -trimpath -o "$RUNNER_TEMP/wb01-verify/bin/agentdock" ./cmd/agentdock
-          "$RUNNER_TEMP/wb01-verify/bin/agentdock" version --json
+          go build -trimpath -o "$RUNNER_TEMP/wb01-verify/bin/agentdock" ./cmd/agentdock \
+            2>&1 | tee "$RUNNER_TEMP/wb01-verify/go-build.log"
+          "$RUNNER_TEMP/wb01-verify/bin/agentdock" version --json \
+            2>&1 | tee "$RUNNER_TEMP/wb01-verify/cli-version.log"
 
       - name: Run authenticated real-process CLI smoke
         shell: bash
@@ -184,7 +194,8 @@ jobs:
           bash scripts/ci/parallel-core-cli/smoke_cli.sh \
             "$RUNNER_TEMP/wb01-verify/bin/agentdock" \
             "$endpoint" \
-            "$token_file"
+            "$token_file" \
+            2>&1 | tee "$RUNNER_TEMP/wb01-verify/cli-smoke.log"
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           test -z "$(git status --porcelain)"
 
@@ -243,7 +254,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           cache: true
 
       - name: Set up Python

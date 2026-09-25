@@ -296,7 +296,7 @@ func TestRuntimeAPIMethodContract(t *testing.T) {
 		{method: http.MethodPost, path: "/internal/runtime/capabilities", status: http.StatusOK},
 		{method: http.MethodPost, path: "/internal/runtime/status", status: http.StatusMethodNotAllowed, allow: "GET"},
 		{method: http.MethodPost, path: "/internal/runtime/tasks/tsk_1234567890abcdef", status: http.StatusMethodNotAllowed, allow: "GET, DELETE"},
-		{method: http.MethodDelete, path: "/internal/runtime/tasks", status: http.StatusMethodNotAllowed, allow: "GET"},
+		{method: http.MethodDelete, path: "/internal/runtime/tasks", status: http.StatusMethodNotAllowed, allow: "GET, POST"},
 		{method: http.MethodDelete, path: "/internal/runtime/capabilities", status: http.StatusMethodNotAllowed, allow: "GET, POST"},
 	}
 	for _, test := range tests {
