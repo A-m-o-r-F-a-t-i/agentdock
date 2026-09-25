@@ -37,6 +37,8 @@ func (r *Runtime) RuntimeDisplaySettings(ctx context.Context) (Result, error) {
 func displayResult(settings config.DisplaySettings) Result {
 	return Result{"schema_version": settings.SchemaVersion, "revision": settings.Revision,
 		"chatgpt_mcp_ui_enabled": settings.ChatGPTMCPUIEnabled, "warning": settings.Warning,
+		"warning_code": settings.WarningCode, "warning_detail": settings.WarningDetail,
+		"refresh_hint_code":     "refresh_chatgpt_connection",
 		"server_policy_applied": true, "host_adoption": "unknown",
 		"refresh_hint": "工具目录和模板策略已更新，后续请求使用当前设置。旧模板引用在限时兼容期内返回无脚本提示；已渲染的历史卡片不会删除，宿主采纳状态仍为未知。"}
 }

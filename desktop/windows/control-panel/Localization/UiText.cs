@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.IO;
 using System.Resources;
-using System.Windows.Markup;
 
 namespace AgentDock.ControlPanel;
 
@@ -10,6 +9,7 @@ internal static class UiText
     internal const string SystemPreference = "system";
     internal const string EnglishPreference = "en";
     internal const string SimplifiedChinesePreference = "zh-CN";
+    internal const string KoreanPreference = "ko-KR";
 
     private static readonly string SystemLocale = NormalizeCultureName(CultureInfo.CurrentUICulture.Name);
     private static readonly ResourceManager Resources = new(
@@ -54,7 +54,7 @@ internal static class UiText
         }
 
         var directory = Path.GetDirectoryName(PreferencePath)
-            ?? throw new InvalidOperationException("AgentDock UI preference directory is unavailable.");
+            ?? throw new InvalidOperationException(Get("UiPreferenceDirectoryUnavailable"));
         Directory.CreateDirectory(directory);
         File.WriteAllText(PreferencePath, normalized);
         ApplyPreference(normalized);
@@ -66,6 +66,7 @@ internal static class UiText
         {
             EnglishPreference => EnglishPreference,
             SimplifiedChinesePreference => SimplifiedChinesePreference,
+            KoreanPreference => KoreanPreference,
             _ => SystemPreference
         };
     }
@@ -76,6 +77,7 @@ internal static class UiText
         {
             EnglishPreference => EnglishPreference,
             SimplifiedChinesePreference => SimplifiedChinesePreference,
+            KoreanPreference => KoreanPreference,
             _ => NormalizeCultureName(systemCultureName)
         };
     }
@@ -87,6 +89,7 @@ internal static class UiText
         {
             return EnglishPreference;
         }
+        if (locale == "ko" || locale.StartsWith("ko-", StringComparison.Ordinal)) return KoreanPreference;
         if (locale is "zh" or "zh-cn" or "zh-sg" or "zh-hans" || locale.StartsWith("zh-hans-", StringComparison.Ordinal))
         {
             return SimplifiedChinesePreference;
@@ -104,7 +107,7 @@ internal static class UiText
         return string.Format(CultureInfo.CurrentCulture, Get(key), args);
     }
 
-    private static void ApplyPreference(string preference)
+    internal static void ApplyPreference(string preference)
     {
         var locale = ResolveLocale(preference, SystemLocale);
         var culture = CultureInfo.GetCultureInfo(locale);
@@ -112,22 +115,5 @@ internal static class UiText
         _resourceCulture = culture;
         CultureInfo.CurrentUICulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;
-    }
-}
-
-[MarkupExtensionReturnType(typeof(string))]
-internal sealed class LocExtension : MarkupExtension
-{
-    public LocExtension(string key)
-    {
-        Key = key;
-    }
-
-    [ConstructorArgument("key")]
-    public string Key { get; set; }
-
-    public override object ProvideValue(IServiceProvider serviceProvider)
-    {
-        return UiText.Get(Key);
     }
 }

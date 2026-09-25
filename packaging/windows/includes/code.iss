@@ -23,6 +23,40 @@ begin
   Result := CustomMessage(Key);
 end;
 
+function LocalizedInstallFailure(ErrorCode, OriginalMessage: String; ExitCode: Integer): String;
+begin
+  Result := GetLocalizedMessage('InstallerFailureGuidance');
+  if ErrorCode = 'setup-elevated-context' then
+    Result := GetLocalizedMessage('ElevatedSetupUnsupported')
+  else if ErrorCode = 'tunnel-token-required' then
+    Result := GetLocalizedMessage('TokenRecoveryRequired')
+  else if ErrorCode = 'credential-user-mismatch' then
+    Result := GetLocalizedMessage('CredentialUserMismatch')
+  else if ErrorCode = 'install-validation-failed' then
+    Result := GetLocalizedMessage('InstallerValidationFailed')
+  else if ErrorCode = 'task-scheduler-unavailable' then
+    Result := GetLocalizedMessage('TaskSchedulerUnavailable')
+  else if ErrorCode = 'stale-rollback-recovery-unsafe' then
+    Result := GetLocalizedMessage('StaleRollbackRecoveryUnsafe')
+  else if ErrorCode = 'stale-rollback-recovery-failed' then
+    Result := GetLocalizedMessage('StaleRollbackRecoveryFailed')
+  else if ErrorCode = 'elevated-task-rollback-failed' then
+    Result := GetLocalizedMessage('ElevatedTaskRollbackFailed')
+  else if ErrorCode = 'elevated-unavailable' then
+    Result := GetLocalizedMessage('ElevatedUnavailable')
+  else if ErrorCode = 'runtime-activation-failed' then
+    Result := GetLocalizedMessage('RuntimeActivationFailed')
+  else if ErrorCode = 'stale-rollback-recovery-required' then
+    Result := GetLocalizedMessage('AdapterRecoveryRequired')
+  else if ErrorCode = 'rollback-failed' then
+    Result := GetLocalizedMessage('InstallerRollbackFailed');
+  Result := Result + #13#10 + GetLocalizedMessage('InstallerExitCode') + ' ' + IntToStr(ExitCode);
+  if ErrorCode <> '' then
+    Result := Result + ' (' + ErrorCode + ')';
+  if OriginalMessage <> '' then
+    Result := Result + #13#10#13#10 + GetLocalizedMessage('OriginalInstallerDiagnostic') + #13#10 + OriginalMessage;
+end;
+
 function ResolveInstallRoot(): String;
 var
   UninstallKey: String;
@@ -486,14 +520,7 @@ begin
           '; line=' + ErrorLine + '; column=' + ErrorColumn);
       if ErrorStack <> '' then
         Log('AgentDock installation stack: ' + ErrorStack);
-      if ErrorCode = 'setup-elevated-context' then
-        ErrorMessage := GetLocalizedMessage('ElevatedSetupUnsupported');
-      if ErrorCode = 'tunnel-token-required' then
-        ErrorMessage := GetLocalizedMessage('TokenRecoveryRequired');
-      if ErrorCode = 'credential-user-mismatch' then
-        ErrorMessage := GetLocalizedMessage('CredentialUserMismatch');
-      if ErrorMessage = '' then
-        ErrorMessage := GetLocalizedMessage('InstallerExitCode') + ' ' + IntToStr(ExitCode);
+      ErrorMessage := LocalizedInstallFailure(ErrorCode, ErrorMessage, ExitCode);
       Result := GetLocalizedMessage('InstallFailed') + ' ' + ErrorMessage;
       Exit;
     end;
@@ -572,7 +599,7 @@ begin
     True,
     ExitCode
   ) then
-    RaiseException(GetLocalizedMessage('UninstallScriptFailed') + ' start');
+    RaiseException(GetLocalizedMessage('UninstallScriptStartFailed'));
   if ExitCode <> 0 then
     RaiseException(
       GetLocalizedMessage('UninstallScriptFailed') + ' ' + IntToStr(ExitCode)

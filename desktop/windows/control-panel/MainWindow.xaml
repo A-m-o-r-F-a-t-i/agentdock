@@ -236,15 +236,15 @@
       <TabItem Tag="runtime" Header="{local:Loc RuntimeConfiguration}">
         <ScrollViewer VerticalScrollBarVisibility="Auto">
           <StackPanel x:Name="RuntimeOptionsPanel" Margin="18" Loaded="RuntimeOptionsPanel_Loaded">
-            <GroupBox x:Name="DisplayAndThemeGroup" Header="显示与主题">
+            <GroupBox x:Name="DisplayAndThemeGroup" Header="{local:Loc DisplayAndTheme}">
               <StackPanel Loaded="DisplaySettings_Loaded" Unloaded="DisplaySettings_Unloaded">
-                <TextBlock Text="主题" Margin="0,0,0,5"/>
+                <TextBlock Text="{local:Loc Theme}" Margin="0,0,0,5"/>
                 <ComboBox x:Name="ThemePreferenceCombo" Width="180" HorizontalAlignment="Left" SelectedValuePath="Tag" SelectionChanged="ThemePreference_Changed">
-                  <ComboBoxItem Content="跟随系统" Tag="system"/><ComboBoxItem Content="浅色" Tag="light"/><ComboBoxItem Content="深色" Tag="dark"/>
+                  <ComboBoxItem Content="{local:Loc FollowSystem}" Tag="system"/><ComboBoxItem Content="{local:Loc ThemeLight}" Tag="light"/><ComboBoxItem Content="{local:Loc ThemeDark}" Tag="dark"/>
                 </ComboBox>
                 <TextBlock x:Name="ThemeSaveStatus" Foreground="{DynamicResource SecondaryText}" Margin="0,6,0,12" TextWrapping="Wrap"/>
-                <CheckBox x:Name="McpUiEnabledChoice" Content="提供 AgentDock 内嵌界面" Click="McpUiPreference_Click" IsEnabled="False"/>
-                <TextBlock Text="关闭后仍可调用工具、管理任务和读写文件。此设置不影响其他插件和已经渲染的历史卡片。" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                <CheckBox x:Name="McpUiEnabledChoice" Content="{local:Loc ProvideEmbeddedInterface}" Click="McpUiPreference_Click" IsEnabled="False"/>
+                <TextBlock Text="{local:Loc EmbeddedInterfaceHelp}" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
                 <TextBlock x:Name="McpUiSaveStatus" Foreground="{DynamicResource SecondaryText}" TextWrapping="Wrap" Margin="0,8,0,0"/>
               </StackPanel>
             </GroupBox>
@@ -331,6 +331,7 @@
                   <ComboBoxItem Content="{local:Loc FollowSystem}" Tag="system" />
                   <ComboBoxItem Content="{local:Loc SimplifiedChinese}" Tag="zh-CN" />
                   <ComboBoxItem Content="{local:Loc EnglishLanguage}" Tag="en" />
+                  <ComboBoxItem Content="{local:Loc KoreanLanguage}" Tag="ko-KR" />
                 </ComboBox>
               </Grid>
             </GroupBox>

@@ -26,12 +26,12 @@ public sealed class ExecutionPayloadView(string kind) : INotifyPropertyChanged
     public bool CanReadNext => HasMore && !Busy;
     public bool CanReadPrevious => HasPrevious && !Busy;
 	public bool HasReadError => _readError.Length > 0 && Reference.Length > 0;
-    public string Position => StateLabel + " · " + (Reference.Length == 0 ? Reason : _loaded ? $"{Offset:N0}–{NextOffset:N0} / {TotalBytes:N0} 字节 · {Lines:N0} 行" : $"预览 / {TotalBytes:N0} 字节 · {Lines:N0} 行");
+    public string Position => StateLabel + " · " + (Reference.Length == 0 ? Reason : _loaded ? UiText.Format("ExecutionPayloadPosition", Offset, NextOffset, TotalBytes, Lines) : UiText.Format("ExecutionPayloadPreviewPosition", TotalBytes, Lines));
     public string StateLabel => State switch
     {
-        "pending" => kind == "调用" ? "正在保存调用参数" : "等待输出",
-        "streaming" => "流式输出", "complete" => "已保存", "partial" => "部分输出",
-        "not_stored" => "未保存", "internal" => "内部调用", _ => "旧记录"
+        "pending" => kind == "request" ? UiText.Get("ExecutionRequestSaving") : UiText.Get("ExecutionOutputWaiting"),
+        "streaming" => UiText.Get("ExecutionOutputStreaming"), "complete" => UiText.Get("ExecutionPayloadSaved"), "partial" => UiText.Get("ExecutionOutputPartial"),
+        "not_stored" => UiText.Get("NotSaved"), "internal" => UiText.Get("ExecutionInternalCall"), _ => UiText.Get("ExecutionLegacyRecord")
     };
 
     public void Describe(JsonElement descriptor, string parentCallId = "")
@@ -48,9 +48,9 @@ public sealed class ExecutionPayloadView(string kind) : INotifyPropertyChanged
         {
             Text = descriptor.Text("preview");
             if (Text.Length == 0 && Reference.Length == 0)
-                Text = Reason.Length > 0 ? Reason : !present || State == "unknown" ? $"旧记录未保存{kind}。" : StateLabel + "。";
+                Text = Reason.Length > 0 ? Reason : !present || State == "unknown" ? UiText.Format("ExecutionPayloadLegacyMissing", UiText.Get(kind == "request" ? "ExecutionRequest" : "ExecutionOutput")) : StateLabel;
         }
-        if (!present && parentCallId.Length > 0) { State = "internal"; Text = "此内部调用关联根调用 " + parentCallId + "。已保存的业务请求与输出请在根调用中查看。"; }
+        if (!present && parentCallId.Length > 0) { State = "internal"; Text = UiText.Format("ExecutionPayloadInternalNotice", parentCallId); }
         Notify();
     }
 
@@ -65,8 +65,8 @@ public sealed class ExecutionPayloadView(string kind) : INotifyPropertyChanged
         if (Reference != expectedReference || page.Field("payload").Text("ref") != expectedReference) return false;
         var offset = page.Number("offset");
         var next = page.Number("next_offset");
-        if (offset < 0 || next < offset || next > TotalBytes || next - offset > PageBytes) throw new InvalidDataException("工具输出分页边界无效。");
-        if (page.Flag("has_more") && next <= offset) throw new InvalidDataException("工具输出分页没有推进。");
+        if (offset < 0 || next < offset || next > TotalBytes || next - offset > PageBytes) throw new InvalidDataException(UiText.Get("ExecutionPayloadInvalidBoundary"));
+        if (page.Flag("has_more") && next <= offset) throw new InvalidDataException(UiText.Get("ExecutionPayloadNoProgress"));
         if (_loaded && offset != Offset)
         {
             if (previous && _previous.Count > 0) _previous.RemoveAt(_previous.Count - 1);

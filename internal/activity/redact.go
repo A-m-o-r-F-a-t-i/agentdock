@@ -46,6 +46,7 @@ func (r Redactor) Text(value string, limit int) string {
 }
 
 func (r Redactor) Event(e Event) Event {
+	originalTitle, originalSummary := e.Title, e.Summary
 	e.CallMeasurements = e.CallMeasurements.clone()
 	e.Request = e.Request.clone(true)
 	e.Response = e.Response.clone(true)
@@ -84,6 +85,11 @@ func (r Redactor) Event(e Event) Event {
 	e.OutputPreview = r.Text(e.OutputPreview, MaxPreviewBytes)
 	e.StderrPreview = r.Text(e.StderrPreview, MaxPreviewBytes)
 	e.Summary = r.Text(e.Summary, 4096)
+	e.TitleText = r.localized(e.TitleText, originalTitle, e.Title)
+	e.SummaryText = r.localized(e.SummaryText, originalSummary, e.Summary)
+	if e.LabelSource != "tool" {
+		e.LabelSource = ""
+	}
 	return e
 }
 

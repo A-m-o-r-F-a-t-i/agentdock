@@ -1,6 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
   <ItemGroup><Compile Include="../control-panel/Services/ConversationActivityPolicy.cs" Link="ConversationActivityPolicy.cs"/><Compile Include="../control-panel/Services/SidebarOrdering.cs" Link="SidebarOrdering.cs"/></ItemGroup>
-  <ItemGroup><Compile Include="../control-panel/Models/ExecutionModels.cs" Link="ExecutionModels.cs"/></ItemGroup>
+  <ItemGroup><Compile Include="../control-panel/Models/ExecutionModels.cs" Link="ExecutionModels.cs"/><Compile Include="../control-panel/Localization/OwnedText.cs" Link="OwnedText.cs"/></ItemGroup>
 	<ItemGroup><Compile Include="../control-panel/Models/ExecutionPayloadView.cs" Link="ExecutionPayloadView.cs"/><Compile Include="../control-panel/Services/SidebarNavigationState.cs" Link="SidebarNavigationState.cs"/></ItemGroup>
+<ItemGroup>
+<Compile Include="../control-panel/Localization/UiText.cs" Link="UiText.cs"/>
+<EmbeddedResource Include="../control-panel/Resources/UiStrings.resx"><LogicalName>AgentDock.ControlPanel.Resources.UiStrings.resources</LogicalName></EmbeddedResource>
+<EmbeddedResource Include="../control-panel/Resources/UiStrings.zh-CN.resx"><LogicalName>AgentDock.ControlPanel.Resources.UiStrings.zh-CN.resources</LogicalName></EmbeddedResource>
+<EmbeddedResource Include="../control-panel/Resources/UiStrings.ko-KR.resx"><LogicalName>AgentDock.ControlPanel.Resources.UiStrings.ko-KR.resources</LogicalName></EmbeddedResource>
+</ItemGroup>
 </Project>

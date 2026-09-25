@@ -14,7 +14,10 @@ internal static class DesktopTheme
     private static ResourceDictionary? _colors;
     private static bool _subscribed;
     internal static string Preference { get; private set; } = "system";
-    internal static string LoadWarning { get; private set; } = "";
+    private static string _warningKey = "";
+    private static string _warningDetail = "";
+    internal static string LoadWarning => _warningKey.Length == 0 ? "" : UiText.Format(_warningKey, _warningDetail);
+    private static void SetWarning(string key = "", string detail = "") { _warningKey = key; _warningDetail = detail; }
     internal static event EventHandler? Changed;
 
     internal static void Initialize(string runtimeRoot)
@@ -22,17 +25,17 @@ internal static class DesktopTheme
         var path = Path.Combine(runtimeRoot, "execution-center-settings.json");
         if (string.Equals(_path, path, StringComparison.OrdinalIgnoreCase)) return;
         _path = path;
-        try { Preference = Normalize(ReadPreferences()["theme"]?.GetValue<string>()); LoadWarning = ""; }
+        try { Preference = Normalize(ReadPreferences()["theme"]?.GetValue<string>()); SetWarning(); }
         catch (Exception error) when (error is IOException or JsonException or UnauthorizedAccessException or InvalidOperationException)
-        { Preference = "system"; LoadWarning = "显示设置未加载，原文件已保留：" + error.Message; }
+        { Preference = "system"; SetWarning("ThemeLoadWarning", error.Message); }
         if (!_subscribed) { SystemEvents.UserPreferenceChanged += SystemThemeChanged; _subscribed = true; }
         Apply();
     }
 
     internal static void Save(string selection)
     {
-        if (selection is not ("system" or "light" or "dark")) throw new ArgumentException("无效的主题选择。");
-        if (_path.Length == 0) throw new InvalidOperationException("主题设置尚未初始化。");
+        if (selection is not ("system" or "light" or "dark")) throw new ArgumentException(UiText.Get("ThemeSelectionInvalid"));
+        if (_path.Length == 0) throw new InvalidOperationException(UiText.Get("ThemeNotInitialized"));
         var preferences = ReadPreferences();
         preferences["theme"] = selection;
         var temporary = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -46,19 +49,19 @@ internal static class DesktopTheme
         {
             if (File.Exists(temporary))
                 try { File.Delete(temporary); }
-                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { LoadWarning = "主题临时文件未清理：" + error.Message; }
+                catch (Exception error) when (error is IOException or UnauthorizedAccessException) { SetWarning("ThemeCleanupWarning", error.Message); }
         }
         Preference = selection;
-        LoadWarning = "";
+        SetWarning();
         Apply();
     }
 
     private static JsonObject ReadPreferences()
     {
         if (!File.Exists(_path)) return new JsonObject();
-        if (new FileInfo(_path).Length > MaximumPreferenceBytes) throw new IOException("显示设置超过大小限制。");
+        if (new FileInfo(_path).Length > MaximumPreferenceBytes) throw new IOException(UiText.Get("ThemePreferencesTooLarge"));
         return JsonNode.Parse(File.ReadAllText(_path), documentOptions: new JsonDocumentOptions { MaxDepth = 48 }) as JsonObject
-            ?? throw new JsonException("显示设置必须是 JSON 对象。");
+            ?? throw new JsonException(UiText.Get("ThemePreferencesObjectRequired"));
     }
 
     private static string Normalize(string? selection) => selection is "light" or "dark" ? selection : "system";

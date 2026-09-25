@@ -57,7 +57,7 @@ public partial class MainWindow
             var overview = await client.ExecutionGetAsync("/internal/runtime/execution", timeout.Token);
             var stats = overview.Field("statistics");
             _activitySummaryAt = DateTimeOffset.Now;
-            ActivitySummaryText.Text = $"{stats.Number("running")} 运行中 · {stats.Number("pending")} 待审批 · {stats.Number("unknown")} 结果未知";
+            ActivitySummaryText.Text = UiText.Format("ActivitySummaryCounts", stats.Number("running"), stats.Number("pending"), stats.Number("unknown"));
         }
         catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or System.IO.IOException or System.Text.Json.JsonException or OperationCanceledException or InvalidOperationException)
         {

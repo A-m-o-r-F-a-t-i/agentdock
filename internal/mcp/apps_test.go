@@ -651,7 +651,7 @@ func TestMCPAppsExposeACPViewOnlyWhenACPEnabled(t *testing.T) {
 	if len(read.Contents) != 1 || !strings.Contains(read.Contents[0].Text, "acp_status") {
 		t.Fatalf("ACP resource contents = %#v", read.Contents)
 	}
-	for _, marker := range []string{"message-role", `message.role!=="user"&&message.role!=="assistant"`, "No user or assistant messages in this AgentDock process.", `session.agent||(isObject(state.agent)`, `const latest=[...state.messages].reverse().find`, `compactRows.push(el("span","compact-summary",latest.content))`, `const sessionMeta=[session.status||state.status,session.agent||"",session.cwd||""]`, `compactShell({action:state.action||"status",title:identity}`} {
+	for _, marker := range []string{"message-role", `message.role!=="user"&&message.role!=="assistant"`, "No user or assistant messages in this AgentDock process.", `session.agent||(isObject(state.agent)`, `const latest=[...state.messages].reverse().find`, `compactRows.push(el("span","compact-summary",latest.content))`, `const sessionMeta=[stateLabel(session.status||state.status),session.agent||"",session.cwd||""]`, `compactShell({action:state.action||"status",title:identity}`} {
 		if !strings.Contains(read.Contents[0].Text, marker) {
 			t.Fatalf("ACP resource missing conversation marker %q", marker)
 		}

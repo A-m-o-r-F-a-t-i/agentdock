@@ -49,9 +49,9 @@ public partial class MainWindow
             McpUiSaveStatus.Text = value.Warning;
             McpUiEnabledChoice.IsEnabled = value.Warning.Length == 0;
         }
-        catch (OperationCanceledException) { McpUiSaveStatus.Text = "显示设置读取已取消或超时。"; }
+        catch (OperationCanceledException) { McpUiSaveStatus.Text = UiText.Get("DisplayReadCancelled"); }
         catch (Exception error) when (error is System.IO.IOException or System.Net.Http.HttpRequestException or System.Text.Json.JsonException or InvalidOperationException)
-        { McpUiSaveStatus.Text = "当前核心未提供可用的显示设置：" + error.Message; }
+        { McpUiSaveStatus.Text = UiText.Format("DisplayUnavailable", error.Message); }
         finally { if (ReferenceEquals(_displayRequest, request)) _displayRequest = null; }
     }
 
@@ -69,22 +69,22 @@ public partial class MainWindow
             var saved = await new DisplayPreferenceService(_runtime).SaveAsync(enabled, previous.Revision, request.Token);
             _mcpUiPreference = saved;
             McpUiEnabledChoice.IsChecked = saved.Enabled;
-            McpUiSaveStatus.Text = "本地已保存，服务端已采用新策略。" + saved.RefreshHint;
+            McpUiSaveStatus.Text = UiText.Get("DisplaySaved") + saved.RefreshHint;
         }
         catch (Exception error) when (error is OperationCanceledException or System.IO.IOException or System.Net.Http.HttpRequestException or System.Text.Json.JsonException or InvalidOperationException)
         {
             McpUiEnabledChoice.IsChecked = previous.Enabled;
-            McpUiSaveStatus.Text = "保存结果未确认，正在重新读取当前设置：" + error.Message;
+            McpUiSaveStatus.Text = UiText.Format("DisplaySaveUnconfirmed", error.Message);
             try
             {
                 using var confirm = new CancellationTokenSource(TimeSpan.FromSeconds(8));
                 var current = await new DisplayPreferenceService(_runtime).ReadAsync(confirm.Token);
                 _mcpUiPreference = current;
                 McpUiEnabledChoice.IsChecked = current.Enabled;
-                McpUiSaveStatus.Text = "已重新读取服务端当前设置。" + current.RefreshHint;
+                McpUiSaveStatus.Text = UiText.Get("DisplayReloaded") + current.RefreshHint;
             }
             catch (Exception readError) when (readError is OperationCanceledException or System.IO.IOException or System.Net.Http.HttpRequestException or System.Text.Json.JsonException or InvalidOperationException)
-            { McpUiSaveStatus.Text = "暂时无法确认保存结果，请重新打开运行配置中的显示与主题。"; }
+            { McpUiSaveStatus.Text = UiText.Get("DisplayConfirmUnavailable"); }
         }
         finally
         {
@@ -97,10 +97,10 @@ public partial class MainWindow
     private void ThemePreference_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (_themeSelectionUpdating || sender is not ComboBox { IsLoaded: true } combo || combo.SelectedValue is not string choice) return;
-        try { DesktopTheme.Save(choice); ThemeSaveStatus.Text = "已保存"; }
+        try { DesktopTheme.Save(choice); ThemeSaveStatus.Text = UiText.Get("SettingsSaved"); }
         catch (Exception error) when (error is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException or InvalidOperationException)
         {
-            ThemeSaveStatus.Text = "主题未保存：" + error.Message;
+            ThemeSaveStatus.Text = UiText.Format("ThemeSaveFailed", error.Message);
             _themeSelectionUpdating = true;
             try { combo.SelectedValue = DesktopTheme.Preference; }
             finally { _themeSelectionUpdating = false; }

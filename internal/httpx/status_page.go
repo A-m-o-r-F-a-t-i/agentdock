@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"html/template"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -133,6 +134,21 @@ var statusPageChinese = statusPageText{
 	DocumentationURL:  agentDockDocsURL + "zh-CN/",
 }
 
+var statusPageKorean = statusPageText{
+	Lang: "ko-KR", Subtitle: "AI 에이전트 장치 런타임", Online: "온라인",
+	ReadyTitle:       "AI 에이전트에 기능을 제공할 준비가 됐습니다.",
+	ReadyDescription: "이 AgentDock 인스턴스는 온라인이며 MCP를 통해 로컬 기능을 제공합니다.",
+	Version:          "버전", System: "시스템", Capabilities: "기능", Tools: "도구", MCPReady: "준비됨",
+	Browser: "브라우저", Auth: "인증", Enabled: "사용", Disabled: "사용 안 함", None: "없음", Token: "접근 토큰", OAuthAndToken: "OAuth + 접근 토큰",
+	MCPEndpoint: "MCP 엔드포인트", Copy: "복사", Copied: "복사됨", CopyFailed: "복사 실패",
+	EndpointHint: "이 엔드포인트로 MCP 클라이언트를 AgentDock에 연결하세요.",
+	Resources:    "참고 자료", Repository: "GitHub 저장소",
+	RepositoryDesc: "소스 코드, 배포 버전과 문제 추적.",
+	Documentation:  "문서", DocumentationDesc: "설치·구성·사용 안내.",
+	QQGroup: "QQ 커뮤니티", QQGroupDesc: "중국어 커뮤니티의 사용 지원과 의견 교환.",
+	OpenSource: "AgentDock · 오픈 소스", License: "MIT 라이선스", DocumentationURL: agentDockDocsURL,
+}
+
 type statusPageData struct {
 	Text             statusPageText
 	Version          string
@@ -191,6 +207,7 @@ func statusPageHandler(server *mcp.Server, cfg config.Config) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Vary", "Accept-Language")
+		w.Header().Set("Content-Language", text.Lang)
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -214,7 +231,7 @@ func preferredStatusPageText(header string) statusPageText {
 	for _, raw := range strings.Split(header, ",") {
 		parts := strings.Split(strings.TrimSpace(raw), ";")
 		language := strings.ToLower(strings.TrimSpace(parts[0]))
-		if language != "en" && !strings.HasPrefix(language, "en-") && language != "zh" && !strings.HasPrefix(language, "zh-") {
+		if language != "en" && !strings.HasPrefix(language, "en-") && language != "zh" && !strings.HasPrefix(language, "zh-") && language != "ko" && !strings.HasPrefix(language, "ko-") {
 			continue
 		}
 
@@ -225,7 +242,7 @@ func preferredStatusPageText(header string) statusPageText {
 				continue
 			}
 			parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-			if err != nil {
+			if err != nil || math.IsNaN(parsed) || parsed < 0 || parsed > 1 {
 				quality = 0
 			} else {
 				quality = parsed
@@ -239,6 +256,8 @@ func preferredStatusPageText(header string) statusPageText {
 		bestQuality = quality
 		if language == "zh" || strings.HasPrefix(language, "zh-") {
 			bestLanguage = "zh"
+		} else if language == "ko" || strings.HasPrefix(language, "ko-") {
+			bestLanguage = "ko"
 		} else {
 			bestLanguage = "en"
 		}
@@ -246,6 +265,9 @@ func preferredStatusPageText(header string) statusPageText {
 
 	if bestLanguage == "zh" {
 		return statusPageChinese
+	}
+	if bestLanguage == "ko" {
+		return statusPageKorean
 	}
 	return statusPageEnglish
 }

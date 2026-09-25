@@ -1135,7 +1135,7 @@ public sealed partial class RuntimeService : IDisposable
         var error = (await standardError).Trim();
         if (process.ExitCode != 0)
         {
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? output : error);
+            throw new InvalidOperationException(NativeDiagnosticText.Describe(string.IsNullOrWhiteSpace(error) ? output : error));
         }
 
         if (string.IsNullOrWhiteSpace(output))
@@ -1161,7 +1161,7 @@ public sealed partial class RuntimeService : IDisposable
         var errorText = error.ToString().Trim();
         if (process.ExitCode != 0)
         {
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(errorText) ? outputText : errorText);
+            throw new InvalidOperationException(NativeDiagnosticText.Describe(string.IsNullOrWhiteSpace(errorText) ? outputText : errorText));
         }
 
         var completedMessage = UiText.Get("UpdateCompleted");

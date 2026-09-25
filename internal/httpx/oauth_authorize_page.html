@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="{{.Text.Lang}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>连接 AgentDock</title>
+  <title>{{.Text.Title}}</title>
   <style>
     :root {
       color-scheme: light;
@@ -328,14 +328,14 @@
     </div>
 
     <section class="panel" aria-labelledby="page-title">
-      <h1 id="page-title">连接到 AgentDock</h1>
-      <p class="subtitle">确认下方应用后，输入服务端密码完成连接。</p>
+      <h1 id="page-title">{{.Text.Heading}}</h1>
+      <p class="subtitle">{{.Text.Intro}}</p>
 
-      <div class="requester" aria-label="请求连接的应用">
+      <div class="requester" aria-label="{{.Text.RequestLabel}}">
         <span class="requester-mark" aria-hidden="true">{{.ClientInitial}}</span>
         <span class="requester-copy">
           <span class="requester-name">{{.ClientName}}</span>
-          <span class="requester-meta">验证后返回 {{.RedirectHost}}</span>
+          <span class="requester-meta">{{.Text.ReturnPrefix}} {{.RedirectHost}}</span>
         </span>
       </div>
 
@@ -358,13 +358,13 @@
         <input type="hidden" name="resource" value="{{.Resource}}">
         <input type="hidden" name="state" value="{{.State}}">
 
-        <label for="password">AgentDock 服务端密码</label>
-        <input id="password" type="password" name="password" placeholder="请输入服务端密码" autocomplete="current-password" enterkeyhint="go" required autofocus{{if .Error}} aria-invalid="true" aria-describedby="password-error"{{end}}>
-        <button type="submit">验证并连接</button>
-        <a class="cancel" href="{{.CancelURL}}">拒绝并返回</a>
+        <label for="password">{{.Text.PasswordLabel}}</label>
+        <input id="password" type="password" name="password" placeholder="{{.Text.Placeholder}}" autocomplete="current-password" enterkeyhint="go" required autofocus{{if .Error}} aria-invalid="true" aria-describedby="password-error"{{end}}>
+        <button type="submit">{{.Text.Submit}}</button>
+        <a class="cancel" href="{{.CancelURL}}">{{.Text.Cancel}}</a>
       </form>
 
-      <p class="note"><strong>请确认这是你刚刚发起的连接。</strong> 密码只会提交到当前 AgentDock 服务。</p>
+      <p class="note"><strong>{{.Text.WarningTitle}}</strong> {{.Text.WarningText}}</p>
     </section>
   </main>
 </body>

@@ -23,9 +23,9 @@ internal sealed class TaskNotificationWindow : Window
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         var heading = new DockPanel();
-        var close = new Button { Content = "关闭", FontSize = 12, Padding = new Thickness(8, 2, 8, 2), MinHeight = 26 };
+        var close = new Button { Content = UiText.Get("ExecutionClose"), FontSize = 12, Padding = new Thickness(8, 2, 8, 2), MinHeight = 26 };
         DockPanel.SetDock(close, Dock.Right); close.Click += (_, _) => Close(); heading.Children.Add(close);
-        heading.Children.Add(new ThemeTextBlock { Text = "任务完成", ForegroundResource = "SecondaryText", VerticalAlignment = VerticalAlignment.Center });
+        heading.Children.Add(new ThemeTextBlock { Text = UiText.Get("ExecutionCompleted"), ForegroundResource = "SecondaryText", VerticalAlignment = VerticalAlignment.Center });
         layout.Children.Add(heading);
         var open = new Button { Content = new TextBlock { Text = notification.Title, TextTrimming = TextTrimming.CharacterEllipsis, FontWeight = FontWeights.SemiBold },
             HorizontalContentAlignment = System.Windows.HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0), BorderThickness = new Thickness(0), ToolTip = notification.Title };

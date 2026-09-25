@@ -25,7 +25,7 @@ internal sealed partial class ActivityClient
                 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
                 using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, connect.Token).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode) throw ResponseError(response, await ReadBoundedAsync(response.Content, 65536, connect.Token).ConfigureAwait(false));
-                if (response.Content.Headers.ContentType?.MediaType != "text/event-stream") throw new InvalidDataException("服务未返回执行记录事件流。");
+                if (response.Content.Headers.ContentType?.MediaType != "text/event-stream") throw new InvalidDataException(UiText.Get("ExecutionStreamMissing"));
                 await received(new("connected", after, default)).ConfigureAwait(false);
                 await using var stream = await response.Content.ReadAsStreamAsync(token).ConfigureAwait(false);
                 using var reader = new StreamReader(stream, new UTF8Encoding(false, true), true, 4096, leaveOpen: true);
@@ -34,10 +34,10 @@ internal sealed partial class ActivityClient
                 {
                     using var silence = CancellationTokenSource.CreateLinkedTokenSource(token); silence.CancelAfter(TimeSpan.FromSeconds(45));
                     var message = await parser.ReadEventAsync(silence.Token).ConfigureAwait(false);
-                    if (message is null) throw new EndOfStreamException("执行流已断开，正在按序号重连。");
+                    if (message is null) throw new EndOfStreamException(UiText.Get("ExecutionStreamDisconnected"));
                     if (message.Kind == "heartbeat") continue;
                     if (message.Kind is "call" or "cursor" && message.Seq <= after) continue;
-                    if (message.Kind == "call" && message.Value.Number("updated_seq") != (long)message.Seq) throw new InvalidDataException("调用序号与事件序号不一致。");
+                    if (message.Kind == "call" && message.Value.Number("updated_seq") != (long)message.Seq) throw new InvalidDataException(UiText.Get("ExecutionStreamSequenceMismatch"));
                     await received(message).ConfigureAwait(false);
                     after = message.Kind == "reset" ? message.Seq : Math.Max(after, message.Seq);
                 }
@@ -65,11 +65,11 @@ internal sealed class ExecutionSseReader(TextReader reader)
         while (true)
         {
             var line = await ReadLineAsync(token).ConfigureAwait(false); if (line is null) return null;
-            characters += line.Length; if (characters > MaximumEventCharacters) throw new IOException("执行事件超过大小限制。");
+            characters += line.Length; if (characters > MaximumEventCharacters) throw new IOException(UiText.Get("ExecutionStreamSizeLimit"));
             if (line.Length == 0)
             {
                 if (data.Length == 0) return new("heartbeat", 0, default);
-                if (!ulong.TryParse(id, out var sequence)) throw new IOException("执行事件序号无效。");
+                if (!ulong.TryParse(id, out var sequence)) throw new IOException(UiText.Get("ExecutionStreamInvalidSequence"));
                 using var parsed = JsonDocument.Parse(data.ToString());
                 return new(kind, sequence, parsed.RootElement.Clone());
             }
@@ -78,7 +78,7 @@ internal sealed class ExecutionSseReader(TextReader reader)
             switch (key)
             {
                 case "event": kind = value; break;
-                case "id": if (value.Contains('\0')) throw new IOException("执行事件 ID 无效。"); id = value; break;
+                case "id": if (value.Contains('\0')) throw new IOException(UiText.Get("ExecutionStreamInvalidId")); id = value; break;
                 case "data": if (data.Length > 0) data.Append('\n'); data.Append(value); break;
             }
         }
@@ -94,7 +94,7 @@ internal sealed class ExecutionSseReader(TextReader reader)
                 if (_count == 0) return line.Length == 0 ? null : line.ToString();
             }
             var end = Array.IndexOf(_buffer, '\n', _offset, _count - _offset); var length = (end < 0 ? _count : end) - _offset;
-            if (line.Length + length > MaximumEventCharacters) throw new IOException("执行事件行超过大小限制。");
+            if (line.Length + length > MaximumEventCharacters) throw new IOException(UiText.Get("ExecutionStreamLineLimit"));
             line.Append(_buffer, _offset, length); _offset += length;
             if (end >= 0) { _offset++; if (line.Length > 0 && line[^1] == '\r') line.Length--; return line.ToString(); }
         }
