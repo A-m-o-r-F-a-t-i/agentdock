@@ -1,5 +1,12 @@
 using AgentDock.ControlPanel;
 
+if (args is ["--loopback-health", var assemblyPath])
+{
+    await CoreHealthRegression.RunAsync(assemblyPath);
+    return;
+}
+
+
 var assertions = 0;
 void Check(bool condition, string name) { if (!condition) throw new InvalidOperationException(name); assertions++; }
 var now = DateTimeOffset.Parse("2026-09-22T12:00:00Z");

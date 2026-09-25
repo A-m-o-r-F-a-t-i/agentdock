@@ -28,6 +28,8 @@ public sealed partial class RuntimeService : IDisposable
     };
 
     private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(10) };
+    private readonly CoreHealthReader _coreHealth = new();
+    private readonly CoreVersionCache _coreVersions = new();
 
     public RuntimeService(string? runtimeRoot = null)
     {
@@ -1309,62 +1311,11 @@ public sealed partial class RuntimeService : IDisposable
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AgentDock");
     }
 
-    private async Task<(bool Healthy, string Version)> ReadHealthAsync(string origin, CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var response = await _httpClient.GetAsync(origin.TrimEnd('/') + "/healthz", cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                return (false, "");
-            }
+    private Task<(bool Healthy, string Version)> ReadHealthAsync(string origin, CancellationToken cancellationToken) =>
+        _coreHealth.ReadAsync(origin, cancellationToken);
 
-            try
-            {
-                var body = await response.Content.ReadAsStringAsync(cancellationToken);
-                var health = JsonSerializer.Deserialize<CoreVersionInfo>(body, JsonOptions);
-                return (true, health?.Version?.Trim() ?? "");
-            }
-            catch (Exception ex) when (ex is IOException or JsonException)
-            {
-                // 健康端点已返回成功时，版本解析失败不应把服务误判为离线；随后再回退读取本地二进制 BuildInfo。
-                return (true, "");
-            }
-        }
-        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return (false, "");
-        }
-        catch (HttpRequestException)
-        {
-            return (false, "");
-        }
-    }
-
-    private async Task<string> ReadCoreVersionAsync(string binaryPath, CancellationToken cancellationToken)
-    {
-        if (!File.Exists(binaryPath))
-        {
-            return "";
-        }
-
-        var startInfo = CreateRedirectedProcessStartInfo(binaryPath);
-        startInfo.ArgumentList.Add("version");
-        startInfo.ArgumentList.Add("--json");
-        try
-        {
-            var output = await RunProcessAsync(startInfo, cancellationToken);
-            return JsonSerializer.Deserialize<CoreVersionInfo>(output, JsonOptions)?.Version?.Trim() ?? "";
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or Win32Exception or JsonException)
-        {
-            return "";
-        }
-    }
+    private Task<string> ReadCoreVersionAsync(string binaryPath, CancellationToken cancellationToken) =>
+        _coreVersions.ReadAsync(binaryPath, Path.Combine(RuntimeRoot, "active-version.json"), cancellationToken);
 
     private async Task<bool> ReadCoreRunningAsync(string binaryPath, CancellationToken cancellationToken)
     {
@@ -1567,6 +1518,8 @@ public sealed partial class RuntimeService : IDisposable
     public void Dispose()
     {
         _tailscaleLifetime.Cancel();
+        _coreHealth.Dispose();
+        _coreVersions.Dispose();
         _funnelVerification.Dispose();
         _httpClient.Dispose();
     }
