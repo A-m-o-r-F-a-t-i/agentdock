@@ -25,6 +25,9 @@ def main() -> None:
     directory=Path(sys.argv[1]).resolve();version,commit=sys.argv[2:]
     if not re.fullmatch('[a-f0-9]{40}',commit):raise ValueError('Expected immutable SHA')
     app=directory/'AgentDock.app'
+    source_root=Path(__file__).resolve().parents[2]
+    if digest(app/'Contents/Resources/LICENSE') != digest(source_root/'LICENSE'):
+        raise RuntimeError('macOS app did not preserve the repository license')
     info=plistlib.loads((app/'Contents/Info.plist').read_bytes())
     if any(info.get(key)!='AgentDock Workbench' for key in ['CFBundleDisplayName','CFBundleName']):
         raise RuntimeError('Incorrect macOS display identity')

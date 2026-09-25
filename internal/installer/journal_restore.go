@@ -25,6 +25,7 @@ type journalRestoreEntry struct {
 }
 
 func restorePathKey(path string) string {
+	path = securepath.CanonicalSystemAncestors(path)
 	path = filepath.Clean(path)
 	if runtime.GOOS == "windows" {
 		return strings.ToLower(path)
@@ -32,6 +33,7 @@ func restorePathKey(path string) string {
 	return path
 }
 func restoreWithin(path, root string) bool {
+	path, root = securepath.CanonicalSystemAncestors(path), securepath.CanonicalSystemAncestors(root)
 	relative, err := filepath.Rel(root, path)
 	return err == nil && !filepath.IsAbs(relative) && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
@@ -46,6 +48,7 @@ func validateRestorePath(path string) error {
 	if !filepath.IsAbs(path) || filepath.Clean(path) == filepath.Dir(filepath.Clean(path)) {
 		return fmt.Errorf("unsafe restore target: %q", path)
 	}
+	path = securepath.CanonicalSystemAncestors(path)
 	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
 		info, err := os.Lstat(current)
 		if err != nil && !os.IsNotExist(err) {

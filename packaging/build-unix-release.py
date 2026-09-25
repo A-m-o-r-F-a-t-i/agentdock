@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCT = "AgentDock Workbench"
+LICENSE_ID = "Apache-2.0"
 
 
 def run(*args: str, env: dict[str, str] | None = None, cwd: Path = ROOT) -> str:
@@ -72,7 +73,7 @@ Name: agentdock-workbench
 Version: {version}
 Release: 1
 Summary: AgentDock Workbench MCP runtime
-License: MIT
+License: {LICENSE_ID}
 URL: https://github.com/A-m-o-r-F-a-t-i/agentdock
 BuildArch: {rpmarch}
 AutoReqProv: no
@@ -93,7 +94,7 @@ cp -a "{package}/usr/." "%{{buildroot}}/usr/"
             raise RuntimeError('RPM builder returned an unexpected asset set')
         rpm = output/f'agentdock-workbench-{version}-1.{rpmarch}.rpm'
         shutil.copy2(built[0],rpm)
-        if run('rpm','-qp','--queryformat','%{NAME} %{VERSION} %{ARCH}',str(rpm)) != f'agentdock-workbench {version} {rpmarch}':
+        if run('rpm','-qp','--queryformat','%{NAME} %{VERSION} %{ARCH} %{LICENSE}',str(rpm)) != f'agentdock-workbench {version} {rpmarch} {LICENSE_ID}':
             raise RuntimeError('RPM metadata mismatch')
         return [deb,rpm]
 
@@ -126,6 +127,9 @@ def main() -> None:
         binary = stage/'bin/agentdock'
         run('go','build','-trimpath','-ldflags',flags,'-o',str(binary),'./cmd/agentdock',env=environment)
         run('python3',str(ROOT/'packaging/build-core-skill-bundle.py'),'--output',str(stage/'share/agentdock/core-skills'))
+        shutil.copy2(ROOT/'LICENSE',stage/'share/agentdock/LICENSE')
+        if digest(stage/'share/agentdock/LICENSE') != digest(ROOT/'LICENSE'):
+            raise RuntimeError('License was not preserved in the package')
         info = json.loads(run(str(binary),'version','--json'))
         if (info.get('product_name'),info['version'],info['commit'],info['platform']) != (PRODUCT,version,commit[:12],f'{args.os}/{args.arch}'):
             raise RuntimeError(f'Actual packaged runtime identity mismatch: {info}')
@@ -142,7 +146,7 @@ def main() -> None:
             assets.extend(linux_packages(stage,output,version,args.arch))
         for asset in assets:checksum(asset)
         report = {'product_name':PRODUCT,'version':version,'commit':commit,'platform':f'{args.os}/{args.arch}',
-                  'native_execution':'passed','core_skill_bootstrap':'passed','package_installation':'not_run',
+                  'native_execution':'passed','core_skill_bootstrap':'passed','package_installation':'not_run','license':LICENSE_ID,
                   'assets':{asset.name:digest(asset) for asset in assets}}
         (output/f'verification-{args.os}-{args.arch}.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         print(json.dumps(report,ensure_ascii=False))

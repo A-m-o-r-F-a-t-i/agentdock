@@ -330,7 +330,16 @@ func writeSignedMacOSAppWithArbiter(t *testing.T, root, version string, includeA
 		}
 	}
 	executable := filepath.Join(macOSDir, "AgentDock")
-	binary, err := os.ReadFile("/usr/bin/true")
+	// A copied Apple platform binary can retain platform-specific execution
+	// attributes after ad-hoc resigning. Build an ordinary native test helper;
+	// the production signature, bundle and version checks below stay enabled.
+	helperSource := filepath.Join(root, "helper.c")
+	if err := os.WriteFile(helperSource, []byte("int main(void) { return 0; }\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	helperBinary := filepath.Join(root, "fixture-helper")
+	runTestCommand(t, "/usr/bin/xcrun", "clang", "-Os", helperSource, "-o", helperBinary)
+	binary, err := os.ReadFile(helperBinary)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,10 +352,7 @@ func writeSignedMacOSAppWithArbiter(t *testing.T, root, version string, includeA
 		t.Fatal(err)
 	}
 	runTestCommand(t, "/usr/bin/xcrun", "clang", "-Os", coreSource, "-o", filepath.Join(helpersDir, "agentdock"))
-	cloudflaredBinary, err := os.ReadFile("/usr/bin/true")
-	if err != nil {
-		t.Fatal(err)
-	}
+	cloudflaredBinary := binary
 	if err := os.WriteFile(filepath.Join(helpersDir, "cloudflared"), cloudflaredBinary, 0o755); err != nil {
 		t.Fatal(err)
 	}

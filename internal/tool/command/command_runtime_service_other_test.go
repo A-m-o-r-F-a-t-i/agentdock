@@ -3,6 +3,7 @@
 package command
 
 import (
+	"os"
 	"runtime"
 	"testing"
 )
@@ -21,7 +22,10 @@ func TestNativeCommandRecordsItsResolvedExecutionContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result["runtime"] != runtime.GOOS || result["workdir"] != cfg.AgentDockDefaultDir {
+	actualDir, _ := result["workdir"].(string)
+	actual, actualErr := os.Stat(actualDir)
+	expected, expectedErr := os.Stat(cfg.AgentDockDefaultDir)
+	if result["runtime"] != runtime.GOOS || actualErr != nil || expectedErr != nil || !os.SameFile(actual, expected) {
 		t.Fatalf("native execution metadata lost: %+v", result)
 	}
 }

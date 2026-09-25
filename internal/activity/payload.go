@@ -185,6 +185,7 @@ func rejectPayloadLink(path string) error {
 	if err != nil {
 		return err
 	}
+	absolute = securepath.CanonicalSystemAncestors(absolute)
 	// Windows 8.3 aliases resolve to different strings without crossing a link.
 	// Check actual directory entries instead of rejecting spelling changes.
 	for parent := filepath.Dir(absolute); ; parent = filepath.Dir(parent) {

@@ -13,6 +13,15 @@ release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
 
 class ReleaseGate(unittest.TestCase):
+    def test_repository_license_is_preserved(self):
+        license_text=(ROOT/'LICENSE').read_text()
+        self.assertTrue(license_text.startswith('Apache License'))
+        builder=(ROOT/'packaging/build-unix-release.py').read_text()
+        self.assertIn('LICENSE_ID = "Apache-2.0"',builder)
+        self.assertIn('License: {LICENSE_ID}',builder)
+        self.assertNotIn('License: MIT',builder)
+        self.assertIn("%{ARCH} %{LICENSE}",builder)
+        self.assertIn("stage/'share/agentdock/LICENSE'",builder)
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

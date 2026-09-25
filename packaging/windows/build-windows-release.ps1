@@ -77,6 +77,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'assets\agentdock.ico') -Destination (Join-Path $payload 'agentdock.ico') -Force
         & python ./packaging/build-core-skill-bundle.py --output (Join-Path $payload 'share\agentdock\core-skills')
         Assert-NativeExit 'Core Skill bundle'
+        Copy-Item -LiteralPath (Join-Path $repository 'LICENSE') -Destination (Join-Path $payload 'share\agentdock\LICENSE') -Force
         if (Test-Path -LiteralPath (Join-Path $payload 'wsl-helper')) { Remove-Item -LiteralPath (Join-Path $payload 'wsl-helper') -Recurse -Force }
         Copy-Item -LiteralPath $helperRoot -Destination (Join-Path $payload 'wsl-helper') -Recurse
         if ($SignedBuild) {

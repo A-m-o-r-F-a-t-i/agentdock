@@ -156,6 +156,8 @@ try {
     $buildMetadata = (& go version -m $corePath | Out-String)
     if ($LASTEXITCODE -ne 0 -or -not $buildMetadata.Contains('GOARCH='+$Architecture) -or -not $buildMetadata.Contains($ExpectedCommit)) { throw 'Packaged Core build metadata does not match the verified source/architecture.' }
     $desktopProduct = (Get-Item (Join-Path $temporaryRoot 'agentdock-tray.exe')).VersionInfo.ProductName
+    $packagedLicense = Resolve-RequiredFile (Join-Path $temporaryRoot 'share\agentdock\LICENSE') 'Repository license'
+    if ((Get-FileHash -LiteralPath $packagedLicense -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot '..\..\LICENSE') -Algorithm SHA256).Hash) { throw 'Windows package license mismatch.' }
     if ($desktopProduct -ne 'AgentDock Workbench') { throw "Unexpected desktop product name: $desktopProduct" }
     $expectedSkills = @('agentdock-user-guide','skill-authoring','skill-installation')
     $bootstrapState = if ($native) { 'passed' } else { 'not_run_non_native_architecture' }
