@@ -107,7 +107,9 @@ public partial class ExecutionWindow : Window
     }
     private async Task RefreshOverviewAsync()
     {
-        var value = await _client.ExecutionGetAsync("/internal/runtime/execution", _lifetime.Token);
+        var overview = await _client.ReadExecutionOverviewAsync(_lifetime.Token);
+        if (_closed) return;
+        var value = overview.Value;
         var activities = value.Field("conversation_activity");
         foreach (var item in ActivityItems())
         {
@@ -120,7 +122,7 @@ public partial class ExecutionWindow : Window
 			item.InFlight = value.Field("in_flight").Flag(item.Id); item.RefreshActivity();
         }
         _activityClock.Synchronize(value.Date("server_now"));
-        var pending = value.Field("statistics").Number("pending");
+        var pending = overview.Summary.Pending;
         AttentionButton.Visibility = pending > 0 ? Visibility.Visible : Visibility.Collapsed;
         AttentionButton.Content = "待处理 " + pending;
         if (_initialized && _preferences.Notifications && pending > _lastPending && _lastPending > 0 && WarningPanel.Visibility != Visibility.Visible) Warn($"新增 {pending - _lastPending} 项待审批请求。");

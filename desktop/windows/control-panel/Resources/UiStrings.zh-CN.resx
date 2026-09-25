@@ -921,4 +921,8 @@
   <data name="PublicMetadataMismatch" xml:space="preserve"><value>元数据与当前 Origin 不一致</value></data>
   <data name="PublicDiscoveryAuthorizationRequired" xml:space="preserve"><value>公网可达，认证发现通过</value></data>
   <data name="PublicOAuthCapabilitiesMissing" xml:space="preserve"><value>OAuth 元数据缺少授权码、S256 或刷新能力声明。</value></data>
+  <data name="ActivitySummaryCounts" xml:space="preserve"><value>{0} 运行中 · {1} 待审批 · {2} 结果未知</value></data>
+  <data name="ActivitySummaryLastRequest" xml:space="preserve"><value>最近工具请求：{0:T}</value></data>
+  <data name="ActivitySummaryNoRequest" xml:space="preserve"><value>尚无工具请求记录</value></data>
+  <data name="ActivitySummaryStale" xml:space="preserve"><value>当前不可用或数据已过期</value></data>
 </root>

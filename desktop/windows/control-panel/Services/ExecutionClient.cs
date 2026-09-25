@@ -10,6 +10,24 @@ public sealed record ExecutionStreamMessage(string Kind, ulong Seq, JsonElement 
 
 internal sealed partial class ActivityClient
 {
+    internal async Task<ExecutionOverview> ReadExecutionOverviewAsync(CancellationToken token)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(4));
+        var connection = await runtime.GetActivityConnectionAsync(deadline.Token).ConfigureAwait(false);
+        using var request = Request(HttpMethod.Get, new Uri(connection.Origin, "/internal/runtime/execution"), connection.BearerToken);
+        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false);
+        var data = await ReadBoundedAsync(response.Content, 8 * 1024 * 1024, deadline.Token).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) throw ResponseError(response, data);
+        using var document = JsonDocument.Parse(data);
+        var value = document.RootElement.Clone();
+        var summary = ExecutionSummarySnapshot.Parse(value);
+        // Never publish a response from the previous port/authentication binding.
+        var current = await runtime.GetActivityConnectionAsync(deadline.Token).ConfigureAwait(false);
+        if (connection != current) throw new InvalidDataException("Execution overview connection changed during the request.");
+        return new(value, summary);
+    }
+
     internal Task<JsonElement> ExecutionGetAsync(string path, CancellationToken token) => SendAsync<JsonElement>(HttpMethod.Get, path, null, token);
     internal Task<JsonElement> ExecutionPostAsync(string path, object value, CancellationToken token) => SendAsync<JsonElement>(HttpMethod.Post, path, value, token);
     internal async Task ObserveExecutionsAsync(string query, ulong after, Func<ExecutionStreamMessage, Task> received, CancellationToken token)
