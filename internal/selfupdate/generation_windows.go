@@ -64,6 +64,8 @@ func applyWindowsGenerationUpdate(ctx context.Context, request applyRequest) (ap
 	if err != nil {
 		return applyResult{}, fmt.Errorf("读取 Windows runtime manifest 失败: %w", err)
 	}
+	// Reject an incompatible downgrade before stopping the current runtime or
+	// staging/deleting its generations. Saved policy intent remains unchanged.
 	if err := desktopruntime.CheckExecutionCompatibility(ctx, root, request.StagedPath); err != nil {
 		return applyResult{}, err
 	}
@@ -109,6 +111,8 @@ func applyWindowsGenerationUpdate(ctx context.Context, request applyRequest) (ap
 		return applyResult{}, fmt.Errorf("写入 Windows 更新事务失败: %w", err)
 	}
 
+	// Arbiter 必须从 source generation 直接启动。side-by-side 不覆盖当前 update CLI，
+	// 因此调用者会一直等待 terminal result，父进程退出不再冒充更新成功。
 	sourceArbiter := layout.GenerationArbiter(sourceVersion)
 	reportUpdateStage(request.Progress, UpdateStageRestarting, request.CurrentVersion, request.TargetVersion, "arbiter")
 	command := exec.CommandContext(ctx, sourceArbiter, "--root", root, "--transaction-id", transaction.TransactionID)
@@ -127,7 +131,15 @@ func applyWindowsGenerationUpdate(ctx context.Context, request applyRequest) (ap
 	if result.State != updateengine.StateCommitted {
 		return applyResult{}, fmt.Errorf("Windows update 未提交: %s", terminalUpdateMessage(result))
 	}
+	// The terminal journal/result is authoritative. The Arbiter process can still exit non-zero
+	// if a derived result projection failed immediately after the durable commit; ReadResult above
+	// repairs that projection from transaction.json, so surfacing the stale process error would
+	// incorrectly report a committed update as failed.
 
+	// Stable shims are deliberately outside the online update transaction. The CUI shim is
+	// the parent that is waiting for this generation update to finish, so Windows may keep it
+	// locked until we return. Keep the shim ABI tiny/stable and refresh it only through Setup/
+	// repair, where no shim process needs to replace itself.
 	if err := atomicfile.Write(filepath.Join(root, windowsDesktopVersionFile), []byte(normalizeVersion(request.TargetVersion)+"\n"), 0o600); err != nil {
 		fmt.Fprintf(request.Output, "警告：写入 Windows 桌面版本标记失败: %v\n", err)
 	}

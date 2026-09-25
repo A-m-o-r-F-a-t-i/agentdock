@@ -32,6 +32,9 @@ type validatedZipEntry struct {
 	isDir bool
 }
 
+// extractWindowsReleasePayload validates the complete ZIP catalogue once and
+// streams only the runtime files required by a generation update. This avoids
+// reopening and rescanning the same archive for Core, Skills and desktop files.
 func extractWindowsReleasePayload(archiveData []byte, tempDir, executableName, targetVersion string) (windowsReleasePayload, error) {
 	reader, err := zip.NewReader(bytes.NewReader(archiveData), int64(len(archiveData)))
 	if err != nil {
@@ -74,6 +77,7 @@ func extractWindowsReleasePayload(archiveData []byte, tempDir, executableName, t
 				return windowsReleasePayload{}, fmt.Errorf("解压 Windows Core 失败: %w", err)
 			}
 			foundCore = true
+
 		case strings.HasPrefix(entry.name, coreSkillBundlePrefix):
 			relative := strings.TrimPrefix(entry.name, coreSkillBundlePrefix)
 			if relative == "" {
@@ -93,6 +97,7 @@ func extractWindowsReleasePayload(archiveData []byte, tempDir, executableName, t
 			if relative == "manifest.json" {
 				foundManifest = true
 			}
+
 		default:
 			mode, wanted := windowsDesktopArchiveFiles[entry.name]
 			if !wanted {
@@ -169,6 +174,7 @@ func validateWindowsReleaseEntries(files []*zip.File) ([]validatedZipEntry, erro
 		}
 		entries = append(entries, validatedZipEntry{file: file, name: name, isDir: isDir})
 	}
+
 	for key := range kinds {
 		parts := strings.Split(key, "/")
 		for index := 1; index < len(parts); index++ {

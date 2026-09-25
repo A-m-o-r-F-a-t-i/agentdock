@@ -14,11 +14,23 @@
     <RootNamespace>AgentDock.ControlPanel</RootNamespace>
     <ApplicationIcon>..\..\..\packaging\windows\assets\agentdock.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <AgentDockRuntimeSplit Condition="'$(AgentDockRuntimeSplit)' == ''">false</AgentDockRuntimeSplit>
+    <PublishSingleFile Condition="'$(AgentDockRuntimeSplit)' != 'true'">true</PublishSingleFile>
+    <SelfContained Condition="'$(AgentDockRuntimeSplit)' != 'true'">true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract Condition="'$(AgentDockRuntimeSplit)' != 'true'">true</IncludeNativeLibrariesForSelfExtract>
     <DebugType>embedded</DebugType>
     <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(AgentDockRuntimeSplit)' == 'true'">
+    <!-- Candidate-only framework-dependent layout. Existing release commands
+         retain the self-contained single-file defaults above. -->
+    <PublishSingleFile>false</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <UseAppHost>true</UseAppHost>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="AgentDock.ControlPanel.LayoutTests" />

@@ -125,6 +125,8 @@ func (engine Engine) recoverInterrupted(ctx context.Context, store *Store, reque
 		}
 	}
 
+	// pointer 已随本事务 committed、权威事务还停在 trial：只把事务补写成 committed。
+	// 绝不能按中断 trial 回滚，否则会删掉 committed pointer 仍指向的 generation。
 	if transaction.State == updateengine.StateTrial {
 		owned, err := windowsPointerCommittedBy(transaction.InstallRoot, transaction.TransactionID)
 		if err != nil {
@@ -148,12 +150,16 @@ func (engine Engine) recoverInterrupted(ctx context.Context, store *Store, reque
 	}
 
 	if transaction.State == updateengine.StateFailed && journal == nil {
+		// Engine-owned rollback_failed 必须重试 Restore。没有 journal 且已经动过文件时，
+		// 每次 install 都要拒绝，不能第二次当成“已处理完”把 v2 文件当 v1 source。
 		if installPhaseMayHaveMutatedFiles(transaction.Phase) {
 			return resultFromTransaction(transaction), errors.New("interrupted install has no rollback journal after files may have changed")
 		}
 		return Result{}, nil
 	}
 
+	// 未终结的 install 不能当下一次 known-good source。先按 journal 恢复文件/服务，
+	// 再把权威状态写成 rolled_back 或 rollback_failed。
 	result := resultFromTransaction(transaction)
 	result.Failure = &updateengine.Failure{
 		Code:    FailureTrialInterrupted,
@@ -195,6 +201,7 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 	platform := currentPlatform()
 	sourceVersion := existingVersion(request)
 	if request.Version == "" {
+		// repair 没有新 payload 时，目标就是当前还在跑的版本，不能改用当前进程的 buildinfo。
 		if request.Action == ActionRepair && request.PayloadDir == "" && sourceVersion != "" {
 			request.Version = sourceVersion
 		} else if version, err := payloadVersion(request); err == nil {
@@ -254,10 +261,14 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 				}
 				return completed, errors.Join(err, rollbackErr)
 			}
+			// 文件和服务已经回到安装前。Version 仍记录失败目标；
+			// PublicURL / LocalMCPURL / PrivilegeMode 必须是恢复后的 known-good，不能留失败目标。
 			result = projectRestoredResult(result, transaction, request, true)
 			transaction.ActiveVersion = result.ActiveVersion
 			transaction.FallbackVersion = result.FallbackVersion
 			if runtimeGOOS() == "windows" && request.DeferCommit {
+				// The adapter still owns registry/auth restoration and old-Core
+				// activation. Keep recovery data until its health acknowledgement.
 				return leaveAdapterRollbackPending(store, transaction, result, err)
 			}
 			return sealRolledBackInstall(store, transaction, result, err)
@@ -383,6 +394,9 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 		if err := store.WriteTransaction(transaction); err != nil {
 			return fail(PhaseTunnel, err, staged)
 		}
+		// Core health 是安装/更新的提交边界。Tunnel 公网就绪依赖外部网络和 Cloudflare 状态，
+		// 不能因此回滚健康的 Core；但启动本地 Tunnel 宿主仍属于可控步骤，如果连宿主都无法
+		// 调度，应保留 warning，避免把“公网尚未真正启动”误报成完整成功。
 		if err := startTunnelServices(ctx, request, staged.Journal); err != nil {
 			result.Warnings = append(result.Warnings, "Tunnel startup could not be scheduled: "+err.Error())
 		} else if request.TunnelMode == "quick" {
@@ -395,6 +409,8 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 	syncTiming()
 
 	if request.DeferCommit {
+		// 平台外部状态还没被 OS adapter 确认。现在只能停在 trial，
+		// committed 必须由后续 install commit 单独写入。
 		transaction.State = updateengine.StateTrial
 		transaction.Phase = PhaseCommit
 		if err := store.WriteTransaction(transaction); err != nil {
@@ -442,6 +458,8 @@ func installPhaseMayHaveMutatedFiles(phase Phase) bool {
 	}
 }
 
+// commitPreparedInstall 先把 Windows trial pointer 收敛成 committed，再写权威事务。
+// pointer 失败时 transaction/result 必须仍是 trial，journal 保留，恢复后可以安全重试完成。
 func commitPreparedInstall(store *Store, transaction Transaction, result Result) (Result, error) {
 	return commitPreparedInstallWithJournal(store, transaction, result, false)
 }
@@ -468,6 +486,8 @@ func commitPreparedInstallWithJournal(store *Store, transaction Transaction, res
 	return completed, nil
 }
 
+// sealRolledBackInstall 只有 trial pointer 清掉之后才能写成 rolled_back 并丢 journal。
+// 清理失败必须是 failed/rollback_failed，并保留 journal 作为恢复证据。
 func sealRolledBackInstall(store *Store, transaction Transaction, result Result, original error) (Result, error) {
 	if err := releaseWindowsTrialPointer(transaction.InstallRoot, transaction.TransactionID); err != nil {
 		if result.Failure == nil {
@@ -514,6 +534,7 @@ func windowsUninstallAdapterWarnings(request Request) []string {
 	if runtimeGOOS() != "windows" || request.PurgeData {
 		return nil
 	}
+	// Engine 停进程不是整个产品卸载完成。Task/Registry/文件仍由 OS adapter 负责。
 	return []string{"windows_adapter_pending"}
 }
 
@@ -615,6 +636,9 @@ func (engine Engine) abandon(ctx context.Context, store *Store, request Request)
 		if err := releaseWindowsTrialPointer(transaction.InstallRoot, transaction.TransactionID); err != nil {
 			return seal(updateengine.StateFailed, FailureRollbackFailed, "release windows trial pointer: "+err.Error(), false)
 		}
+		// Engine 自己可能已经完成文件回滚，但 Windows 外层 adapter 随后还会恢复
+		// Registry/runtime 文件并重新拉起 source。外层确认成功后再次 abandon 时，
+		// 必须用最终 runtime 刷新 Result，不能把 Engine 内层回滚时的旧 Quick URL 留成权威结果。
 		current = projectRestoredResult(current, transaction, request, true)
 		current.Healthy = request.RequireHealth
 		transaction.ActiveVersion = current.ActiveVersion
@@ -628,6 +652,8 @@ func (engine Engine) abandon(ctx context.Context, store *Store, request Request)
 	}
 	if current.TransactionID == transaction.TransactionID && current.State == updateengine.StateFailed {
 		if isExternalRollbackFailure(transaction) {
+			// 明确恢复入口：操作者已经修好 Task/Registry/服务后，再次 abandon（不带 --rollback-failed）
+			// 才能把外部失败收敛成 rolled_back。Engine journal 成功不能代替这一步。
 			return seal(updateengine.StateRolledBack, FailureAbandoned, "operator confirmed external rollback is complete", true)
 		}
 		return current, nil
@@ -645,6 +671,11 @@ func (engine Engine) uninstall(ctx context.Context, store *Store, request Reques
 	sourceVersion := existingVersion(request)
 	transaction, err := store.ReadTransaction()
 	if err == nil && transaction.Action == ActionUninstall && transaction.State == updateengine.StateTrial {
+		// uninstall 事务按 transaction id 可重入：pending trial 必须重绑定同一事务。
+		// destructive cleanup 失败重跑时 stable binary 可能已被清理，新建事务会让
+		// 旧 detached helper 的 commit 因事务改写而永远失败。
+		// 但重入只允许参数完全一致：roots 与 purge 意图漂移必须拒绝，
+		// 否则同一 transaction 会在第二次请求下执行不同的清理语义。
 		if err := ensureUninstallIntentMatches(transaction, request); err != nil {
 			return Result{}, err
 		}
@@ -658,6 +689,8 @@ func (engine Engine) uninstall(ctx context.Context, store *Store, request Reques
 	if err := store.WriteTransaction(transaction); err != nil {
 		return Result{}, err
 	}
+	// adapter 依赖 engine 解析后的任务名删除计划任务；每次运行都重新解析，
+	// 保证 retry 与首次运行得到同一个 adapter 契约。
 	uninstallTaskName := windowsManagedTaskName(request)
 
 	fail := func(err error) (Result, error) {
@@ -686,6 +719,7 @@ func (engine Engine) uninstall(ctx context.Context, store *Store, request Reques
 		if err := purgeInstallData(request); err != nil {
 			return fail(err)
 		}
+		// runtime-root 已经删掉，不能再写 journal 把卸载成功伪装成“状态还在”。
 		now := time.Now().UTC()
 		return Result{
 			SchemaVersion: SchemaVersion,
@@ -711,6 +745,8 @@ func (engine Engine) uninstall(ctx context.Context, store *Store, request Reques
 		Warnings:      windowsUninstallAdapterWarnings(request),
 	}
 	if request.DeferCommit {
+		// Windows OS adapter 还要删 Task/Registry/文件。现在只能停在 trial，
+		// 不能把 Engine 停进程写成“整个产品已经卸载完成”。
 		transaction.State = updateengine.StateTrial
 		transaction.Phase = PhaseCommit
 		if err := store.WriteTransaction(transaction); err != nil {
@@ -746,6 +782,9 @@ func bootstrapSkills(ctx context.Context, request Request, executable, bundleDir
 	if home == "" {
 		return nil
 	}
+	// Linux 上 Engine 由 wrapper 以 root 执行；skill state 必须以 service user
+	// 身份落盘，root 写入会让运行时无法读写自己的状态目录。降权路径见
+	// skill_bootstrap_linux.go；非 Linux 或非 root 时走进程内路径。
 	handled, err := tryBootstrapAsServiceUser(ctx, request, executable, home, bundleDir)
 	if handled || err != nil {
 		return err
@@ -829,6 +868,8 @@ func existingVersion(request Request) string {
 func versionFromInstallTransaction(transaction Transaction) string {
 	switch transaction.Action {
 	case ActionUninstall:
+		// 卸载终态不是一次成功安装。known-good 是卸载前仍保留的程序版本，
+		// 不能把 target_version=unknown 当成下一次 install 的 source。
 		return knownInstallVersion(transaction.SourceVersion, transaction.ActiveVersion)
 	}
 	switch transaction.State {
@@ -870,6 +911,7 @@ func isExternalRollbackFailure(transaction Transaction) bool {
 	case FailureExternalRollbackFailed:
 		return true
 	case FailureRollbackFailed:
+		// 兼容本轮之前 abandon --rollback-failed 写入的 rollback_failed + OS adapter 文案。
 		return strings.Contains(transaction.Failure.Message, "OS adapter")
 	default:
 		return false
