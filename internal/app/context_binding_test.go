@@ -27,9 +27,9 @@ func assertContextScope(t *testing.T, result Result, root, body string) workspac
 	}
 	diagnostics, _ := result["context_diagnostics"].(map[string]any)
 	guidance, _ := result["agentdock_guidance"].(map[string]any)
-	if diagnostics["complete"] != true || selected.Root != root || instructions.Workdir != root ||
+	if diagnostics["complete"] != true || !sameExistingTestPath(selected.Root, root) || !sameExistingTestPath(instructions.Workdir, root) ||
 		result["workspace_id"] != selected.ID || guidance["workspace_id"] != selected.ID || !strings.Contains(instructionBodies(&instructions), body) {
-		t.Fatalf("inconsistent context: workspace=%+v instructions=%+v diagnostics=%v guidance=%v", selected, instructions, diagnostics, guidance)
+		t.Fatalf("inconsistent context: expected directory=%q, selected=%q, instructions=%q, selected ID=%q, result ID=%v, guidance ID=%v, complete=%v, binding=%v, required rules present=%v", root, selected.Root, instructions.Workdir, selected.ID, result["workspace_id"], guidance["workspace_id"], diagnostics["complete"], diagnostics["binding_status"], strings.Contains(instructionBodies(&instructions), body))
 	}
 	return selected
 }
@@ -73,7 +73,7 @@ func TestContextBindingSingleCallAndImplicitReuse(t *testing.T) {
 	if repeated["binding_updated"] != false || reused.BindingRevision != committed.BindingRevision {
 		t.Fatal("warm context rewrote an unchanged continuation")
 	}
-	if r.ws.DefaultCWD() != r.cfg.AgentDockDefaultDir {
+	if !sameExistingTestPath(r.ws.DefaultCWD(), r.cfg.AgentDockDefaultDir) {
 		t.Fatal("context changed the device default")
 	}
 	call, err := r.activity.Call(ctx, stringArg(result, "call_id"))
@@ -231,7 +231,7 @@ func TestContextBindingConcurrentConversationsAndUnattributed(t *testing.T) {
 				return
 			}
 			var selected workspace.Record
-			if err := remarshal(result["workspace"], &selected); err != nil || selected.Root != root {
+			if err := remarshal(result["workspace"], &selected); err != nil || !sameExistingTestPath(selected.Root, root) {
 				t.Errorf("crossed workspaces: %+v %v", selected, err)
 			}
 			again, err := r.Call(ctx, "agentdock_context", nil)
@@ -252,5 +252,15 @@ func TestContextBindingConcurrentConversationsAndUnattributed(t *testing.T) {
 	conversations, err := r.conversations.List(context.Background())
 	if err != nil || len(conversations) != 2 {
 		t.Fatalf("unexpected inferred conversation: %d %v", len(conversations), err)
+	}
+}
+
+func TestContextDirectoryComparisonRejectsDifferentTargets(t *testing.T) {
+	left, right := t.TempDir(), t.TempDir()
+	if sameExistingTestPath(left, right) {
+		t.Fatal("context directory identity comparison accepted a different target")
+	}
+	if !sameExistingTestPath(left, filepath.Join(left, ".")) {
+		t.Fatal("context directory identity comparison rejected the same directory")
 	}
 }
