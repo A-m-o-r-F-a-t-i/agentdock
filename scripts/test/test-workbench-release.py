@@ -117,10 +117,11 @@ class PublicationGate(unittest.TestCase):
     def fake_command(self,*args):
         self.commands.append(args)
         if args[:2]==('git','ls-remote'):return self.commit+'\trefs/tags/'+self.tag
-        if args[:3]==('gh','release','create'):
-            self.record['assets']=[];return self.record['html_url']
-        if args[:3]==('gh','release','upload'):
-            self.record['assets']=[self.asset];return ''
+        if args[:4]==('gh','api','--method','POST'):
+            if args[4]==f'repos/{release.REPOSITORY}/releases':
+                self.record['assets']=[];return json.dumps(self.record)
+            if args[4].startswith(f'https://uploads.github.com/repos/{release.REPOSITORY}/releases/123/assets?name='):
+                self.record['assets']=[self.asset];return json.dumps(self.asset)
         if args[:4]==('gh','api','--method','PATCH'):
             self.assertEqual(args[4],self.endpoint);self.record['draft']=False;return json.dumps(self.record)
         if args[:2]==('gh','api'):
@@ -130,7 +131,7 @@ class PublicationGate(unittest.TestCase):
             if target==self.endpoint or target.endswith('/releases/latest'):return json.dumps(self.record)
         raise AssertionError('Unexpected command '+repr(args))
     def publish(self):release.publish(self.dist,'1.1.7',self.commit)
-    def mutations(self):return [args for args in self.commands if args[:3] in [('gh','release','upload'),('gh','release','create')] or args[:4]==('gh','api','--method','PATCH')]
+    def mutations(self):return [args for args in self.commands if args[:4] in [('gh','api','--method','POST'),('gh','api','--method','PATCH')]]
     def test_existing_complete_draft_uses_id_without_reupload(self):
         self.publish()
         self.assertFalse(self.record['draft'])
@@ -138,11 +139,17 @@ class PublicationGate(unittest.TestCase):
         self.assertEqual(self.mutations()[0][:5],('gh','api','--method','PATCH',self.endpoint))
     def test_partial_upload_only_supplies_missing_files(self):
         self.record['assets']=[];self.publish()
-        uploads=[args for args in self.commands if args[:3]==('gh','release','upload')]
-        self.assertEqual(len(uploads),1);self.assertEqual(uploads[0][-1],str(self.dist/'package.zip'));self.assertNotIn('--clobber',uploads[0])
+        uploads=[args for args in self.commands if args[:4]==('gh','api','--method','POST') and args[4].startswith('https://uploads.github.com/')]
+        self.assertEqual(len(uploads),1);self.assertEqual(uploads[0][-2:],('--input',str(self.dist/'package.zip')));self.assertNotIn('--clobber',uploads[0])
     def test_missing_draft_is_created_then_loaded_by_id(self):
-        self.lookup=[[]];self.publish()
-        self.assertEqual(len([args for args in self.commands if args[:3]==('gh','release','create')]),1)
+        self.lookup=[[],[]];self.publish()
+        self.assertEqual(len([args for args in self.commands if args[:5]==('gh','api','--method','POST',f'repos/{release.REPOSITORY}/releases')]),1)
+        self.assertEqual(self.lookup,[[]],'Creation must use its returned ID rather than requiring immediate list visibility')
+    def test_binary_asset_name_is_url_encoded(self):
+        path=self.dist/'package name.zip';(self.dist/'package.zip').rename(path)
+        self.asset['name']=path.name;self.record['assets']=[];self.publish()
+        urls=[args[4] for args in self.commands if args[:4]==('gh','api','--method','POST') and args[4].startswith('https://uploads.github.com/')]
+        self.assertEqual(urls,[f'https://uploads.github.com/repos/{release.REPOSITORY}/releases/123/assets?name=package%20name.zip'])
     def test_wrong_digest_is_not_overwritten(self):
         self.record['assets']=[dict(self.asset,digest='sha256:'+'f'*64)]
         with self.assertRaisesRegex(RuntimeError,'integrity mismatch'):self.publish()

@@ -60,13 +60,17 @@ jobs:
           jobs={job['name']:job for job in response['jobs']}
           required=['resolve-source','windows / Resolve requested ref once','windows / Linux transaction and concurrency regression','windows / Build verified unsigned Windows packages','Universal macOS Workbench application']
           required += [f'Native {system} {arch}' for system in ['linux','darwin'] for arch in ['amd64','arm64']]
+          if tuple(map(int,version.split('.'))) >= (1,1,8):
+              required += ['windows / native-acceptance / native-windows (windows-11-arm, arm64, win-arm64)',
+                           'windows / native-acceptance / native-windows (windows-latest, amd64, win-x64)',
+                           'Native Windows ARM64 install and uninstall']
           for name in required:
               if name not in jobs or jobs[name]['conclusion']!='success':
                   raise RuntimeError('Required source validation did not succeed: '+name)
           assembly=jobs.get('Verify complete artifact set and publish Latest',{})
           if not any(step['name']=='Validate reports and assemble complete release' and step['conclusion']=='success' for step in assembly.get('steps',[])):
               raise RuntimeError('Original complete-artifact assembly was not verified')
-          print('All nine platform/validation jobs and complete assembly match '+sha)
+          print(f'All {len(required)} required platform/native validation jobs and complete assembly match '+sha)
           PY
       - uses: actions/checkout@v5
         with:

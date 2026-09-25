@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY = 'A-m-o-r-F-a-t-i/agentdock'
@@ -180,9 +181,13 @@ def publish(dist: Path,version: str,commit: str) -> None:
         subprocess.run(['git','push','origin',f'refs/tags/{tag}'],cwd=ROOT,check=True)
     record=find_release(tag)
     if record is None:
-        run('gh','release','create',tag,'--repo',REPOSITORY,'--verify-tag','--target',commit,'--draft','--title',f'{PRODUCT} {version}','--notes-file',str(notes))
-        record=find_release(tag)
-    if record is None or not isinstance(record.get('id'),int) or record['id']<=0:
+        # Retain the identity returned by the successful POST. A subsequent
+        # list can temporarily omit the freshly created draft. Never repeat
+        # creation merely because a collection read did not show it yet.
+        record=json.loads(run('gh','api','--method','POST',f'repos/{REPOSITORY}/releases',
+            '-f',f'tag_name={tag}','-f',f'target_commitish={commit}','-F','draft=true',
+            '-F','prerelease=false','-f',f'name={PRODUCT} {version}','-F',f'body=@{notes}'))
+    if not isinstance(record,dict) or type(record.get('id')) is not int or record['id']<=0 or record.get('tag_name')!=tag:
         raise RuntimeError('Created release could not be located; preserve draft and inspect before retrying')
     if not record.get('draft'):
         raise RuntimeError('Refusing to replace an already published release')
@@ -194,8 +199,14 @@ def publish(dist: Path,version: str,commit: str) -> None:
     files=sorted(path for path in dist.iterdir() if path.is_file())
     expected={path.name:{'size':path.stat().st_size,'digest':'sha256:'+digest(path)} for path in files}
     missing=missing_release_assets(record,expected)
-    if missing:
-        run('gh','release','upload',tag,'--repo',REPOSITORY,*(str(dist/name) for name in missing))
+    for name in missing:
+        # Upload by the retained numeric ID as well. No tag-to-draft lookup is
+        # delegated to a second client, and existing bytes are never clobbered.
+        upload=f'https://uploads.github.com/repos/{REPOSITORY}/releases/{release_id}/assets?name={quote(name,safe="")}'
+        asset=json.loads(run('gh','api','--method','POST',upload,
+            '-H','Content-Type: application/octet-stream','--input',str(dist/name)))
+        if missing_release_assets({'assets':[asset]},{name:expected[name]}):
+            raise RuntimeError('Asset upload response did not confirm the requested file')
     record=json.loads(run('gh','api',endpoint))
     if record.get('id')!=release_id or record.get('tag_name')!=tag or not record.get('draft'):
         raise RuntimeError('Release identity or draft state changed before publication')
