@@ -1,3 +1,5 @@
+global using System.Net.Http;
+
 namespace AgentDock.ControlPanel;
 
 internal static class ConversationActivityPolicy
