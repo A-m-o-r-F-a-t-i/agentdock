@@ -154,9 +154,9 @@ public sealed record RuntimeSnapshot(
     RuntimeManifest Manifest,
     ControlPanelSettings Settings,
     string Version,
-    bool CoreRunning,
+    bool? CoreRunning,
     bool Healthy,
-    bool CloudflaredRunning,
+    bool? CloudflaredRunning,
     string LocalMcpUrl,
     string PublicOrigin,
     string PublicMcpUrl,
@@ -168,7 +168,8 @@ public sealed record RuntimeSnapshot(
     NexusDeviceStatus Nexus,
     bool NexusConnected,
     DateTimeOffset CheckedAt,
-    NativeTunnelStatus? Tailscale = null);
+    NativeTunnelStatus? Tailscale = null,
+    bool? CloudflareReady = null);
 
 public sealed class CapabilityInventory
 {

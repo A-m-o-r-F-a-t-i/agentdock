@@ -921,4 +921,6 @@
   <data name="PublicMetadataMismatch" xml:space="preserve"><value>元数据与当前 Origin 不一致</value></data>
   <data name="PublicDiscoveryAuthorizationRequired" xml:space="preserve"><value>公网可达，认证发现通过</value></data>
   <data name="PublicOAuthCapabilitiesMissing" xml:space="preserve"><value>OAuth 元数据缺少授权码、S256 或刷新能力声明。</value></data>
+  <data name="LocalHealthyPublicUnavailable" xml:space="preserve"><value>本机核心健康；托管公网传输尚未就绪</value></data>
+  <data name="LocalHealthyPublicUnknown" xml:space="preserve"><value>本机核心健康；公网传输状态未知</value></data>
 </root>

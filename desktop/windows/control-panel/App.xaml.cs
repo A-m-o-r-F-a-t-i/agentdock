@@ -321,9 +321,12 @@ public partial class App : System.Windows.Application
         }
 
         _traySnapshotRefreshInProgress = true;
+        var observationStarted = DateTimeOffset.Now;
         try
         {
             _traySnapshot = await Runtime.GetSnapshotAsync();
+            if (_exitRequested) return;
+            ControlPanelWindow?.ApplyLiveRuntimeStatus(_traySnapshot);
             if (_notifyIcon is not null)
             {
                 _notifyIcon.Text = TruncateNotifyIconText($"AgentDock: {GetTrayStatusText(_traySnapshot)}");
@@ -335,6 +338,7 @@ public partial class App : System.Windows.Application
         }
         catch
         {
+            ControlPanelWindow?.ApplyRuntimeStatusUnavailable(observationStarted);
             if (_notifyIcon is not null)
             {
                 _notifyIcon.Text = $"AgentDock: {UiText.Get("StatusUnavailable")}";
@@ -418,11 +422,7 @@ public partial class App : System.Windows.Application
 
     private static string GetTrayStatusText(RuntimeSnapshot snapshot)
     {
-        if (snapshot.Healthy)
-        {
-            return UiText.Get("RunningNormally");
-        }
-        return snapshot.CoreRunning ? UiText.Get("ServiceError") : UiText.Get("Stopped");
+        return UiText.Get(RuntimeDisplayStatus.From(snapshot).HeaderKey);
     }
 
     private static void OpenDocumentation()

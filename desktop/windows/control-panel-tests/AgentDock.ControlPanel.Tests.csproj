@@ -3,4 +3,9 @@
   <ItemGroup><Compile Include="../control-panel/Services/ConversationActivityPolicy.cs" Link="ConversationActivityPolicy.cs"/><Compile Include="../control-panel/Services/SidebarOrdering.cs" Link="SidebarOrdering.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../control-panel/Models/ExecutionModels.cs" Link="ExecutionModels.cs"/></ItemGroup>
 	<ItemGroup><Compile Include="../control-panel/Models/ExecutionPayloadView.cs" Link="ExecutionPayloadView.cs"/><Compile Include="../control-panel/Services/SidebarNavigationState.cs" Link="SidebarNavigationState.cs"/></ItemGroup>
+<ItemGroup><Compile Include="../control-panel/Models/RuntimeModels.cs" Link="RuntimeModels.cs"/><Compile Include="../control-panel/Models/NativeTunnelStatus.cs" Link="NativeTunnelStatus.cs"/><Compile Include="../control-panel/Services/RuntimeDisplayStatus.cs" Link="RuntimeDisplayStatus.cs"/></ItemGroup>
+  <ItemGroup>
+    <Compile Include="../control-panel/Services/NativeStatusReader.cs" Link="NativeStatusReader.cs" />
+    <Compile Include="../control-panel/Services/NativeStatusProbe.cs" Link="NativeStatusProbe.cs" />
+  </ItemGroup>
 </Project>
