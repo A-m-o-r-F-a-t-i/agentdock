@@ -29,8 +29,8 @@ foreach (var legacy in new long[] { 520989, 355618, 354854, 353098, 96203, 71028
     using var json = System.Text.Json.JsonDocument.Parse($$"""{"call_id":"legacy-{{legacy}}","tool_name":"agentdock_context","elapsed_ms":{{legacy}}} """);
     var row = new ExecutionCallRow(json.RootElement);
     Check(row.TotalElapsedMs == legacy && row.DurationSource == "legacy", "legacy timing source " + legacy);
-    Check(row.TotalTimingDetails.Contains(row.Duration) && row.TotalTimingDetails.Contains("历史总耗时"), "same row/detail duration");
-    Check(row.ExecutionDuration == "未记录" && row.WaitDuration == "未记录", "do not fabricate old timing stages");
+    Check(row.TotalTimingDetails.Contains(row.Duration) && row.TotalTimingDetails.Contains(UiText.Get("ExecutionLegacyDurationPrefix")), "same row/detail duration");
+    Check(row.ExecutionDuration == UiText.Get("ExecutionNotRecorded") && row.WaitDuration == UiText.Get("ExecutionNotRecorded"), "do not fabricate old timing stages");
 }
 foreach (var test in new[] { ("{\"rpc_elapsed_ms\":0,\"elapsed_ms\":99}", "rpc", (long?)0), ("{}", "unknown", (long?)null), ("{\"operation_elapsed_ms\":123}", "operation", (long?)123), ("{\"rpc_elapsed_ms\":-1,\"elapsed_ms\":15}", "legacy", (long?)15) })
 {
@@ -58,7 +58,7 @@ System.Text.Json.JsonElement Json(string text) { using var parsed = System.Text.
 var missingOutput = new ExecutionCallRow(Json("{\"tool_name\":\"agentdock_context\",\"display_title\":\"加载上下文\",\"summary\":\"pretend output\"}"));
 missingOutput.ApplyDetail(Json("{\"tool_name\":\"agentdock_context\",\"display_title\":\"加载上下文\",\"summary\":\"pretend output\"}"));
 Check(missingOutput.Title.Contains("agentdock_context") && missingOutput.Title.Contains("加载上下文"), "friendly label cannot hide registered tool name");
-Check(missingOutput.Output.Contains("旧记录未保存输出") && !missingOutput.Output.Contains("pretend output"), "missing output is not fabricated from summary");
+Check(missingOutput.Output.Contains(UiText.Format("ExecutionPayloadLegacyMissing", UiText.Get("ExecutionOutput"))) && !missingOutput.Output.Contains("pretend output"), "missing output is not fabricated from summary");
 var payload = new ExecutionPayloadView("输出");
 payload.Describe(Json("{\"state\":\"complete\",\"ref\":\"blob-a\",\"bytes\":10,\"lines\":2,\"preview\":\"12345\"}"));
 Check(payload.NeedsLoad && payload.Position.Contains("10"), "bounded preview reports full size");
@@ -71,7 +71,7 @@ payload.Describe(Json("{\"state\":\"complete\",\"ref\":\"blob-a\",\"bytes\":10,\
 Check(payload.Text == "67890" && !payload.NeedsLoad, "metadata refresh preserves current reading page");
 payload.Describe(Json("{\"state\":\"partial\",\"ref\":\"blob-b\",\"bytes\":4,\"lines\":1}"));
 Check(!payload.ApplyPage(Json("{\"payload\":{\"ref\":\"blob-a\"},\"offset\":0,\"next_offset\":5,\"text\":\"stale\"}"), "blob-a", false), "late old blob cannot replace current result");
-Check(payload.StateLabel == "部分输出" && !payload.HasPrevious, "partial results and new blob page reset");
+Check(payload.StateLabel == UiText.Get("ExecutionOutputPartial") && !payload.HasPrevious, "partial results and new blob page reset");
 payload.Describe(Json("{\"state\":\"not_stored\",\"reason\":\"超过存储上限\"}"));
 Check(payload.Text.Contains("超过存储上限") && !payload.NeedsLoad, "explicit storage limit is not empty output");
 
@@ -79,9 +79,9 @@ foreach (var scenario in new[] {
     ("{\"stats_state\":\"known\",\"insertions\":26,\"deletions\":9}", "+26", "−9"),
     ("{\"stats_state\":\"known\",\"insertions\":0,\"deletions\":0}", "+0", "−0"),
     ("{\"stats_state\":\"unknown\"}", "—", ""),
-    ("{\"stats_state\":\"preview\",\"dry_run\":true,\"proposed_insertions\":12,\"proposed_deletions\":6}", "预演", "") })
+    ("{\"stats_state\":\"preview\",\"dry_run\":true,\"proposed_insertions\":12,\"proposed_deletions\":6}", UiText.Get("ExecutionDryRun"), "") })
 {
-    var row = new ExecutionCallRow(Json("{\"tool_name\":\"file_edit\",\"display_title\":\"EDIT_FILE\",\"file_edit\":" + scenario.Item1 + "}"));
+    var row = new ExecutionCallRow(Json("{\"tool_name\":\"file_edit\",\"display_title\":\"EDIT_FILE\",\"activity_label_source\":\"tool\",\"file_edit\":" + scenario.Item1 + "}"));
     Check(row.AddedLinesText == scenario.Item2 && row.DeletedLinesText == scenario.Item3, "actual/preview/unknown edit counts");
     Check(!row.Title.Contains("EDIT_FILE") && row.Title.Contains("file_edit"), "correct only confirmed historical label");
 }

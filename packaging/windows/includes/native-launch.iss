@@ -18,7 +18,7 @@ begin
       13: Result := Result + '\r';
     else
       if Ord(Value[I]) < 32 then
-        RaiseException('Unsupported control character in native command')
+        RaiseException(CustomMessage('NativeCommandControlCharacter'))
       else
         Result := Result + Value[I];
     end;
@@ -36,7 +36,7 @@ begin
   begin
     Source := ExpandConstant('{app}\installer\agentdock-setup-launcher.exe');
     if not CopyFile(Source, Result, True) then
-      RaiseException('AgentDock native uninstall launcher could not be copied.');
+      RaiseException(CustomMessage('NativeUninstallLauncherCopyFailed'));
   end
   else
     ExtractTemporaryFile('agentdock-setup-launcher.exe');

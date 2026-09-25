@@ -50,7 +50,7 @@ public partial class ExecutionWindow
 
     private void PreserveProvisionalTitle(ExecutionObject item, string suppliedTitle)
     {
-        if (suppliedTitle.Length > 0 && suppliedTitle != "新对话") { _provisionalTitles.Remove(item.Id); return; }
+        if (suppliedTitle.Length > 0 && item.Snapshot.Text("title_source") != "fallback") { _provisionalTitles.Remove(item.Id); return; }
         if (_provisionalTitles.TryGetValue(item.Id, out var title)) item.Title = title;
     }
     private static bool IsSidebarRoot(JsonElement call) => call.Text("conversation_id").Length > 0 && call.Text("parent_call_id").Length == 0 && call.Text("visibility") != "diagnostic" && call.Date("request_received_at") is not null;
@@ -111,7 +111,7 @@ public partial class ExecutionWindow
         var state = navigation.For(workspace);
         if (!_sidebarGroups.TryGetValue(workspace, out var key))
         {
-            var name = _workspaceNames.GetValueOrDefault(workspace, workspace == "unassigned" ? "未关联项目" : "项目");
+            var name = _workspaceNames.GetValueOrDefault(workspace, workspace == "unassigned" ? UiText.Get("ExecutionUnassignedProject") : UiText.Get("ExecutionProject"));
             _sidebarGroups[workspace] = key = new(workspace, name);
             key.Apply(JsonSerializer.SerializeToElement(new { title = name, workspace_id = workspace, total = 1, recent_count = 1, mode = state.ProtocolMode, last_activity_at = call.Date("last_activity_at") ?? call.Date("request_received_at") }));
         }

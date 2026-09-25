@@ -4,3 +4,7 @@ go.sum text eol=lf
 *.sh text eol=lf
 *.bash text eol=lf
 .gitattributes text eol=lf
+
+# Imported vendor bytes are hash-pinned; retain original CRLF and trailing spaces.
+packaging/windows/languages/Korean.isl -text whitespace=-blank-at-eol,-blank-at-eof,cr-at-eol
+packaging/windows/languages/LICENSE-InnoSetup.txt -text whitespace=-blank-at-eol,-blank-at-eof,cr-at-eol

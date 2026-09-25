@@ -79,6 +79,10 @@ public sealed class ActivityReview
 
 public sealed class ActivityEvent
 {
+    public string ActivityLabelSource { get; set; } = "";
+    public OwnedTextDescriptor? TitleText { get; set; }
+    public OwnedTextDescriptor? SummaryText { get; set; }
+
     public int SchemaVersion { get; set; }
     public ulong Seq { get; set; }
     public string EventId { get; set; } = "";
@@ -178,8 +182,8 @@ public sealed class ActivityRow : INotifyPropertyChanged
         if (value.Workdir.Length > 0) Workdir = value.Workdir;
         if (value.ResolvedPath.Length > 0) FilePath = value.ResolvedPath;
         if (value.Runtime.Length > 0) Runtime = value.Runtime;
-        if (value.Title.Length > 0) Title = value.Title;
-        if (value.Summary.Length > 0) Summary = value.Summary;
+        if (value.Title.Length > 0) Title = OwnedText.Render(value.TitleText, value.Title, value.ToolName, value.ActivityLabelSource, value.Status);
+        if (value.Summary.Length > 0) Summary = OwnedText.Render(value.SummaryText, value.Summary, value.ToolName, value.ActivityLabelSource, value.Status);
         Stdout = AppendTail(Stdout, value.OutputPreview);
         Stderr = AppendTail(Stderr, value.StderrPreview);
         Truncated |= value.StdoutTruncated || value.StderrTruncated;

@@ -61,11 +61,13 @@ SignedUninstaller=yes
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl, languages\ChineseSimplified.isl"
+Name: "korean"; MessagesFile: "languages\Korean.isl"
 
 
 #include "includes\messages.iss"
 
 [Files]
+Source: "languages\LICENSE-InnoSetup.txt"; DestDir: "{app}\installer\licenses"; Flags: ignoreversion
 Source: "..\..\scripts\install\install.ps1"; Flags: dontcopy
 Source: "..\..\scripts\install\probe-protected-text.ps1"; Flags: dontcopy
 Source: "..\..\scripts\install\launch-windows-process.ps1"; Flags: dontcopy

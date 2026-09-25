@@ -63,7 +63,7 @@ internal static class ActivityPresentation
             ? ActivityText.Get("TaskCancelledEvent") : ActivityText.Kind(value.Kind);
         // Stored event names are not user titles. Always preserve the outcome label,
         // including when an older producer persisted task.completed as the title.
-        if (string.IsNullOrWhiteSpace(title) || title == value.Kind || title.StartsWith("task.", StringComparison.Ordinal) || title.StartsWith("thread.", StringComparison.Ordinal)) return label;
+        if (string.IsNullOrWhiteSpace(title) || title == value.Kind) return label;
         return value.Kind.StartsWith("command.", StringComparison.Ordinal) ? title : label + " · " + title;
     }
 

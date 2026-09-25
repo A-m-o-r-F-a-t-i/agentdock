@@ -19,6 +19,7 @@ var authorizePageHTML string
 var authorizePageTemplate = template.Must(template.New("oauth-authorize").Parse(authorizePageHTML))
 
 type authorizePageData struct {
+	Text                authorizePageText
 	ResponseType        string
 	ClientID            string
 	RedirectURI         string
@@ -40,7 +41,14 @@ type authorizePageData struct {
 // base URL 改写和第三方嵌入。
 const authorizationPageCSP = "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'"
 
-func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText, clientName string) {
+func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText, clientName string, language ...string) {
+	header := ""
+	if len(language) > 0 {
+		header = language[0]
+	}
+	text := preferredAuthorizePageText(header)
+	w.Header().Set("Vary", "Accept-Language")
+	w.Header().Set("Content-Language", text.Lang)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
@@ -52,15 +60,15 @@ func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText, cli
 
 	message := ""
 	if errorText != "" {
-		message = "密码不正确，请重试。"
+		message = text.InvalidPassword
 	}
-	redirectHost := "已注册的应用"
+	redirectHost := text.RegisteredApp
 	if parsed, err := url.Parse(values.Get("redirect_uri")); err == nil && parsed.Host != "" {
 		redirectHost = parsed.Host
 	}
 	clientName = strings.TrimSpace(clientName)
 	if clientName == "" {
-		clientName = "未命名应用"
+		clientName = text.UnnamedApp
 	}
 	clientInitial := "?"
 	if runes := []rune(clientName); len(runes) > 0 {
@@ -71,6 +79,7 @@ func writeAuthorizeForm(w http.ResponseWriter, values url.Values, errorText, cli
 		cancelValues.Set("state", state)
 	}
 	data := authorizePageData{
+		Text:                text,
 		ResponseType:        values.Get("response_type"),
 		ClientID:            values.Get("client_id"),
 		RedirectURI:         values.Get("redirect_uri"),

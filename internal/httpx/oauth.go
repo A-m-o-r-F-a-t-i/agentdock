@@ -66,7 +66,7 @@ func registerOAuthRoutes(mux *http.ServeMux, cfg config.Config, store *auth.OAut
 	mux.HandleFunc("/oauth/authorize", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && !passwordLimiter.Allow(requestRemoteIP(r, cfg), time.Now()) {
 			w.Header().Set("Retry-After", "300")
-			http.Error(w, "too many authorization attempts", http.StatusTooManyRequests)
+			writeAuthorizeBrowserError(w, r, "too_many_attempts", http.StatusTooManyRequests)
 			return
 		}
 		handleAuthorize(w, r, cfg, store)
@@ -318,7 +318,7 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodGet+", "+http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeAuthorizeBrowserError(w, r, "method_not_allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -326,22 +326,22 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 	if r.Method == http.MethodPost {
 		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil || mediaType != "application/x-www-form-urlencoded" {
-			http.Error(w, "content-type must be application/x-www-form-urlencoded", http.StatusBadRequest)
+			writeAuthorizeBrowserError(w, r, "content_type", http.StatusBadRequest)
 			return
 		}
 		if len(r.URL.Query()["password"]) != 0 {
-			http.Error(w, "password must be supplied in the request body", http.StatusBadRequest)
+			writeAuthorizeBrowserError(w, r, "password_in_body", http.StatusBadRequest)
 			return
 		}
 		for _, name := range authorizationParameterNames {
 			if len(r.URL.Query()[name]) != 0 {
-				http.Error(w, "OAuth parameters must be supplied in the request body", http.StatusBadRequest)
+				writeAuthorizeBrowserError(w, r, "parameters_in_body", http.StatusBadRequest)
 				return
 			}
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, oauthFormBodyLimit)
 		if err := r.ParseForm(); err != nil {
-			http.Error(w, "bad form", http.StatusBadRequest)
+			writeAuthorizeBrowserError(w, r, "bad_form", http.StatusBadRequest)
 			return
 		}
 	}
@@ -349,12 +349,12 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 	if r.Method == http.MethodPost {
 		values = r.PostForm
 		if len(values["password"]) > 1 {
-			http.Error(w, "password must not be repeated", http.StatusBadRequest)
+			writeAuthorizeBrowserError(w, r, "password_repeated", http.StatusBadRequest)
 			return
 		}
 	}
 	if duplicated := repeatedOAuthParameter(values, []string{"client_id", "redirect_uri"}); duplicated != "" {
-		http.Error(w, "OAuth parameter must not be repeated: "+duplicated, http.StatusBadRequest)
+		writeAuthorizeBrowserError(w, r, "parameter_repeated", http.StatusBadRequest, duplicated)
 		return
 	}
 	clientID := values.Get("client_id")
@@ -364,7 +364,7 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 	state := values.Get("state")
 	if !codes.ValidateClientRedirect(clientID, redirectURI) ||
 		!codes.ClientAllowsGrant(clientID, "authorization_code") {
-		http.Error(w, "invalid client_id or redirect_uri", http.StatusBadRequest)
+		writeAuthorizeBrowserError(w, r, "invalid_client", http.StatusBadRequest)
 		return
 	}
 	if duplicated := repeatedOAuthParameter(values, []string{
@@ -410,11 +410,11 @@ func handleAuthorize(w http.ResponseWriter, r *http.Request, cfg config.Config, 
 	loginPassword := auth.ConfiguredLoginValue()
 	registration, _ := codes.ClientRegistration(clientID)
 	if loginPassword != "" && r.Method == http.MethodGet {
-		writeAuthorizeForm(w, values, "", registration.ClientName)
+		writeAuthorizeForm(w, values, "", registration.ClientName, r.Header.Get("Accept-Language"))
 		return
 	}
 	if loginPassword != "" && !auth.ConstantTimeEqual(r.PostForm.Get("password"), loginPassword) {
-		writeAuthorizeForm(w, values, "invalid password", registration.ClientName)
+		writeAuthorizeForm(w, values, "invalid password", registration.ClientName, r.Header.Get("Accept-Language"))
 		return
 	}
 	protocol := newOAuthProtocolServer(cfg, codes)

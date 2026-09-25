@@ -36,7 +36,7 @@ public partial class ExecutionWindow
             if (_selected is not null)
             {
                 _taskFilter = notification.TaskId;
-                FilterTaskButton.Content = "显示全部";
+                FilterTaskButton.Content = UiText.Get("ExecutionShowAll");
                 await LoadCallsAsync(false);
             }
             else ObjectTitle.Text = notification.Title;

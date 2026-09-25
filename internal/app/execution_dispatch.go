@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/activity"
@@ -48,6 +49,9 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 	initial.TaskID, initial.ThreadID, initial.StepID, initial.WorkspaceID = "", "", "", ""
 	state := executionObservation{binding: snapshot, entryBinding: snapshot, started: received, originals: map[string]string{}}
 	created := activity.Event{Binding: initial, Kind: "call.created", Status: "created", ToolName: spec.Name, Title: spec.Title}
+	if initial.Label == "" {
+		created.LabelSource = "tool"
+	}
 	if parent.CallID == "" {
 		created.Request = &activity.Payload{State: "pending"}
 		created.Response = &activity.Payload{State: "pending"}
@@ -172,8 +176,10 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 		return fail(err)
 	}
 	r.verifyInsertionTarget(ctx, state.binding)
+	labelSource := ""
 	if state.binding.Label == "" {
 		state.binding.Label = spec.Title
+		labelSource = "tool"
 	}
 	if err = r.validateSessionOwnership(ctx, spec.Name, args, state.binding); err != nil {
 		return fail(err)
@@ -183,7 +189,7 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 	}
 	r.updateConversationName(ctx, state.binding.ConversationID, spec.Name, args)
 	description := r.describeExecution(spec.Name, args, state)
-	if err = r.appendExecution(activity.Event{Binding: state.binding, Kind: "call.bound", ToolName: spec.Name, Title: description, ParameterSummary: r.executionParameters(args), DisplayCommand: r.executionRedactor(args).Text(stringArg(args, "cmd"), 4096), Summary: description}); err != nil {
+	if err = r.appendExecution(activity.Event{Binding: state.binding, LabelSource: labelSource, TitleText: executionDescriptionText(spec.Name, description), SummaryText: executionDescriptionText(spec.Name, description), Kind: "call.bound", ToolName: spec.Name, Title: description, ParameterSummary: r.executionParameters(args), DisplayCommand: r.executionRedactor(args).Text(stringArg(args, "cmd"), 4096), Summary: description}); err != nil {
 		return fail(err)
 	}
 	if spec.Name == "file_edit" {
@@ -278,6 +284,7 @@ func (r *Runtime) appendExecution(event activity.Event) error {
 }
 func (r *Runtime) appendExecutions(events ...activity.Event) error {
 	for index := range events {
+		events[index] = describeOwnedManagement(events[index])
 		if events[index].OwnerInstance == "" {
 			events[index].OwnerPID = os.Getpid()
 			events[index].OwnerInstance = r.executionInstance
@@ -329,8 +336,8 @@ func (r *Runtime) describeExecution(name string, args map[string]any, state exec
 	if name == "mcp_tool_call" {
 		return r.executionRedactor(args).Text(stringArg(args, "name"), 512)
 	}
-	descriptions := map[string]string{"agentdock_context": "加载上下文", "workspace_context": "读取工作区规则", "read_file": "读取文件", "list_dir": "列出目录", "search_text": "搜索文本", "exec_command": "运行命令", "file_edit": "file_edit", "task_manage": "任务管理", "workspace_manage": "工作区管理", "mcp_tool_search": "发现动态工具", "mcp_tool_list": "读取工具目录", "mcp_tool_inspect": "加载工具 Schema", "mcp_tool_call": "调用动态工具", "plugin_load": "展开插件", "session_observe": "查看命令会话", "session_act": "控制命令会话"}
-	title := descriptions[name]
+
+	title := executionDescriptions[name]
 	if title == "" {
 		title = name
 	}
@@ -344,6 +351,19 @@ func (r *Runtime) describeExecution(name string, args map[string]any, state exec
 		}
 	}
 	return r.executionRedactor(args).Text(title, 512)
+}
+
+var executionDescriptions = map[string]string{"agentdock_context": "加载上下文", "workspace_context": "读取工作区规则", "read_file": "读取文件", "list_dir": "列出目录", "search_text": "搜索文本", "exec_command": "运行命令", "file_edit": "file_edit", "task_manage": "任务管理", "workspace_manage": "工作区管理", "mcp_tool_search": "发现动态工具", "mcp_tool_list": "读取工具目录", "mcp_tool_inspect": "加载工具 Schema", "mcp_tool_call": "调用动态工具", "plugin_load": "展开插件", "session_observe": "查看命令会话", "session_act": "控制命令会话"}
+
+func executionDescriptionText(name, raw string) *activity.LocalizedText {
+	if name == "mcp_tool_call" {
+		return nil
+	}
+	prefix := executionDescriptions[name]
+	if prefix == "" || !strings.HasPrefix(raw, prefix) {
+		return nil
+	}
+	return activity.NewLocalizedText("tool."+name, raw, strings.TrimPrefix(raw, prefix))
 }
 
 // Persist only bounded operational selectors, not file bodies, credentials or
@@ -609,6 +629,10 @@ func (r *Runtime) finishPrepared(p *preparedExecution, result Result, err error,
 		}
 	}
 	event := activity.Event{Binding: p.state.binding, Kind: "call.completed", Status: status, ToolName: p.spec.Name, Title: r.describeExecution(p.spec.Name, p.args, p.state), ApprovalID: p.approvalID, PermissionMode: p.decision.Mode, RuleID: p.decision.RuleID, ElapsedMS: time.Since(p.state.started).Milliseconds(), Summary: summary}
+	event.TitleText = executionDescriptionText(p.spec.Name, event.Title)
+	if err == nil && !(p.spec.Name == "task_manage" && stringArg(p.args, "summary") != "") {
+		event.SummaryText = executionDescriptionText(p.spec.Name, event.Summary)
+	}
 	event.OperationElapsedMS = &event.ElapsedMS
 	event.ExecutionElapsedMS, event.WaitElapsedMS = p.state.executionMS, p.state.waitMS
 	if p.spec.Name == "file_edit" {

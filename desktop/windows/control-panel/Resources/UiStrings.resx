@@ -921,4 +921,1881 @@ Update now?</value>
   <data name="PublicMetadataMismatch" xml:space="preserve"><value>Metadata does not match the current origin</value></data>
   <data name="PublicDiscoveryAuthorizationRequired" xml:space="preserve"><value>Public endpoint reachable; authentication discovery passed</value></data>
   <data name="PublicOAuthCapabilitiesMissing" xml:space="preserve"><value>OAuth metadata is missing authorization code, S256 or refresh support.</value></data>
+  <data name="RuntimeOperationInProgress" xml:space="preserve">
+    <value>A runtime operation is already in progress. Wait for it to finish.</value>
+  </data>
+  <data name="PublicTunnelDown" xml:space="preserve">
+    <value>Local origin is up, public tunnel is down</value>
+  </data>
+  <data name="KoreanLanguage" xml:space="preserve">
+    <value>한국어</value>
+  </data>
+  <data name="DisplaySettings" xml:space="preserve">
+    <value>Display</value>
+  </data>
+  <data name="Theme" xml:space="preserve">
+    <value>Theme</value>
+  </data>
+  <data name="ThemeLight" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="ThemeDark" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="EmbeddedInterface" xml:space="preserve">
+    <value>ChatGPT embedded interface</value>
+  </data>
+  <data name="ProvideEmbeddedInterface" xml:space="preserve">
+    <value>Provide the AgentDock embedded interface</value>
+  </data>
+  <data name="EmbeddedInterfaceHelp" xml:space="preserve">
+    <value>Tools, task management and file access remain available when disabled. This setting does not affect other plugins or previously rendered cards.</value>
+  </data>
+  <data name="DisplayReadCancelled" xml:space="preserve">
+    <value>Reading display settings was cancelled or timed out.</value>
+  </data>
+  <data name="DisplayUnavailable" xml:space="preserve">
+    <value>Display settings are unavailable from the current core: {0}</value>
+  </data>
+  <data name="DisplaySaved" xml:space="preserve">
+    <value>Saved locally; the server has applied the new policy. </value>
+  </data>
+  <data name="DisplaySaveUnconfirmed" xml:space="preserve">
+    <value>Save result unconfirmed; reloading current settings: {0}</value>
+  </data>
+  <data name="DisplayReloaded" xml:space="preserve">
+    <value>Reloaded the current server settings. </value>
+  </data>
+  <data name="DisplayConfirmUnavailable" xml:space="preserve">
+    <value>Cannot confirm the save result. Reopen the Display tab.</value>
+  </data>
+  <data name="SettingsSaved" xml:space="preserve">
+    <value>Saved</value>
+  </data>
+  <data name="ThemeSaveFailed" xml:space="preserve">
+    <value>Theme was not saved: {0}</value>
+  </data>
+  <data name="ActivityNeedsAttention" xml:space="preserve">
+    <value>Needs attention</value>
+  </data>
+  <data name="ActivityInProgressTasks" xml:space="preserve">
+    <value>In progress</value>
+  </data>
+  <data name="ActivityEndedTasks" xml:space="preserve">
+    <value>Ended</value>
+  </data>
+  <data name="ActivityRecords" xml:space="preserve">
+    <value>Activity records</value>
+  </data>
+  <data name="ActivityNoStep" xml:space="preserve">
+    <value>No current step recorded</value>
+  </data>
+  <data name="ActivityNoReason" xml:space="preserve">
+    <value>No reason recorded</value>
+  </data>
+  <data name="ActivityNoNext" xml:space="preserve">
+    <value>No next action recorded</value>
+  </data>
+  <data name="ActivityCancelReason" xml:space="preserve">
+    <value>Cancellation reason</value>
+  </data>
+  <data name="ActivityTaskBlockReason" xml:space="preserve">
+    <value>Task blocked</value>
+  </data>
+  <data name="ActivityThreadBlockReason" xml:space="preserve">
+    <value>Branch blocked</value>
+  </data>
+  <data name="ActivityNoWorkspace" xml:space="preserve">
+    <value>No workspace bound</value>
+  </data>
+  <data name="ActivityWorkspaceMissing" xml:space="preserve">
+    <value>Bound workspace is missing</value>
+  </data>
+  <data name="ActivityWorkspaceButton" xml:space="preserve">
+    <value>Open workspace</value>
+  </data>
+  <data name="ActivitySummary" xml:space="preserve">
+    <value>Checkpoint summary</value>
+  </data>
+  <data name="ActivityCommandDirectory" xml:space="preserve">
+    <value>Command directory</value>
+  </data>
+  <data name="ActivityRunningNow" xml:space="preserve">
+    <value>Running at latest check</value>
+  </data>
+  <data name="ActivityTaskCancelledEvent" xml:space="preserve">
+    <value>Task cancelled</value>
+  </data>
+  <data name="ActivityContinue" xml:space="preserve">
+    <value>Copy continuation instruction</value>
+  </data>
+  <data name="ActivityRetry" xml:space="preserve">
+    <value>Copy retry instruction</value>
+  </data>
+  <data name="ActivityContinueInstruction" xml:space="preserve">
+    <value>Read this task and branch checkpoint, confirm its workspace, then continue the unfinished work. This instruction does not itself start execution.</value>
+  </data>
+  <data name="ActivityRetryInstruction" xml:space="preserve">
+    <value>Keep the original task cancelled. Read its goal and cancellation reason, then create a new task for a retry.</value>
+  </data>
+  <data name="ActivityResumeTask" xml:space="preserve">
+    <value>Unblock task state</value>
+  </data>
+  <data name="ActivityResumeHint" xml:space="preserve">
+    <value>The state is restored. Continue from the connected client; no model was started.</value>
+  </data>
+  <data name="ActivityLiveCommands" xml:space="preserve">
+    <value>Live command sessions · all branches of this task</value>
+  </data>
+  <data name="ActivityLiveUnavailable" xml:space="preserve">
+    <value>Live session state unavailable; stopping is disabled until checked.</value>
+  </data>
+  <data name="ActivityNoRunning" xml:space="preserve">
+    <value>No running commands at the latest check. Task progress does not indicate client execution.</value>
+  </data>
+  <data name="ActivityRunningAfterCancel" xml:space="preserve">
+    <value>The task has ended, but its command processes are still running.</value>
+  </data>
+  <data name="ActivityUnknownCommand" xml:space="preserve">
+    <value>Command session · command text not retained</value>
+  </data>
+  <data name="ActivityTechnical" xml:space="preserve">
+    <value>Technical details</value>
+  </data>
+  <data name="ActivityProgress" xml:space="preserve">
+    <value>Step progress</value>
+  </data>
+  <data name="ActivityTaskSteps" xml:space="preserve">
+    <value>Task steps</value>
+  </data>
+  <data name="ActivityBranchSteps" xml:space="preserve">
+    <value>Selected branch steps</value>
+  </data>
+  <data name="ActivityHistory" xml:space="preserve">
+    <value>Activity history</value>
+  </data>
+  <data name="ActivityReturnLatest" xml:space="preserve">
+    <value>Return to latest activity</value>
+  </data>
+  <data name="ActivityNoResults" xml:space="preserve">
+    <value>No matching tasks</value>
+  </data>
+  <data name="ActivityCategoryAll" xml:space="preserve">
+    <value>All activity types</value>
+  </data>
+  <data name="ActivityCategoryCommand" xml:space="preserve">
+    <value>Commands</value>
+  </data>
+  <data name="ActivityCategoryFile" xml:space="preserve">
+    <value>File changes</value>
+  </data>
+  <data name="ActivityCategoryCheckpoint" xml:space="preserve">
+    <value>Checkpoints and review</value>
+  </data>
+  <data name="ActivityCategoryLifecycle" xml:space="preserve">
+    <value>Lifecycle and other events</value>
+  </data>
+  <data name="ActivityLastChecked" xml:space="preserve">
+    <value>Last check</value>
+  </data>
+  <data name="ActivityClipboardReady" xml:space="preserve">
+    <value>Continuation instruction copied.</value>
+  </data>
+  <data name="ActivityDiffCurrentHint" xml:space="preserve">
+    <value>This compares the current working tree, not the file contents at event time.</value>
+  </data>
+  <data name="ActivityTitle" xml:space="preserve">
+    <value>AgentDock · Task activity</value>
+  </data>
+  <data name="ActivityOpen" xml:space="preserve">
+    <value>Task activity center</value>
+  </data>
+  <data name="ActivityFacts" xml:space="preserve">
+    <value>Recorded AgentDock execution only. Threads are recoverable contexts, not background AI workers.</value>
+  </data>
+  <data name="ActivityTasks" xml:space="preserve">
+    <value>Tasks</value>
+  </data>
+  <data name="ActivitySearch" xml:space="preserve">
+    <value>Filter by title, project, workspace or task ID</value>
+  </data>
+  <data name="ActivityAll" xml:space="preserve">
+    <value>All states</value>
+  </data>
+  <data name="ActivityRefresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="ActivityArchived" xml:space="preserve">
+    <value>Include archived</value>
+  </data>
+  <data name="ActivityThread" xml:space="preserve">
+    <value>Execution branch</value>
+  </data>
+  <data name="ActivityThreadActions" xml:space="preserve">
+    <value>Branch actions ▾</value>
+  </data>
+  <data name="ActivityTaskActions" xml:space="preserve">
+    <value>Task actions ▾</value>
+  </data>
+  <data name="ActivitySetActive" xml:space="preserve">
+    <value>Use as default continuation branch</value>
+  </data>
+  <data name="ActivityCreate" xml:space="preserve">
+    <value>Create thread</value>
+  </data>
+  <data name="ActivityFork" xml:space="preserve">
+    <value>Fork checkpoint</value>
+  </data>
+  <data name="ActivityBlock" xml:space="preserve">
+    <value>Block thread</value>
+  </data>
+  <data name="ActivityResume" xml:space="preserve">
+    <value>Unblock branch state</value>
+  </data>
+  <data name="ActivityClose" xml:space="preserve">
+    <value>Close thread</value>
+  </data>
+  <data name="ActivityCancelTask" xml:space="preserve">
+    <value>Cancel task</value>
+  </data>
+  <data name="ActivityArchive" xml:space="preserve">
+    <value>Archive task</value>
+  </data>
+  <data name="ActivityUnarchive" xml:space="preserve">
+    <value>Restore from archive</value>
+  </data>
+  <data name="ActivityCleanup" xml:space="preserve">
+    <value>Clean activity older than 30 days</value>
+  </data>
+  <data name="ActivityStop" xml:space="preserve">
+    <value>Stop command</value>
+  </data>
+  <data name="ActivityCopy" xml:space="preserve">
+    <value>Copy redacted command</value>
+  </data>
+  <data name="ActivityDirectory" xml:space="preserve">
+    <value>Open command directory</value>
+  </data>
+  <data name="ActivityFile" xml:space="preserve">
+    <value>Locate modified file</value>
+  </data>
+  <data name="ActivityDiff" xml:space="preserve">
+    <value>View current diff</value>
+  </data>
+  <data name="ActivityFollow" xml:space="preserve">
+    <value>Follow latest</value>
+  </data>
+  <data name="ActivityOutput" xml:space="preserve">
+    <value>Show output</value>
+  </data>
+  <data name="ActivityOutputTruncated" xml:space="preserve">
+    <value>Show output · bounded preview, truncated</value>
+  </data>
+  <data name="ActivityDetails" xml:space="preserve">
+    <value>Steps and acceptance</value>
+  </data>
+  <data name="ActivityConditions" xml:space="preserve">
+    <value>Acceptance conditions</value>
+  </data>
+  <data name="ActivityReview" xml:space="preserve">
+    <value>Final review</value>
+  </data>
+  <data name="ActivityRisks" xml:space="preserve">
+    <value>Open risks / missing checks</value>
+  </data>
+  <data name="ActivityWorkspace" xml:space="preserve">
+    <value>Workspace</value>
+  </data>
+  <data name="ActivityStep" xml:space="preserve">
+    <value>Current step</value>
+  </data>
+  <data name="ActivityNext" xml:space="preserve">
+    <value>Next action</value>
+  </data>
+  <data name="ActivityDefaultThread" xml:space="preserve">
+    <value>Continuation thread</value>
+  </data>
+  <data name="ActivityNoTask" xml:space="preserve">
+    <value>Select a task to view its execution timeline.</value>
+  </data>
+  <data name="ActivityNoEvents" xml:space="preserve">
+    <value>No activity recorded for this thread yet.</value>
+  </data>
+  <data name="ActivityUnassigned" xml:space="preserve">
+    <value>Unassigned legacy activity</value>
+  </data>
+  <data name="ActivityAllActivity" xml:space="preserve">
+    <value>All recorded activity</value>
+  </data>
+  <data name="ActivityAllActivityDetail" xml:space="preserve">
+    <value>All tasks and legacy unassigned operations</value>
+  </data>
+  <data name="ActivityCancelConfirmation" xml:space="preserve">
+    <value>There are {0} running commands in this task. Cancelling changes the task state only and will not stop these processes. Cancel this task?</value>
+  </data>
+  <data name="ActivityLoading" xml:space="preserve">
+    <value>Loading local activity…</value>
+  </data>
+  <data name="ActivityLive" xml:space="preserve">
+    <value>Connected · live events</value>
+  </data>
+  <data name="ActivityReconnecting" xml:space="preserve">
+    <value>Disconnected. Reconnecting to the local service…</value>
+  </data>
+  <data name="ActivityUnavailable" xml:space="preserve">
+    <value>Local activity is unavailable. Check the service connection.</value>
+  </data>
+  <data name="ActivityGap" xml:space="preserve">
+    <value>Some older activity was removed by retention. Remaining records are still available.</value>
+  </data>
+  <data name="ActivityReset" xml:space="preserve">
+    <value>The local journal changed; the replay cursor has been reset.</value>
+  </data>
+  <data name="ActivityWarning" xml:space="preserve">
+    <value>Activity warning</value>
+  </data>
+  <data name="ActivityRecentOnly" xml:space="preserve">
+    <value>Only the latest 1,000 timeline entries are retained in this window.</value>
+  </data>
+  <data name="ActivityMoreTasks" xml:space="preserve">
+    <value>Showing at most 200 recent tasks. Narrow the server-side state filter to see older tasks.</value>
+  </data>
+  <data name="ActivityConfirm" xml:space="preserve">
+    <value>Confirm operation</value>
+  </data>
+  <data name="ActivityConfirmAction" xml:space="preserve">
+    <value>Apply this operation to the selected task/thread? Existing history will be retained.</value>
+  </data>
+  <data name="ActivityConfirmStop" xml:space="preserve">
+    <value>Stop this command session? Unsaved work in that process may be lost.</value>
+  </data>
+  <data name="ActivityConfirmCleanup" xml:space="preserve">
+    <value>Remove complete activity segments older than 30 days? Task checkpoints and current output are retained.</value>
+  </data>
+  <data name="ActivityName" xml:space="preserve">
+    <value>Thread title</value>
+  </data>
+  <data name="ActivityReason" xml:space="preserve">
+    <value>Reason</value>
+  </data>
+  <data name="ActivityRequired" xml:space="preserve">
+    <value>Enter a non-empty value (at most 512 characters).</value>
+  </data>
+  <data name="ActivityOK" xml:space="preserve">
+    <value>OK</value>
+  </data>
+  <data name="ActivityDismiss" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="ActivityOperationFailed" xml:space="preserve">
+    <value>The operation did not complete.</value>
+  </data>
+  <data name="ActivityInvalidPath" xml:space="preserve">
+    <value>The recorded path is missing, redacted, remote, or not a local filesystem path.</value>
+  </data>
+  <data name="ActivityDiffTitle" xml:space="preserve">
+    <value>Current repository diff</value>
+  </data>
+  <data name="ActivityDiffEmpty" xml:space="preserve">
+    <value>No current tracked diff for this file.</value>
+  </data>
+  <data name="ActivityInterrupted" xml:space="preserve">
+    <value>Last recorded running · not confirmed live</value>
+  </data>
+  <data name="ActivityLabelActive" xml:space="preserve">
+    <value>Active</value>
+  </data>
+  <data name="ActivityLabelBlocked" xml:space="preserve">
+    <value>Blocked</value>
+  </data>
+  <data name="ActivityLabelCompleted" xml:space="preserve">
+    <value>Completed</value>
+  </data>
+  <data name="ActivityLabelCancelled" xml:space="preserve">
+    <value>Cancelled</value>
+  </data>
+  <data name="ActivityLabelArchived" xml:space="preserve">
+    <value>Archived</value>
+  </data>
+  <data name="ActivityLabelOpen" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="ActivityLabelClosed" xml:space="preserve">
+    <value>Closed</value>
+  </data>
+  <data name="ActivityLabelSucceeded" xml:space="preserve">
+    <value>Succeeded</value>
+  </data>
+  <data name="ActivityLabelFailed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="ActivityLabelRunningLastObserved" xml:space="preserve">
+    <value>Running · last observed</value>
+  </data>
+  <data name="ActivityLabelTimedOut" xml:space="preserve">
+    <value>Timed out</value>
+  </data>
+  <data name="ActivityLabelStopped" xml:space="preserve">
+    <value>Stopped</value>
+  </data>
+  <data name="ActivityLabelPending" xml:space="preserve">
+    <value>Pending</value>
+  </data>
+  <data name="ActivityLabelInProgress" xml:space="preserve">
+    <value>In progress</value>
+  </data>
+  <data name="ActivityLabelPartial" xml:space="preserve">
+    <value>Partial</value>
+  </data>
+  <data name="ActivityLabelExited" xml:space="preserve">
+    <value>Exited</value>
+  </data>
+  <data name="ActivityLabelCommand" xml:space="preserve">
+    <value>Command</value>
+  </data>
+  <data name="ActivityLabelTaskCreated" xml:space="preserve">
+    <value>Task created</value>
+  </data>
+  <data name="ActivityLabelTaskCompleted" xml:space="preserve">
+    <value>Task completed</value>
+  </data>
+  <data name="ActivityLabelTaskBlocked" xml:space="preserve">
+    <value>Task blocked</value>
+  </data>
+  <data name="ActivityLabelTaskUnblocked" xml:space="preserve">
+    <value>Task unblocked</value>
+  </data>
+  <data name="ActivityLabelTaskArchived" xml:space="preserve">
+    <value>Task archived</value>
+  </data>
+  <data name="ActivityLabelTaskRestoredFromArchive" xml:space="preserve">
+    <value>Task restored from archive</value>
+  </data>
+  <data name="ActivityLabelBranchCreated" xml:space="preserve">
+    <value>Branch created</value>
+  </data>
+  <data name="ActivityLabelContinuationBranchChanged" xml:space="preserve">
+    <value>Continuation branch changed</value>
+  </data>
+  <data name="ActivityLabelBranchBlocked" xml:space="preserve">
+    <value>Branch blocked</value>
+  </data>
+  <data name="ActivityLabelBranchUnblocked" xml:space="preserve">
+    <value>Branch unblocked</value>
+  </data>
+  <data name="ActivityLabelBranchClosed" xml:space="preserve">
+    <value>Branch closed</value>
+  </data>
+  <data name="ActivityLabelHistoryCleaned" xml:space="preserve">
+    <value>History cleaned</value>
+  </data>
+  <data name="ActivityLabelFileChanged" xml:space="preserve">
+    <value>File changed</value>
+  </data>
+  <data name="ActivityLabelStepStarted" xml:space="preserve">
+    <value>Step started</value>
+  </data>
+  <data name="ActivityLabelCheckpoint" xml:space="preserve">
+    <value>Checkpoint</value>
+  </data>
+  <data name="ActivityLabelToolCall" xml:space="preserve">
+    <value>Tool call</value>
+  </data>
+  <data name="ActivityLabelFinalReview" xml:space="preserve">
+    <value>Final review</value>
+  </data>
+  <data name="ExecutionWaiting" xml:space="preserve">
+    <value>Waiting to run</value>
+  </data>
+  <data name="ExecutionRunning" xml:space="preserve">
+    <value>Running</value>
+  </data>
+  <data name="ExecutionPendingApproval" xml:space="preserve">
+    <value>Awaiting approval</value>
+  </data>
+  <data name="ExecutionCompleted" xml:space="preserve">
+    <value>Completed</value>
+  </data>
+  <data name="ExecutionFailed" xml:space="preserve">
+    <value>Failed</value>
+  </data>
+  <data name="ExecutionPartial" xml:space="preserve">
+    <value>Partially completed</value>
+  </data>
+  <data name="ExecutionCancelled" xml:space="preserve">
+    <value>Cancelled</value>
+  </data>
+  <data name="ExecutionUnknownResult" xml:space="preserve">
+    <value>Result needs verification</value>
+  </data>
+  <data name="ExecutionBlocked" xml:space="preserve">
+    <value>Blocked</value>
+  </data>
+  <data name="ExecutionNotStarted" xml:space="preserve">
+    <value>Not started</value>
+  </data>
+  <data name="ExecutionFullPermission" xml:space="preserve">
+    <value>Full permission</value>
+  </data>
+  <data name="ExecutionReadOnly" xml:space="preserve">
+    <value>Read-only</value>
+  </data>
+  <data name="ExecutionApprovalRequired" xml:space="preserve">
+    <value>Approval required</value>
+  </data>
+  <data name="ExecutionUnassignedWorkspace" xml:space="preserve">
+    <value>Unassigned workspace</value>
+  </data>
+  <data name="ExecutionHistory" xml:space="preserve">
+    <value>History</value>
+  </data>
+  <data name="ExecutionConversationTimestamp" xml:space="preserve">
+    <value>Conversation · {0}</value>
+  </data>
+  <data name="ExecutionNotRecorded" xml:space="preserve">
+    <value>Not recorded</value>
+  </data>
+  <data name="ExecutionToolValue" xml:space="preserve">
+    <value>Tool: {0}</value>
+  </data>
+  <data name="ExecutionRpcReturnedValue" xml:space="preserve">
+    <value>RPC returned: {0}</value>
+  </data>
+  <data name="ExecutionRpcDurationValue" xml:space="preserve">
+    <value>RPC duration: {0}</value>
+  </data>
+  <data name="ExecutionStageDurationValue" xml:space="preserve">
+    <value>Execution stage: {0}</value>
+  </data>
+  <data name="ExecutionWaitDurationValue" xml:space="preserve">
+    <value>Wait before execution: {0} (includes observed preparation and approval wait)</value>
+  </data>
+  <data name="ExecutionOperationDurationValue" xml:space="preserve">
+    <value>Operation completion: {0}</value>
+  </data>
+  <data name="ExecutionProcessDurationValue" xml:space="preserve">
+    <value>Background command process: {0}</value>
+  </data>
+  <data name="ExecutionConcurrentTimingNotice" xml:space="preserve">
+    <value>RPC and background commands are timed separately. Summed concurrent-call durations do not equal elapsed wall-clock time.</value>
+  </data>
+  <data name="ExecutionFileDetailsNotRecorded" xml:space="preserve">
+    <value>File operation details were not recorded.</value>
+  </data>
+  <data name="ExecutionYes" xml:space="preserve">
+    <value>Yes</value>
+  </data>
+  <data name="ExecutionNo" xml:space="preserve">
+    <value>No</value>
+  </data>
+  <data name="ExecutionResultUnknown" xml:space="preserve">
+    <value>Result unknown</value>
+  </data>
+  <data name="ExecutionPreviewNotWritten" xml:space="preserve">
+    <value>Yes, no write performed</value>
+  </data>
+  <data name="ExecutionFileEditSummary" xml:space="preserve">
+    <value>EDIT_FILE / file_edit · {0}
+Target: {1}
+Preview: {2}
+Dispatched: {3}
+Actually changed: {4}
+Affected files: {5}
+Added/deleted lines: {6} / {7}
+</value>
+  </data>
+  <data name="ExecutionFileListTruncated" xml:space="preserve">
+    <value>File details exceed the preview limit.</value>
+  </data>
+  <data name="ExecutionDiffTruncated" xml:space="preserve">
+    <value>The diff preview was truncated.</value>
+  </data>
+  <data name="ExecutionUnassigned" xml:space="preserve">
+    <value>Unassigned</value>
+  </data>
+  <data name="ExecutionSourceLoading" xml:space="preserve">
+    <value>Loading source</value>
+  </data>
+  <data name="ExecutionSourceDeleted" xml:space="preserve">
+    <value>Source deleted</value>
+  </data>
+  <data name="ExecutionSourceFailed" xml:space="preserve">
+    <value>Unable to load source</value>
+  </data>
+  <data name="ExecutionSourceUnavailable" xml:space="preserve">
+    <value>Source unavailable</value>
+  </data>
+  <data name="ExecutionHistoryIncomplete" xml:space="preserve">
+    <value>Part of this record's history is no longer available.</value>
+  </data>
+  <data name="ExecutionStandardError" xml:space="preserve">
+    <value>Standard error</value>
+  </data>
+  <data name="ExecutionNoOutput" xml:space="preserve">
+    <value>No output.</value>
+  </data>
+  <data name="ExecutionOutputTruncated" xml:space="preserve">
+    <value>Output was truncated; only the retained portion is shown.</value>
+  </data>
+  <data name="ExecutionSearchWorkspaceConversation" xml:space="preserve">
+    <value>Search workspaces or conversations</value>
+  </data>
+  <data name="ExecutionSearch" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="ExecutionConversationManagement" xml:space="preserve">
+    <value>Manage conversations</value>
+  </data>
+  <data name="ExecutionMoreConversations" xml:space="preserve">
+    <value>More conversations</value>
+  </data>
+  <data name="ExecutionConversation" xml:space="preserve">
+    <value>Conversation</value>
+  </data>
+  <data name="ExecutionRecentToolCall" xml:space="preserve">
+    <value>Execution updated in the last 2 minutes</value>
+  </data>
+  <data name="ExecutionManageConversation" xml:space="preserve">
+    <value>Manage this conversation</value>
+  </data>
+  <data name="ExecutionNoConversations" xml:space="preserve">
+    <value>No conversations</value>
+  </data>
+  <data name="ExecutionSelectConversation" xml:space="preserve">
+    <value>Select a conversation</value>
+  </data>
+  <data name="ExecutionAttention" xml:space="preserve">
+    <value>Needs attention</value>
+  </data>
+  <data name="ExecutionPermissions" xml:space="preserve">
+    <value>Permissions</value>
+  </data>
+  <data name="ExecutionConnection" xml:space="preserve">
+    <value>Connection</value>
+  </data>
+  <data name="ExecutionTheme" xml:space="preserve">
+    <value>Theme</value>
+  </data>
+  <data name="ExecutionSettings" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="ExecutionStop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="ExecutionCurrentConversationActions" xml:space="preserve">
+    <value>Current conversation actions</value>
+  </data>
+  <data name="ExecutionClose" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="ExecutionTask" xml:space="preserve">
+    <value>Task</value>
+  </data>
+  <data name="ExecutionRelatedTasks" xml:space="preserve">
+    <value>Tasks linked to this conversation</value>
+  </data>
+  <data name="ExecutionNoLinkedTask" xml:space="preserve">
+    <value>No linked task</value>
+  </data>
+  <data name="ExecutionLink" xml:space="preserve">
+    <value>Link</value>
+  </data>
+  <data name="ExecutionFilterTask" xml:space="preserve">
+    <value>Filter this task</value>
+  </data>
+  <data name="ExecutionTaskDetails" xml:space="preserve">
+    <value>Task details</value>
+  </data>
+  <data name="ExecutionSearchCalls" xml:space="preserve">
+    <value>Search execution records</value>
+  </data>
+  <data name="ExecutionAllStates" xml:space="preserve">
+    <value>All states</value>
+  </data>
+  <data name="ExecutionNeedsVerification" xml:space="preserve">
+    <value>Needs verification</value>
+  </data>
+  <data name="ExecutionCompact" xml:space="preserve">
+    <value>Compact</value>
+  </data>
+  <data name="ExecutionDetailed" xml:space="preserve">
+    <value>Detailed</value>
+  </data>
+  <data name="ExecutionOlder" xml:space="preserve">
+    <value>Older</value>
+  </data>
+  <data name="ExecutionFollow" xml:space="preserve">
+    <value>Follow</value>
+  </data>
+  <data name="ExecutionFollowLatest" xml:space="preserve">
+    <value>Follow the latest calls</value>
+  </data>
+  <data name="ExecutionRecordManagement" xml:space="preserve">
+    <value>Manage records</value>
+  </data>
+  <data name="ExecutionTool" xml:space="preserve">
+    <value>Tool</value>
+  </data>
+  <data name="ExecutionStarted" xml:space="preserve">
+    <value>Started</value>
+  </data>
+  <data name="ExecutionState" xml:space="preserve">
+    <value>State</value>
+  </data>
+  <data name="ExecutionRpcTotal" xml:space="preserve">
+    <value>RPC total</value>
+  </data>
+  <data name="ExecutionExecution" xml:space="preserve">
+    <value>Execution</value>
+  </data>
+  <data name="ExecutionWait" xml:space="preserve">
+    <value>Wait</value>
+  </data>
+  <data name="ExecutionSource" xml:space="preserve">
+    <value>Source</value>
+  </data>
+  <data name="ExecutionNoCalls" xml:space="preserve">
+    <value>No execution records</value>
+  </data>
+  <data name="ExecutionRefresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="ExecutionCommandOutput" xml:space="preserve">
+    <value>Command and output</value>
+  </data>
+  <data name="ExecutionCopyCommand" xml:space="preserve">
+    <value>Copy command</value>
+  </data>
+  <data name="ExecutionCopyOutput" xml:space="preserve">
+    <value>Copy output</value>
+  </data>
+  <data name="ExecutionStopCall" xml:space="preserve">
+    <value>Stop call</value>
+  </data>
+  <data name="ExecutionApprove" xml:space="preserve">
+    <value>Review approval</value>
+  </data>
+  <data name="ExecutionReject" xml:space="preserve">
+    <value>Reject</value>
+  </data>
+  <data name="ExecutionRetryInstructions" xml:space="preserve">
+    <value>Retry instructions</value>
+  </data>
+  <data name="ExecutionChildCalls" xml:space="preserve">
+    <value>Child calls</value>
+  </data>
+  <data name="ExecutionTechnical" xml:space="preserve">
+    <value>Technical</value>
+  </data>
+  <data name="ExecutionTiming" xml:space="preserve">
+    <value>Timing</value>
+  </data>
+  <data name="ExecutionFileEdits" xml:space="preserve">
+    <value>File edits</value>
+  </data>
+  <data name="ExecutionContinueBranch" xml:space="preserve">
+    <value>Continue from this branch</value>
+  </data>
+  <data name="ExecutionCopyContinue" xml:space="preserve">
+    <value>Copy continuation instructions</value>
+  </data>
+  <data name="ExecutionManageTask" xml:space="preserve">
+    <value>Manage task</value>
+  </data>
+  <data name="ExecutionHistoricalTasks" xml:space="preserve">
+    <value>Historical tasks</value>
+  </data>
+  <data name="ExecutionUnattributedCalls" xml:space="preserve">
+    <value>Unattributed calls</value>
+  </data>
+  <data name="ExecutionAllCalls" xml:space="preserve">
+    <value>All calls</value>
+  </data>
+  <data name="ExecutionCurrent" xml:space="preserve">
+    <value>Current</value>
+  </data>
+  <data name="ExecutionArchived" xml:space="preserve">
+    <value>Archived</value>
+  </data>
+  <data name="ExecutionIsolated" xml:space="preserve">
+    <value>Isolated</value>
+  </data>
+  <data name="ExecutionTrash" xml:space="preserve">
+    <value>Trash</value>
+  </data>
+  <data name="ExecutionManageSelected" xml:space="preserve">
+    <value>Manage selected</value>
+  </data>
+  <data name="ExecutionExport" xml:space="preserve">
+    <value>Export</value>
+  </data>
+  <data name="ExecutionMore" xml:space="preserve">
+    <value>More</value>
+  </data>
+  <data name="ExecutionUnattributedRecords" xml:space="preserve">
+    <value>Unattributed records</value>
+  </data>
+  <data name="ExecutionHistoricalWorkspace" xml:space="preserve">
+    <value>Historical workspace</value>
+  </data>
+  <data name="ExecutionNoConversationRecords" xml:space="preserve">
+    <value>No conversation records</value>
+  </data>
+  <data name="ExecutionLoadingCalls" xml:space="preserve">
+    <value>Loading execution records</value>
+  </data>
+  <data name="ExecutionProgressNotRecorded" xml:space="preserve">
+    <value>Progress not recorded</value>
+  </data>
+  <data name="ExecutionNextActionPrefix" xml:space="preserve">
+    <value>
+Next action: </value>
+  </data>
+  <data name="ExecutionAcceptanceHeading" xml:space="preserve">
+    <value>Acceptance conditions
+</value>
+  </data>
+  <data name="ExecutionHistoryRetentionGap" xml:space="preserve">
+    <value>Some history exceeded its retention period. Available records are shown.</value>
+  </data>
+  <data name="ExecutionStreamConnected" xml:space="preserve">
+    <value>Connected to the local execution stream</value>
+  </data>
+  <data name="ExecutionStreamReconnectingPrefix" xml:space="preserve">
+    <value>Reconnecting to the local execution stream. Original diagnostic: </value>
+  </data>
+  <data name="ExecutionNoVerifiableSource" xml:space="preserve">
+    <value>Unattributed: this record has no verifiable source conversation. Its call ID can be used to export, isolate, archive or delete the record.</value>
+  </data>
+  <data name="ExecutionSourceResolved" xml:space="preserve">
+    <value>Source resolved</value>
+  </data>
+  <data name="ExecutionWorkdirPrefix" xml:space="preserve">
+    <value>
+Working directory: </value>
+  </data>
+  <data name="ExecutionPermissionsPrefix" xml:space="preserve">
+    <value>
+Permissions: </value>
+  </data>
+  <data name="ExecutionFileChangesHeading" xml:space="preserve">
+    <value>
+
+File changes
+</value>
+  </data>
+  <data name="ExecutionNoMatchingCalls" xml:space="preserve">
+    <value>No matching execution records</value>
+  </data>
+  <data name="ExecutionResumeFollowing" xml:space="preserve">
+    <value>Resume following</value>
+  </data>
+  <data name="ExecutionShowAll" xml:space="preserve">
+    <value>Show all</value>
+  </data>
+  <data name="ExecutionPreferencesTooLarge" xml:space="preserve">
+    <value>Display preferences exceed the size limit. The original file was preserved.</value>
+  </data>
+  <data name="ExecutionPreferencesLoadFailedPrefix" xml:space="preserve">
+    <value>Display preferences could not be loaded; the original file was preserved. Diagnostic: </value>
+  </data>
+  <data name="ExecutionPreferencesSaveFailedPrefix" xml:space="preserve">
+    <value>Display preferences were not saved. Diagnostic: </value>
+  </data>
+  <data name="ExecutionConversationTerminated" xml:space="preserve">
+    <value>This conversation was terminated and further execution is blocked. Its history remains available for viewing and management.</value>
+  </data>
+  <data name="ExecutionAttentionCount" xml:space="preserve">
+    <value>Needs attention {0}</value>
+  </data>
+  <data name="ExecutionNewApprovals" xml:space="preserve">
+    <value>{0} new requests are awaiting approval.</value>
+  </data>
+  <data name="ExecutionHistoryUnavailable" xml:space="preserve">
+    <value>Some historical records are no longer available.</value>
+  </data>
+  <data name="ExecutionOriginalDiagnostic" xml:space="preserve">
+    <value>Original diagnostic</value>
+  </data>
+  <data name="ExecutionConfirm" xml:space="preserve">
+    <value>Confirm</value>
+  </data>
+  <data name="ExecutionCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="ExecutionChooseTaskId" xml:space="preserve">
+    <value>Or enter a task_id not shown in the first 200 items:</value>
+  </data>
+  <data name="ExecutionLinkTask" xml:space="preserve">
+    <value>Link task</value>
+  </data>
+  <data name="ExecutionApprovalTitle" xml:space="preserve">
+    <value>Pre-execution approval · fixed request</value>
+  </data>
+  <data name="ExecutionAllowWorkspaceRule" xml:space="preserve">
+    <value>Also allow this type of tool operation in this workspace (create the Allow rule shown below)</value>
+  </data>
+  <data name="ExecutionAllowOnce" xml:space="preserve">
+    <value>Allow once</value>
+  </data>
+  <data name="ExecutionApproveSaveRule" xml:space="preserve">
+    <value>Approve and save workspace rule</value>
+  </data>
+  <data name="ExecutionBack" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="ExecutionPermissionPolicyTitle" xml:space="preserve">
+    <value>Execution permissions · server-side policy</value>
+  </data>
+  <data name="ExecutionGlobalDefault" xml:space="preserve">
+    <value>Global default</value>
+  </data>
+  <data name="ExecutionCurrentConversation" xml:space="preserve">
+    <value>Current conversation</value>
+  </data>
+  <data name="ExecutionPermissionInheritancePrefix" xml:space="preserve">
+    <value>Inheritance: conversation → workspace → global default. Unconfigured levels inherit. Effective source: </value>
+  </data>
+  <data name="ExecutionScope" xml:space="preserve">
+    <value>Scope</value>
+  </data>
+  <data name="ExecutionExecutionMode" xml:space="preserve">
+    <value>Execution mode</value>
+  </data>
+  <data name="ExecutionReadOnlyDescription" xml:space="preserve">
+    <value>Read-only inspection: do not dispatch writes or unknown side effects</value>
+  </data>
+  <data name="ExecutionRulesDescription" xml:space="preserve">
+    <value>Rule-based approval: verified safe actions proceed; other actions wait for a decision</value>
+  </data>
+  <data name="ExecutionFullDescription" xml:space="preserve">
+    <value>Full permission: skip approval in this scope; explicit prohibitions still apply</value>
+  </data>
+  <data name="ExecutionEditDangerousRules" xml:space="preserve">
+    <value>Also edit high-risk rules (advanced)</value>
+  </data>
+  <data name="ExecutionRuleExplanation" xml:space="preserve">
+    <value>Rules match tool names, optional action and workspace. The effect is deny, ask or allow. Unlisted actions with side effects wait for approval by default.</value>
+  </data>
+  <data name="ExecutionSaveApply" xml:space="preserve">
+    <value>Save and apply</value>
+  </data>
+  <data name="ExecutionConversationFullNotAllowed" xml:space="preserve">
+    <value>Full permission requires a workspace or global scope. Conversation scopes may only restrict permissions.</value>
+  </data>
+  <data name="ExecutionConfirmFullScope" xml:space="preserve">
+    <value>Confirm full-permission scope</value>
+  </data>
+  <data name="ExecutionEnable" xml:space="preserve">
+    <value>Enable</value>
+  </data>
+  <data name="ExecutionRulesArrayRequired" xml:space="preserve">
+    <value>Rules must be a JSON array.</value>
+  </data>
+  <data name="ExecutionInvalidRules" xml:space="preserve">
+    <value>Invalid rules</value>
+  </data>
+  <data name="ExecutionDisplayRetentionTitle" xml:space="preserve">
+    <value>Display and trash retention</value>
+  </data>
+  <data name="ExecutionRetentionExplanation" xml:space="preserve">
+    <value>Retention days for newly trashed records (1–3650). Existing records keep their original expiry date. Workspaces and source code are not included in trash cleanup.</value>
+  </data>
+  <data name="ExecutionFontSize" xml:space="preserve">
+    <value>Interface font size (12–20)</value>
+  </data>
+  <data name="ExecutionNotifyApprovals" xml:space="preserve">
+    <value>Notify about new approval requests</value>
+  </data>
+  <data name="ExecutionSave" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="ExecutionEnterRetentionDays" xml:space="preserve">
+    <value>Enter 1–3650 days.</value>
+  </data>
+  <data name="ExecutionInvalidRetention" xml:space="preserve">
+    <value>Invalid retention period</value>
+  </data>
+  <data name="ExecutionNone" xml:space="preserve">
+    <value>None</value>
+  </data>
+  <data name="ExecutionNotExecuted" xml:space="preserve">
+    <value>Not executed yet</value>
+  </data>
+  <data name="ExecutionApprovalSummary" xml:space="preserve">
+    <value>Source conversation: {0}
+Linked task: {1}
+Operation: {2}
+Blocking rule: {3}
+Reason: {4}
+
+Affected scope:
+{5}
+
+Current state: {6}</value>
+  </data>
+  <data name="ExecutionPermissionSummary" xml:space="preserve">
+    <value>Effective mode for the selected object: {0}
+Default mode: {1} · Policy revision: {2}
+Permissions control only whether AgentDock dispatches a request. They do not elevate operating-system privileges. Explicit Deny rules remain effective even with full permission.</value>
+  </data>
+  <data name="ExecutionConfirmFullScopeMessage" xml:space="preserve">
+    <value>Enable full permission for “{0}”. Commands, file writes and third-party tools will skip optional approval. Explicit prohibition rules remain effective.</value>
+  </data>
+  <data name="ExecutionApprovalApproved" xml:space="preserve">
+    <value>Approved</value>
+  </data>
+  <data name="ExecutionApprovalRejected" xml:space="preserve">
+    <value>Rejected</value>
+  </data>
+  <data name="ExecutionApprovalExpired" xml:space="preserve">
+    <value>Expired</value>
+  </data>
+  <data name="ExecutionSelectFilteredConversations" xml:space="preserve">
+    <value>Select all conversations in this filter</value>
+  </data>
+  <data name="ExecutionManageSelectedConversations" xml:space="preserve">
+    <value>Manage selected conversations</value>
+  </data>
+  <data name="ExecutionHistoricalUnattributed" xml:space="preserve">
+    <value>Historical tasks and unattributed records</value>
+  </data>
+  <data name="ExecutionConversationDetails" xml:space="preserve">
+    <value>Conversation details</value>
+  </data>
+  <data name="ExecutionUnattributedIdManagement" xml:space="preserve">
+    <value>Unattributed records are managed using their original call IDs.</value>
+  </data>
+  <data name="ExecutionExportExecution" xml:space="preserve">
+    <value>Export execution records</value>
+  </data>
+  <data name="ExecutionManageRecords" xml:space="preserve">
+    <value>Manage records</value>
+  </data>
+  <data name="ExecutionRename" xml:space="preserve">
+    <value>Rename</value>
+  </data>
+  <data name="ExecutionTags" xml:space="preserve">
+    <value>Category tags</value>
+  </data>
+  <data name="ExecutionUnpin" xml:space="preserve">
+    <value>Unpin</value>
+  </data>
+  <data name="ExecutionPin" xml:space="preserve">
+    <value>Pin</value>
+  </data>
+  <data name="ExecutionUnarchive" xml:space="preserve">
+    <value>Unarchive</value>
+  </data>
+  <data name="ExecutionArchive" xml:space="preserve">
+    <value>Archive</value>
+  </data>
+  <data name="ExecutionRestoreFromTrash" xml:space="preserve">
+    <value>Restore from trash</value>
+  </data>
+  <data name="ExecutionMoveToTrash" xml:space="preserve">
+    <value>Move to trash</value>
+  </data>
+  <data name="ExecutionPermanentlyDelete" xml:space="preserve">
+    <value>Permanently delete</value>
+  </data>
+  <data name="ExecutionResumeConversation" xml:space="preserve">
+    <value>Resume this conversation</value>
+  </data>
+  <data name="ExecutionTerminateConversation" xml:space="preserve">
+    <value>Terminate this conversation</value>
+  </data>
+  <data name="ExecutionLinkExistingTask" xml:space="preserve">
+    <value>Link an existing task</value>
+  </data>
+  <data name="ExecutionEnterName" xml:space="preserve">
+    <value>Enter a name</value>
+  </data>
+  <data name="ExecutionNameRequired" xml:space="preserve">
+    <value>The name cannot be empty.</value>
+  </data>
+  <data name="ExecutionTagsHelp" xml:space="preserve">
+    <value>Separate tags with commas. Leave empty to clear.</value>
+  </data>
+  <data name="ExecutionManagementResult" xml:space="preserve">
+    <value>Management result</value>
+  </data>
+  <data name="ExecutionTerminateWarning" xml:space="preserve">
+    <value>Block new execution requests for this conversation first, then cancel pending approvals and stop running calls. Historical records remain readable.</value>
+  </data>
+  <data name="ExecutionResumeWarning" xml:space="preserve">
+    <value>Allow this conversation to submit requests again. Cancelled calls will not be retried automatically.</value>
+  </data>
+  <data name="ExecutionTerminationNeedsVerification" xml:space="preserve">
+    <value>The termination gate is active, but some calls still need their stop results verified.</value>
+  </data>
+  <data name="ExecutionConversationExecutionBlocked" xml:space="preserve">
+    <value>This conversation was terminated. Further execution is blocked.</value>
+  </data>
+  <data name="ExecutionConversationResumed" xml:space="preserve">
+    <value>This conversation was resumed. Cancelled calls were not replayed.</value>
+  </data>
+  <data name="ExecutionLinkWithoutSwitching" xml:space="preserve">
+    <value>Only create a link; do not switch the currently executing task.</value>
+  </data>
+  <data name="ExecutionPermissionsSaved" xml:space="preserve">
+    <value>Permission settings were saved.</value>
+  </data>
+  <data name="ExecutionLocalStreamPrefix" xml:space="preserve">
+    <value>Local execution stream: </value>
+  </data>
+  <data name="ExecutionConnected" xml:space="preserve">
+    <value>Connected</value>
+  </data>
+  <data name="ExecutionReconnecting" xml:space="preserve">
+    <value>Reconnecting</value>
+  </data>
+  <data name="ExecutionNoPublicAddress" xml:space="preserve">
+    <value>No public address configured</value>
+  </data>
+  <data name="ExecutionRuntimeConfigTooLarge" xml:space="preserve">
+    <value>Runtime configuration exceeds the size limit.</value>
+  </data>
+  <data name="ExecutionPublicReachable" xml:space="preserve">
+    <value>Public endpoint reachable</value>
+  </data>
+  <data name="ExecutionPublicProbeFailed" xml:space="preserve">
+    <value>Public endpoint unreachable or verification failed</value>
+  </data>
+  <data name="ExecutionSystemTheme" xml:space="preserve">
+    <value>Follow system</value>
+  </data>
+  <data name="ExecutionLightTheme" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="ExecutionDarkTheme" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="ExecutionDisplayRetentionNotifications" xml:space="preserve">
+    <value>Display, retention and notifications</value>
+  </data>
+  <data name="ExecutionHistoryManagerTitle" xml:space="preserve">
+    <value>Historical tasks and record management</value>
+  </data>
+  <data name="ExecutionSaveCurrentFilter" xml:space="preserve">
+    <value>Save current filter</value>
+  </data>
+  <data name="ExecutionSaveFilter" xml:space="preserve">
+    <value>Save filter</value>
+  </data>
+  <data name="ExecutionFilterName" xml:space="preserve">
+    <value>Filter name</value>
+  </data>
+  <data name="ExecutionFilterPrefix" xml:space="preserve">
+    <value>Filter: </value>
+  </data>
+  <data name="ExecutionUsageGuide" xml:space="preserve">
+    <value>Structure and usage guide</value>
+  </data>
+  <data name="ExecutionExportCurrentFilter" xml:space="preserve">
+    <value>Export current filter</value>
+  </data>
+  <data name="ExecutionExecutionRecords" xml:space="preserve">
+    <value>Execution records</value>
+  </data>
+  <data name="ExecutionExportSelectedRecords" xml:space="preserve">
+    <value>Export selected records</value>
+  </data>
+  <data name="ExecutionArchiveSelected" xml:space="preserve">
+    <value>Archive selected</value>
+  </data>
+  <data name="ExecutionIsolateSelected" xml:space="preserve">
+    <value>Isolate selected</value>
+  </data>
+  <data name="ExecutionCurrentRecords" xml:space="preserve">
+    <value>Current records</value>
+  </data>
+  <data name="ExecutionArchivedRecords" xml:space="preserve">
+    <value>Archived records</value>
+  </data>
+  <data name="ExecutionIsolatedRecords" xml:space="preserve">
+    <value>Isolated records</value>
+  </data>
+  <data name="ExecutionTrashRecords" xml:space="preserve">
+    <value>Trash records</value>
+  </data>
+  <data name="ExecutionRestoreSelected" xml:space="preserve">
+    <value>Restore selected</value>
+  </data>
+  <data name="ExecutionDeleteSelected" xml:space="preserve">
+    <value>Permanently delete selected</value>
+  </data>
+  <data name="ExecutionUnisolateSelected" xml:space="preserve">
+    <value>Unisolate selected</value>
+  </data>
+  <data name="ExecutionUnarchiveSelected" xml:space="preserve">
+    <value>Unarchive selected</value>
+  </data>
+  <data name="ExecutionClipboardBusy" xml:space="preserve">
+    <value>The clipboard is busy. Try copying again.</value>
+  </data>
+  <data name="ExecutionRetryCopied" xml:space="preserve">
+    <value>Retry instructions copied</value>
+  </data>
+  <data name="ExecutionSwitchBranch" xml:space="preserve">
+    <value>Switch execution branch</value>
+  </data>
+  <data name="ExecutionSwitchBranchWarning" xml:space="preserve">
+    <value>Change this task's continuation point to the selected branch. Commands already running keep their original binding.</value>
+  </data>
+  <data name="ExecutionSwitch" xml:space="preserve">
+    <value>Switch</value>
+  </data>
+  <data name="ExecutionContinuationUpdated" xml:space="preserve">
+    <value>Continuation branch updated.</value>
+  </data>
+  <data name="ExecutionContinueCopied" xml:space="preserve">
+    <value>Task continuation instructions copied.</value>
+  </data>
+  <data name="ExecutionSetCurrentTask" xml:space="preserve">
+    <value>Set as this conversation's current task</value>
+  </data>
+  <data name="ExecutionRenameTask" xml:space="preserve">
+    <value>Rename task</value>
+  </data>
+  <data name="ExecutionArchiveTask" xml:space="preserve">
+    <value>Archive task</value>
+  </data>
+  <data name="ExecutionCancelTask" xml:space="preserve">
+    <value>Cancel task</value>
+  </data>
+  <data name="ExecutionSelectRecordsFirst" xml:space="preserve">
+    <value>Select records to manage first.</value>
+  </data>
+  <data name="ExecutionViewDetails" xml:space="preserve">
+    <value>View details</value>
+  </data>
+  <data name="ExecutionUnisolate" xml:space="preserve">
+    <value>Unisolate</value>
+  </data>
+  <data name="ExecutionIsolate" xml:space="preserve">
+    <value>Isolate</value>
+  </data>
+  <data name="ExecutionRestore" xml:space="preserve">
+    <value>Restore</value>
+  </data>
+  <data name="ExecutionSelectExportFirst" xml:space="preserve">
+    <value>Select records to export first.</value>
+  </data>
+  <data name="ExecutionTaskRecords" xml:space="preserve">
+    <value>Task records</value>
+  </data>
+  <data name="ExecutionExportPagingStopped" xml:space="preserve">
+    <value>Export pagination did not advance. No file was written.</value>
+  </data>
+  <data name="ExecutionExportLimit" xml:space="preserve">
+    <value>This export exceeds 100000 records. Narrow the filter.</value>
+  </data>
+  <data name="ExecutionConversationRecords" xml:space="preserve">
+    <value>Conversation execution records</value>
+  </data>
+  <data name="ExecutionSelectedExecutionRecords" xml:space="preserve">
+    <value>Selected execution records</value>
+  </data>
+  <data name="ExecutionExportPrefix" xml:space="preserve">
+    <value>Export </value>
+  </data>
+  <data name="ExecutionExportedPrefix" xml:space="preserve">
+    <value>Exported: </value>
+  </data>
+  <data name="ExecutionGuideText" xml:space="preserve">
+    <value>The sidebar groups conversations by workspace. Tasks are shown within the current conversation. Selecting a task or browsing branches does not change the active execution context.
+
+Each execution record shows its state, action, duration and time. Select it to inspect command, output, source and child calls below. Use the context menu or menus to manage records in batches.
+
+Terminating a conversation first writes the server-side gate, then cancels pending approvals and running calls. Closing this window only stops observing; it does not stop execution.
+
+Historical tasks without steps show “Progress not recorded”. Unattributed calls retain their original call IDs and can be exported, isolated, archived or moved to trash. Permanent deletion does not delete project source code.
+
+Shortcuts: Ctrl+F searches conversations; F5 refreshes; Esc closes details; Shift+F10 opens the selected item menu.</value>
+  </data>
+  <data name="ExecutionJsonFilter" xml:space="preserve">
+    <value>JSON files|*.json</value>
+  </data>
+  <data name="ExecutionSelectedConversationCount" xml:space="preserve">
+    <value>Selected {0} conversations in the current filter.</value>
+  </data>
+  <data name="ExecutionDeleteRecordsWarning" xml:space="preserve">
+    <value>Permanently delete the selected {0} records and their management indexes. They cannot be restored from trash. Workspace source code remains unchanged.</value>
+  </data>
+  <data name="ExecutionTrashRecordsWarning" xml:space="preserve">
+    <value>Move the selected {0} records to trash. Running records and records awaiting approval will be retained. Workspace source code remains unchanged.</value>
+  </data>
+  <data name="ExecutionBatchResult" xml:space="preserve">
+    <value>Completed {0}, skipped {1}, failed {2}.
+
+</value>
+  </data>
+  <data name="ExecutionUpdatedRecords" xml:space="preserve">
+    <value>Updated {0} records.</value>
+  </data>
+  <data name="ExecutionRetryInstruction" xml:space="preserve">
+    <value>Read call {0}'s original request and failure reason. Check for partial effects before deciding whether to retry using retry_of_call_id={0}. Do not directly replay the command shown in the summary.</value>
+  </data>
+  <data name="ExecutionContinueInstruction" xml:space="preserve">
+    <value>Continue task {0}. First read the latest task and branch {1} state, then continue from the checkpoint. Do not repeat completed operations.</value>
+  </data>
+  <data name="ExecutionTerminate" xml:space="preserve">
+    <value>Terminate</value>
+  </data>
+  <data name="ExecutionResume" xml:space="preserve">
+    <value>Resume</value>
+  </data>
+  <data name="ExecutionCheckingPublicAccess" xml:space="preserve">
+    <value>Checking public access…</value>
+  </data>
+  <data name="ExecutionCancelTaskReason" xml:space="preserve">
+    <value>Cancellation reason. This changes task state only; running command processes are not stopped.</value>
+  </data>
+  <data name="ActivitySummaryCounts" xml:space="preserve">
+    <value>{0} running · {1} awaiting approval · {2} unknown results</value>
+  </data>
+  <data name="FunnelCheckingLocal" xml:space="preserve">
+    <value>Checking local configuration</value>
+  </data>
+  <data name="FunnelNeedsApproval" xml:space="preserve">
+    <value>Initial authorization required</value>
+  </data>
+  <data name="FunnelLocalReady" xml:space="preserve">
+    <value>Local configuration ready</value>
+  </data>
+  <data name="FunnelVerifyingPublic" xml:space="preserve">
+    <value>Verifying public access</value>
+  </data>
+  <data name="FunnelDegraded" xml:space="preserve">
+    <value>Public access is not ready; local configuration retained</value>
+  </data>
+  <data name="FunnelVerificationFailed" xml:space="preserve">
+    <value>Verification failed</value>
+  </data>
+  <data name="FunnelLocalSubmitted" xml:space="preserve">
+    <value>Local configuration committed; public verification is in progress.</value>
+  </data>
+  <data name="FunnelReady" xml:space="preserve">
+    <value>Public access verified</value>
+  </data>
+  <data name="ExecutionStreamMissing" xml:space="preserve">
+    <value>The service did not return an execution event stream.</value>
+  </data>
+  <data name="ExecutionStreamDisconnected" xml:space="preserve">
+    <value>The execution stream disconnected; reconnecting from its sequence.</value>
+  </data>
+  <data name="ExecutionStreamSequenceMismatch" xml:space="preserve">
+    <value>Call and event sequences do not match.</value>
+  </data>
+  <data name="ExecutionEventTooLarge" xml:space="preserve">
+    <value>The execution event exceeds the size limit.</value>
+  </data>
+  <data name="ExecutionEventSequenceInvalid" xml:space="preserve">
+    <value>The execution event sequence is invalid.</value>
+  </data>
+  <data name="ExecutionEventIdInvalid" xml:space="preserve">
+    <value>The execution event ID is invalid.</value>
+  </data>
+  <data name="ExecutionEventLineTooLarge" xml:space="preserve">
+    <value>The execution event line exceeds the size limit.</value>
+  </data>
+  <data name="ThemeLoadWarning" xml:space="preserve">
+    <value>Display settings could not be loaded; the original file was preserved. Original diagnostic: {0}</value>
+  </data>
+  <data name="ThemeCleanupWarning" xml:space="preserve">
+    <value>The temporary theme file could not be removed. Original diagnostic: {0}</value>
+  </data>
+  <data name="ThemeSelectionInvalid" xml:space="preserve">
+    <value>The selected theme is invalid.</value>
+  </data>
+  <data name="ThemeNotInitialized" xml:space="preserve">
+    <value>Theme settings have not been initialized.</value>
+  </data>
+  <data name="ThemePreferencesTooLarge" xml:space="preserve">
+    <value>Display settings exceed the size limit.</value>
+  </data>
+  <data name="ThemePreferencesObjectRequired" xml:space="preserve">
+    <value>Display settings must be a JSON object.</value>
+  </data>
+  <data name="UiPreferenceDirectoryUnavailable" xml:space="preserve">
+    <value>The AgentDock UI preference directory is unavailable.</value>
+  </data>
+  <data name="DisplayPreferenceInvalid" xml:space="preserve">
+    <value>The service did not return valid display preferences.</value>
+  </data>
+  <data name="DisplayRefreshConnectionHint" xml:space="preserve">
+    <value>This controls only the interface provided by AgentDock. Previously rendered cards are retained. Refresh the ChatGPT connection and verify in a new conversation.</value>
+  </data>
+  <data name="FunnelProbeDiagnostic" xml:space="preserve">
+    <value>Public verification did not complete. Original diagnostic: {0}</value>
+  </data>
+  <data name="FunnelLocalCheckingHint" xml:space="preserve">
+    <value>Checking local configuration. You can continue using the interface.</value>
+  </data>
+  <data name="FunnelProbePreservedDiagnostic" xml:space="preserve">
+    <value>Public verification is incomplete; local configuration was retained. Original diagnostic: {0}</value>
+  </data>
+  <data name="TunnelDiagnostic_command_failed" xml:space="preserve">
+    <value>The Tailscale command failed. Inspect the original diagnostic.</value>
+  </data>
+  <data name="TunnelDiagnostic_command_timeout" xml:space="preserve">
+    <value>The Tailscale command timed out. Verify its state before retrying.</value>
+  </data>
+  <data name="TunnelDiagnostic_configuration_changed" xml:space="preserve">
+    <value>Configuration changed during this operation. Reload the current state.</value>
+  </data>
+  <data name="TunnelDiagnostic_core_unhealthy" xml:space="preserve">
+    <value>The mapping is configured, but the local AgentDock health check failed.</value>
+  </data>
+  <data name="TunnelDiagnostic_device_changed" xml:space="preserve">
+    <value>The Tailscale device identity changed. Existing ownership must be checked.</value>
+  </data>
+  <data name="TunnelDiagnostic_disabled" xml:space="preserve">
+    <value>AgentDock Funnel is disabled.</value>
+  </data>
+  <data name="TunnelDiagnostic_funnel_permission_required" xml:space="preserve">
+    <value>Authorize HTTPS 443 Funnel for this device in Tailscale, then detect again.</value>
+  </data>
+  <data name="TunnelDiagnostic_initialize_failed" xml:space="preserve">
+    <value>MCP initialization did not return valid server or protocol information.</value>
+  </data>
+  <data name="TunnelDiagnostic_initialized_failed" xml:space="preserve">
+    <value>The MCP initialized notification was not accepted.</value>
+  </data>
+  <data name="TunnelDiagnostic_invalid_binary" xml:space="preserve">
+    <value>The Tailscale executable is invalid. Use a verified official installation.</value>
+  </data>
+  <data name="TunnelDiagnostic_invalid_dns" xml:space="preserve">
+    <value>The device DNS name is invalid or does not belong to the current tailnet.</value>
+  </data>
+  <data name="TunnelDiagnostic_invalid_funnel_json" xml:space="preserve">
+    <value>The Serve/Funnel configuration has an unsupported or invalid structure. Changes were refused.</value>
+  </data>
+  <data name="TunnelDiagnostic_invalid_oauth_metadata" xml:space="preserve">
+    <value>OAuth metadata is invalid. Public authentication was not verified.</value>
+  </data>
+  <data name="TunnelDiagnostic_invalid_ownership" xml:space="preserve">
+    <value>The Funnel ownership record is invalid. Existing mappings must not be taken over.</value>
+  </data>
+  <data name="TunnelDiagnostic_invalid_server_metadata" xml:space="preserve">
+    <value>The MCP server description is invalid.</value>
+  </data>
+  <data name="TunnelDiagnostic_invalid_status_json" xml:space="preserve">
+    <value>Tailscale returned an incompatible or incomplete device status.</value>
+  </data>
+  <data name="TunnelDiagnostic_key_expired" xml:space="preserve">
+    <value>The Tailscale device key expired. Reauthenticate in the official client.</value>
+  </data>
+  <data name="TunnelDiagnostic_key_expiring" xml:space="preserve">
+    <value>The Tailscale device key expires within 14 days. Arrange reauthentication.</value>
+  </data>
+  <data name="TunnelDiagnostic_mapping_changed" xml:space="preserve">
+    <value>The local mapping changed during verification. Readiness was not confirmed.</value>
+  </data>
+  <data name="TunnelDiagnostic_mapping_conflict" xml:space="preserve">
+    <value>HTTPS 443 conflicts with an existing mapping. AgentDock refuses to overwrite it.</value>
+  </data>
+  <data name="TunnelDiagnostic_mapping_missing" xml:space="preserve">
+    <value>The AgentDock Funnel mapping is missing or its local target changed.</value>
+  </data>
+  <data name="TunnelDiagnostic_mcp_protocol_failed" xml:space="preserve">
+    <value>MCP protocol verification failed. Inspect the original diagnostic for the failed stage.</value>
+  </data>
+  <data name="TunnelDiagnostic_missing_identity" xml:space="preserve">
+    <value>Tailscale did not provide a device ID or DNS name.</value>
+  </data>
+  <data name="TunnelDiagnostic_mode_changed" xml:space="preserve">
+    <value>The access mode changed; the previous verification is no longer current.</value>
+  </data>
+  <data name="TunnelDiagnostic_needs_login" xml:space="preserve">
+    <value>Complete login or device authorization in the official Tailscale client.</value>
+  </data>
+  <data name="TunnelDiagnostic_not_installed" xml:space="preserve">
+    <value>Tailscale is not installed. Install its official client to use this optional feature.</value>
+  </data>
+  <data name="TunnelDiagnostic_not_running" xml:space="preserve">
+    <value>Tailscale is not running. Check the official client.</value>
+  </data>
+  <data name="TunnelDiagnostic_oauth_origin_mismatch" xml:space="preserve">
+    <value>Authentication metadata or the MCP challenge does not match the current public origin.</value>
+  </data>
+  <data name="TunnelDiagnostic_offline" xml:space="preserve">
+    <value>This Tailscale device is offline.</value>
+  </data>
+  <data name="TunnelDiagnostic_origin_mismatch" xml:space="preserve">
+    <value>The mapping and AgentDock origin do not match. Recheck the effective access configuration.</value>
+  </data>
+  <data name="TunnelDiagnostic_output_limit" xml:space="preserve">
+    <value>Tailscale output exceeded the size limit.</value>
+  </data>
+  <data name="TunnelDiagnostic_ownership_conflict" xml:space="preserve">
+    <value>Funnel ownership conflicts with another configuration. Taking it over was refused.</value>
+  </data>
+  <data name="TunnelDiagnostic_ownership_required" xml:space="preserve">
+    <value>Verified AgentDock ownership is required before changing this mapping.</value>
+  </data>
+  <data name="TunnelDiagnostic_pending_migration" xml:space="preserve">
+    <value>The previous Funnel mapping needs a verified migration before it can be changed.</value>
+  </data>
+  <data name="TunnelDiagnostic_private_serve_conflict" xml:space="preserve">
+    <value>An existing private Serve mapping conflicts with the requested public mapping.</value>
+  </data>
+  <data name="TunnelDiagnostic_public_protocol_failed" xml:space="preserve">
+    <value>The public endpoint returned an unexpected HTTP result.</value>
+  </data>
+  <data name="TunnelDiagnostic_public_unreachable" xml:space="preserve">
+    <value>The public DNS, TLS or HTTP endpoint is not ready. Verify local state before retrying.</value>
+  </data>
+  <data name="TunnelDiagnostic_response_limit" xml:space="preserve">
+    <value>The public protocol response exceeded the size limit.</value>
+  </data>
+  <data name="TunnelDiagnostic_rollback_conflict" xml:space="preserve">
+    <value>Recovery conflicts with changed mapping ownership. Verify state before attempting further changes.</value>
+  </data>
+  <data name="TunnelDiagnostic_tools_list_failed" xml:space="preserve">
+    <value>MCP tool discovery returned missing or invalid definitions.</value>
+  </data>
+  <data name="TunnelDiagnostic_verification_failed" xml:space="preserve">
+    <value>Funnel verification failed. Check the original diagnostic and current state.</value>
+  </data>
+  <data name="TunnelDiagnostic_verification_pending" xml:space="preserve">
+    <value>Local configuration is ready; public verification is in progress. Do not rebuild the mapping.</value>
+  </data>
+  <data name="TunnelDiagnostic_write_state_unknown" xml:space="preserve">
+    <value>The mapping write result is unknown. Read actual state before retrying.</value>
+  </data>
+  <data name="TunnelDiagnostic_not_configured" xml:space="preserve">
+    <value>AgentDock Funnel is not configured.</value>
+  </data>
+  <data name="TunnelDiagnostic_probe_failed" xml:space="preserve">
+    <value>Public verification did not complete. Local readiness and public reachability are separate.</value>
+  </data>
+  <data name="TunnelDiagnostic_tailscale_error" xml:space="preserve">
+    <value>Tailscale encountered an error. Inspect the original diagnostic.</value>
+  </data>
+  <data name="TunnelOriginalDiagnostic" xml:space="preserve">
+    <value>Original AgentDock diagnostic ({0}):
+{1}</value>
+  </data>
+  <data name="ExecutionTool_agentdock_context" xml:space="preserve">
+    <value>AgentDock context</value>
+  </data>
+  <data name="ExecutionTool_read_file" xml:space="preserve">
+    <value>Read file</value>
+  </data>
+  <data name="ExecutionTool_list_dir" xml:space="preserve">
+    <value>List directory</value>
+  </data>
+  <data name="ExecutionTool_search_text" xml:space="preserve">
+    <value>Search text</value>
+  </data>
+  <data name="ExecutionTool_file_edit" xml:space="preserve">
+    <value>Edit file</value>
+  </data>
+  <data name="ExecutionTool_exec_command" xml:space="preserve">
+    <value>Run command</value>
+  </data>
+  <data name="ExecutionTool_session_observe" xml:space="preserve">
+    <value>Observe command sessions</value>
+  </data>
+  <data name="ExecutionTool_session_act" xml:space="preserve">
+    <value>Act on command sessions</value>
+  </data>
+  <data name="ExecutionTool_task_manage" xml:space="preserve">
+    <value>Manage recoverable tasks</value>
+  </data>
+  <data name="ExecutionTool_workspace_manage" xml:space="preserve">
+    <value>Manage workspaces</value>
+  </data>
+  <data name="ExecutionTool_mcp_manage" xml:space="preserve">
+    <value>Manage dynamic MCP servers</value>
+  </data>
+  <data name="ExecutionTool_mcp_tool_search" xml:space="preserve">
+    <value>Search dynamic MCP tools</value>
+  </data>
+  <data name="ExecutionTool_mcp_tool_inspect" xml:space="preserve">
+    <value>Inspect a dynamic MCP tool</value>
+  </data>
+  <data name="ExecutionTool_mcp_tool_call" xml:space="preserve">
+    <value>Call a dynamic MCP tool</value>
+  </data>
+  <data name="ExecutionTool_plugin_manage" xml:space="preserve">
+    <value>Manage plugins</value>
+  </data>
+  <data name="ExecutionTool_plugin_load" xml:space="preserve">
+    <value>Load a heavy plugin</value>
+  </data>
+  <data name="ExecutionTool_skill_package" xml:space="preserve">
+    <value>Manage Skill packages</value>
+  </data>
+  <data name="ExecutionTool_view_image" xml:space="preserve">
+    <value>View image</value>
+  </data>
+  <data name="ExecutionTool_file_publish" xml:space="preserve">
+    <value>Publish signed file</value>
+  </data>
+  <data name="ExecutionTool_browser_session" xml:space="preserve">
+    <value>Browser session</value>
+  </data>
+  <data name="ExecutionTool_browser_act" xml:space="preserve">
+    <value>Browser actions</value>
+  </data>
+  <data name="ExecutionTool_browser_snapshot" xml:space="preserve">
+    <value>Browser snapshot</value>
+  </data>
+  <data name="ExecutionTool_acp_session" xml:space="preserve">
+    <value>Manage ACP sessions</value>
+  </data>
+  <data name="ExecutionTool_acp_prompt" xml:space="preserve">
+    <value>Run ACP prompts</value>
+  </data>
+  <data name="ExecutionTool_acp_interaction" xml:space="preserve">
+    <value>Handle ACP interactions</value>
+  </data>
+  <data name="ExecutionTool_recall_search" xml:space="preserve">
+    <value>Search NexusDock Recall</value>
+  </data>
+  <data name="ExecutionTool_recall_read" xml:space="preserve">
+    <value>Read NexusDock Recall entry</value>
+  </data>
+  <data name="ExecutionTool_recall_write" xml:space="preserve">
+    <value>Write NexusDock Recall entry</value>
+  </data>
+  <data name="ExecutionTool_recall_maintain" xml:space="preserve">
+    <value>Maintain NexusDock Recall</value>
+  </data>
+  <data name="ExecutionTool_private_note_manage" xml:space="preserve">
+    <value>Manage private notes</value>
+  </data>
+  <data name="ExecutionTool_workflow_template_manage" xml:space="preserve">
+    <value>Manage workflow templates</value>
+  </data>
+  <data name="ExecutionTool_evolve" xml:space="preserve">
+    <value>Evolve AgentDock knowledge</value>
+  </data>
+  <data name="ExecutionOpen" xml:space="preserve">
+    <value>Open</value>
+  </data>
+  <data name="ExecutionExpandConversations" xml:space="preserve">
+    <value>Expand more conversations</value>
+  </data>
+  <data name="ExecutionInsert" xml:space="preserve">
+    <value>Insert</value>
+  </data>
+  <data name="ExecutionInsertSupplement" xml:space="preserve">
+    <value>Insert a supplemental request</value>
+  </data>
+  <data name="ExecutionWithdrawInsertion" xml:space="preserve">
+    <value>Withdraw</value>
+  </data>
+  <data name="ExecutionSendInsertion" xml:space="preserve">
+    <value>Send</value>
+  </data>
+  <data name="ExecutionInsertionHelp" xml:space="preserve">
+    <value>Waits for the next new tool call after sending; expires after 5 minutes without a new call. Attachment does not confirm the model has read it. Shift+Enter adds a line.</value>
+  </data>
+  <data name="ExecutionInsertionInactive" xml:space="preserve">
+    <value>No new tool request in the last 3 minutes; insertion is unavailable.</value>
+  </data>
+  <data name="ExecutionInsertionUnconfirmedLimit" xml:space="preserve">
+    <value>Too many unconfirmed submissions. Check existing insertion status first.</value>
+  </data>
+  <data name="ExecutionInsertionDraftLimit" xml:space="preserve">
+    <value>There are already 128 conversation drafts. Send or clear an existing draft first.</value>
+  </data>
+  <data name="ExecutionInsertionTextLimit" xml:space="preserve">
+    <value>The supplement exceeds 8192 UTF-8 bytes. Shorten it before sending.</value>
+  </data>
+  <data name="ExecutionInsertionTargetChanged" xml:space="preserve">
+    <value>The target task changed. Withdraw the supplement before submitting it again.</value>
+  </data>
+  <data name="ExecutionInsertionPending" xml:space="preserve">
+    <value>{0} waiting for the next new tool call; expires 5 minutes after submission.</value>
+  </data>
+  <data name="ExecutionInsertionReserved" xml:space="preserve">
+    <value>Claimed by the next new tool call; waiting for its response.</value>
+  </data>
+  <data name="ExecutionInsertionAttached" xml:space="preserve">
+    <value>Attached to the tool response; this does not confirm the model has read it.</value>
+  </data>
+  <data name="ExecutionInsertionExpired" xml:space="preserve">
+    <value>Expired: no new tool call arrived within 5 minutes.</value>
+  </data>
+  <data name="ExecutionInsertionCancelled" xml:space="preserve">
+    <value>Insertion cancelled.</value>
+  </data>
+  <data name="ExecutionInsertionDeliveryUnknown" xml:space="preserve">
+    <value>Delivery is unknown. It was not automatically resent.</value>
+  </data>
+  <data name="ExecutionOpenProjectFolder" xml:space="preserve">
+    <value>Open project folder</value>
+  </data>
+  <data name="ExecutionProjectFolderMissing" xml:space="preserve">
+    <value>The project folder does not exist or has moved.</value>
+  </data>
+  <data name="ExecutionTaskCompletedNotification" xml:space="preserve">
+    <value>Task completed</value>
+  </data>
+  <data name="ExecutionPreferencesInvalid" xml:space="preserve">
+    <value>Display preferences are not a supported JSON object. The original file was preserved.</value>
+  </data>
+  <data name="ExecutionPreferencesUnsupported" xml:space="preserve">
+    <value>The display preferences schema is unsupported. The original file was preserved.</value>
+  </data>
+  <data name="ExecutionPreferencesNewer" xml:space="preserve">
+    <value>A newer display preferences schema was found. It was not overwritten.</value>
+  </data>
+  <data name="ExecutionUnattributedGroup" xml:space="preserve">
+    <value>Unattributed records</value>
+  </data>
+  <data name="ExecutionUnassignedProject" xml:space="preserve">
+    <value>No linked project</value>
+  </data>
+  <data name="ExecutionUnidentifiedConversation" xml:space="preserve">
+    <value>Unidentified conversation · standalone calls</value>
+  </data>
+  <data name="McpStatusUnknownCount" xml:space="preserve">
+    <value>{0} · tool count not yet discovered</value>
+  </data>
+  <data name="ExecutionApi_INSERTION_INACTIVE" xml:space="preserve">
+    <value>No new tool request arrived in the last 3 minutes. The supplement was not accepted.</value>
+  </data>
+  <data name="ExecutionApi_INSERTION_CONFLICT" xml:space="preserve">
+    <value>This submission ID already belongs to a different supplement. Check the existing submission.</value>
+  </data>
+  <data name="ExecutionApi_INSERTION_LIMIT" xml:space="preserve">
+    <value>The insertion queue is full. Check pending supplements before retrying.</value>
+  </data>
+  <data name="ExecutionApi_INSERTION_FAILED" xml:space="preserve">
+    <value>The insertion operation failed. Check its state before resubmitting.</value>
+  </data>
+  <data name="ExecutionApi_INSERTION_UNAVAILABLE" xml:space="preserve">
+    <value>The insertion queue is unavailable. No supplement was sent.</value>
+  </data>
+  <data name="ExecutionApi_NOTIFICATIONS_UNAVAILABLE" xml:space="preserve">
+    <value>Task completion notifications are unavailable.</value>
+  </data>
+  <data name="ExecutionApi_SIDEBAR_UNAVAILABLE" xml:space="preserve">
+    <value>The project conversation list is unavailable.</value>
+  </data>
+  <data name="DisplayAndTheme" xml:space="preserve">
+    <value>Display and theme</value>
+  </data>
+  <data name="ExecutionProject" xml:space="preserve"><value>Project</value></data>
+  <data name="ExecutionSwitchCompact" xml:space="preserve"><value>Switch to compact view</value></data>
+  <data name="ExecutionSwitchDetailed" xml:space="preserve"><value>Switch to detailed view</value></data>
+  <data name="TunnelPhaseCheckingLocal" xml:space="preserve"><value>Checking local configuration</value></data>
+  <data name="TunnelPhaseNeedsApproval" xml:space="preserve"><value>Initial authorization required</value></data>
+  <data name="TunnelPhaseLocalReady" xml:space="preserve"><value>Local configuration ready</value></data>
+  <data name="TunnelPhaseVerifyingPublic" xml:space="preserve"><value>Verifying public access</value></data>
+  <data name="TunnelPhaseDegraded" xml:space="preserve"><value>Public access is not ready; local settings retained</value></data>
+  <data name="TunnelPhaseFailed" xml:space="preserve"><value>Verification failed</value></data>
+  <data name="TunnelPhaseReady" xml:space="preserve"><value>Public access verified</value></data>
+  <data name="TunnelPhaseCommitted" xml:space="preserve"><value>Local settings saved. Public verification continues in the background.</value></data>
+  <data name="ExecutionRpcDurationPrefix" xml:space="preserve"><value>RPC duration: </value></data>
+  <data name="ExecutionLegacyDurationPrefix" xml:space="preserve"><value>Historical total duration: </value></data>
+  <data name="ExecutionLegacyDurationNote" xml:space="preserve"><value>; the original record has no RPC/execution/wait breakdown.</value></data>
+  <data name="ExecutionOperationDurationPrefix" xml:space="preserve"><value>Operation completion duration: </value></data>
+  <data name="ExecutionOperationDurationSource" xml:space="preserve"><value> (source: operation_elapsed_ms)</value></data>
+  <data name="ExecutionDurationNotRecorded" xml:space="preserve"><value>Total duration: not recorded</value></data>
+  <data name="ExecutionDryRun" xml:space="preserve"><value>Preview</value></data>
+  <data name="ExecutionPartialEditHint" xml:space="preserve"><value>Partial execution: only confirmed persisted changes are counted; unverified paths remain unknown.</value></data>
+  <data name="ExecutionPreviewEditHint" xml:space="preserve"><value>Preview only; no changes saved. Proposed line counts are in file details.</value></data>
+  <data name="ExecutionActualEditHint" xml:space="preserve"><value>Logical lines actually added/deleted by this root call.</value></data>
+  <data name="ExecutionUnknownEditHint" xml:space="preserve"><value>Changed lines were not counted or the outcome is unknown; not treated as zero.</value></data>
+  <data name="ExecutionToolPrefix" xml:space="preserve"><value>Tool: </value></data>
+  <data name="ExecutionRpcReturnedPrefix" xml:space="preserve"><value>RPC returned: </value></data>
+  <data name="ExecutionPhasePrefix" xml:space="preserve"><value>Execution: </value></data>
+  <data name="ExecutionWaitPrefix" xml:space="preserve"><value>Pre-execution wait: </value></data>
+  <data name="ExecutionWaitObservedNote" xml:space="preserve"><value> (includes observed preparation and approval waits)</value></data>
+  <data name="ExecutionProcessDurationPrefix" xml:space="preserve"><value>Background command process: </value></data>
+  <data name="ExecutionStderrPrefix" xml:space="preserve"><value>Standard error
+</value></data>
+  <data name="ExecutionOutputTruncatedPrefix" xml:space="preserve"><value>Output was truncated; only the retained portion is shown.
+
+</value></data>
+  <data name="ExecutionRequestSaving" xml:space="preserve"><value>Saving call arguments</value></data>
+  <data name="ExecutionOutputWaiting" xml:space="preserve"><value>Waiting for output</value></data>
+  <data name="ExecutionOutputStreaming" xml:space="preserve"><value>Streaming output</value></data>
+  <data name="ExecutionOutputPartial" xml:space="preserve"><value>Partial output</value></data>
+  <data name="ExecutionInternalCall" xml:space="preserve"><value>Internal call</value></data>
+  <data name="ExecutionLegacyRecord" xml:space="preserve"><value>Legacy record</value></data>
+  <data name="ExecutionPayloadInvalidBoundary" xml:space="preserve"><value>Invalid tool output page boundary.</value></data>
+  <data name="ExecutionPayloadNoProgress" xml:space="preserve"><value>Tool output pagination did not advance.</value></data>
+  <data name="ExecutionStreamSizeLimit" xml:space="preserve"><value>Execution event exceeds its size limit.</value></data>
+  <data name="ExecutionStreamInvalidSequence" xml:space="preserve"><value>Invalid execution event sequence.</value></data>
+  <data name="ExecutionStreamInvalidId" xml:space="preserve"><value>Invalid execution event ID.</value></data>
+  <data name="ExecutionStreamLineLimit" xml:space="preserve"><value>Execution event line exceeds its size limit.</value></data>
+  <data name="TunnelVerificationIncompletePrefix" xml:space="preserve"><value>Public verification did not complete: </value></data>
+  <data name="TunnelCheckingLocalNotice" xml:space="preserve"><value>Checking local settings. The interface remains usable.</value></data>
+  <data name="TunnelVerificationRetainedPrefix" xml:space="preserve"><value>Public verification is incomplete; local settings retained: </value></data>
+  <data name="ExecutionCollapseAllProjects" xml:space="preserve"><value>Collapse all projects</value></data>
+  <data name="ExecutionTotalDuration" xml:space="preserve"><value>Total duration</value></data>
+  <data name="ExecutionHistoryRetry" xml:space="preserve"><value>History could not be loaded. Retry</value></data>
+  <data name="ExecutionRequestAndOutput" xml:space="preserve"><value>Request and output</value></data>
+  <data name="ExecutionCopyRequest" xml:space="preserve"><value>Copy request</value></data>
+  <data name="ExecutionCopyRequestHelp" xml:space="preserve"><value>Copy the current redacted call-argument page</value></data>
+  <data name="ExecutionCopyOutputHelp" xml:space="preserve"><value>Copy the current redacted output page</value></data>
+  <data name="ExecutionRequest" xml:space="preserve"><value>Request</value></data>
+  <data name="ExecutionOutput" xml:space="preserve"><value>Output</value></data>
+  <data name="ExecutionPreviousRequest" xml:space="preserve"><value>Previous call arguments</value></data>
+  <data name="ExecutionNextRequest" xml:space="preserve"><value>Next call arguments</value></data>
+  <data name="ExecutionRequestRetry" xml:space="preserve"><value>Retry reading request</value></data>
+  <data name="ExecutionActualRequest" xml:space="preserve"><value>Actual call arguments</value></data>
+  <data name="ExecutionPreviousOutput" xml:space="preserve"><value>Previous output</value></data>
+  <data name="ExecutionNextOutput" xml:space="preserve"><value>Next output</value></data>
+  <data name="ExecutionOutputRetry" xml:space="preserve"><value>Retry reading output</value></data>
+  <data name="ExecutionProgress" xml:space="preserve"><value>Execution progress</value></data>
+  <data name="ExecutionActualOutput" xml:space="preserve"><value>Actual tool output</value></data>
+  <data name="ActivitySummaryLastRequest" xml:space="preserve"><value>Last tool request: {0:T}</value></data>
+  <data name="ActivitySummaryNoRequest" xml:space="preserve"><value>No recorded tool request</value></data>
+  <data name="ActivitySummaryStale" xml:space="preserve"><value>Unavailable or stale</value></data>
+  <data name="LocalHealthyPublicUnavailable" xml:space="preserve"><value>Local Core is healthy; managed public transport is not ready</value></data>
+  <data name="ExecutionPayloadSaved" xml:space="preserve"><value>Saved</value></data>
+  <data name="ExecutionPayloadPosition" xml:space="preserve"><value>{0:N0}–{1:N0} / {2:N0} bytes · {3:N0} lines</value></data>
+  <data name="ExecutionPayloadPreviewPosition" xml:space="preserve"><value>Preview / {0:N0} bytes · {1:N0} lines</value></data>
+  <data name="ExecutionPayloadLegacyMissing" xml:space="preserve"><value>The legacy record did not retain {0}.</value></data>
+  <data name="ExecutionPayloadInternalNotice" xml:space="preserve"><value>This internal call belongs to root call {0}. See the root for stored requests and output.</value></data>
+  <data name="ExecutionFileDetailsFormat" xml:space="preserve"><value>{0} · {1}
+Target: {2}
+Preview: {3}
+Dispatched: {4}
+Actually changed: {5}
+Affected files: {6}
+Statistics: {7}
+{8} added/deleted lines: {9} / {10}
+</value></data>
+  <data name="ExecutionPartialConfirmed" xml:space="preserve"><value>Partial; confirmed changes only</value></data>
+  <data name="ExecutionProposed" xml:space="preserve"><value>Proposed</value></data>
+  <data name="ExecutionActual" xml:space="preserve"><value>Actual</value></data>
+  <data name="ExecutionFilesTruncated" xml:space="preserve"><value>
+File details exceed the preview limit.</value></data>
+  <data name="OwnedTool_agentdock_context" xml:space="preserve"><value>Load context{0}</value></data>
+  <data name="OwnedTool_workspace_context" xml:space="preserve"><value>Read workspace rules{0}</value></data>
+  <data name="OwnedTool_read_file" xml:space="preserve"><value>Read file{0}</value></data>
+  <data name="OwnedTool_list_dir" xml:space="preserve"><value>List directory{0}</value></data>
+  <data name="OwnedTool_search_text" xml:space="preserve"><value>Search text{0}</value></data>
+  <data name="OwnedTool_exec_command" xml:space="preserve"><value>Run command{0}</value></data>
+  <data name="OwnedTool_file_edit" xml:space="preserve"><value>Edit file{0}</value></data>
+  <data name="OwnedTool_task_manage" xml:space="preserve"><value>Manage task{0}</value></data>
+  <data name="OwnedTool_workspace_manage" xml:space="preserve"><value>Manage workspace{0}</value></data>
+  <data name="OwnedTool_mcp_tool_search" xml:space="preserve"><value>Discover tools{0}</value></data>
+  <data name="OwnedTool_mcp_tool_list" xml:space="preserve"><value>Read tool catalog{0}</value></data>
+  <data name="OwnedTool_mcp_tool_inspect" xml:space="preserve"><value>Inspect tool schema{0}</value></data>
+  <data name="OwnedTool_plugin_load" xml:space="preserve"><value>Load plugin{0}</value></data>
+  <data name="OwnedTool_session_observe" xml:space="preserve"><value>Observe command session{0}</value></data>
+  <data name="OwnedTool_session_act" xml:space="preserve"><value>Control command session{0}</value></data>
+  <data name="OwnedPermissionUpdate" xml:space="preserve"><value>Change execution permissions</value></data>
+  <data name="OwnedPermissionUpdated" xml:space="preserve"><value>Scope={0} ID={1} mode={2} revision={3}. Operating-system privileges were not changed.</value></data>
+  <data name="NativeOperationFailed" xml:space="preserve"><value>The native operation failed. No success is implied.</value></data>
+  <data name="NativeTaskOwnerMismatch" xml:space="preserve"><value>The scheduled task does not match this runtime and Windows user. It was not adopted.</value></data>
+  <data name="NativeTaskStopIncomplete" xml:space="preserve"><value>The previous runtime has not stopped completely. No replacement was started.</value></data>
+  <data name="NativeElevatedUnavailable" xml:space="preserve"><value>The requested elevated runtime is unavailable. Check task ownership and the original diagnostic; no fallback mode was selected.</value></data>
+  <data name="NativeTaskBackupInvalid" xml:space="preserve"><value>The task recovery data could not be validated. Preserve it and restore the recorded owner before retrying.</value></data>
+  <data name="NativeDiagnosticOriginal" xml:space="preserve"><value>{0}
+
+Original diagnostic:
+{1}</value></data>
+  <data name="LocalHealthyPublicUnknown" xml:space="preserve"><value>Local Core is healthy; public transport status is unknown</value></data>
 </root>

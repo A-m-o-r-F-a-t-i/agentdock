@@ -58,7 +58,7 @@ internal sealed class FunnelVerificationService : IDisposable
                 lock (_gate)
                 {
                     if (!_disposed && generation == _generation)
-                        report(new NativeTunnelStatus { Provider = "tailscale", Mode = "funnel", Phase = "Degraded", DiagnosticCode = "probe_failed", Diagnostic = "公网验证未完成：" + error.Message });
+                        report(new NativeTunnelStatus { Provider = "tailscale", Mode = "funnel", Phase = "Degraded", DiagnosticCode = "probe_failed", Diagnostic = UiText.Get("TunnelVerificationIncompletePrefix") + error.Message });
                 }
             }
             finally

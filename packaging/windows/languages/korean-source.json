@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "component": "Inno Setup official Korean translation",
+  "compiler_package": "6.7.3",
+  "language_file_version": "6.5.0+",
+  "maintainer": "VenusGirl and contributors named in Korean.isl",
+  "source": "https://jrsoftware.org/files/istrans/",
+  "license_source": "https://jrsoftware.org/files/is/license.txt",
+  "modified": false,
+  "files": {
+    "Korean.isl": "cb56d6ea5c082bcf6b4acc1ae4c303ba91f662b1d0bfe05e4d3902c38c41e02a",
+    "LICENSE-InnoSetup.txt": "2e5346868c2a18434489824e11d65c3031620f792fefc415d05f19cd441abf5c"
+  }
+}

@@ -45,7 +45,7 @@ public sealed partial class RuntimeService
         return snapshot?.Value ?? new NativeTunnelStatus
         {
             Provider = "tailscale", Mode = "funnel", Phase = "CheckingLocal", PublicUrl = publicUrl,
-            Diagnostic = "正在核对本地配置，界面可继续使用。"
+            Diagnostic = UiText.Get("TunnelCheckingLocalNotice")
         };
     }
 
@@ -109,7 +109,7 @@ public sealed partial class RuntimeService
     private static NativeTunnelStatus FailedProbe(Exception error) => new()
     {
         Provider = "tailscale", Mode = "funnel", Phase = "Degraded", DiagnosticCode = "probe_failed",
-        Diagnostic = "公网验证暂未完成，本地配置未撤销：" + (error is OperationCanceledException ? UiText.Get("AccessTimeout") : error.Message)
+        Diagnostic = UiText.Get("TunnelVerificationRetainedPrefix") + (error is OperationCanceledException ? UiText.Get("AccessTimeout") : error.Message)
     };
 
     private static async Task<string> RunBoundedTailscaleProbeAsync(ProcessStartInfo startInfo, CancellationTokenSource timeout)

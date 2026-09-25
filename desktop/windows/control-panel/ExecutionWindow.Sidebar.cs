@@ -233,9 +233,9 @@ public partial class ExecutionWindow
     {
         if (sender is not FrameworkElement { DataContext: CollectionViewGroup { Name: WorkspaceGroupKey key } } anchor) return;
         e.Handled = true; var root = key.Root; var menu = Menu(anchor);
-        ActionMenu(menu, "打开项目目录", () =>
+        ActionMenu(menu, UiText.Get("ExecutionOpenProjectFolder"), () =>
         {
-            if (!Path.IsPathFullyQualified(root) || !Directory.Exists(root)) throw new IOException("项目目录不存在或已移动。");
+            if (!Path.IsPathFullyQualified(root) || !Directory.Exists(root)) throw new IOException(UiText.Get("ExecutionProjectFolderMissing"));
             Process.Start(new ProcessStartInfo { FileName = root, UseShellExecute = true }); return Task.CompletedTask;
         }, !string.IsNullOrWhiteSpace(root));
         OpenMenu(menu);

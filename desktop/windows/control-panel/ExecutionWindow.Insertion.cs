@@ -59,7 +59,7 @@ public partial class ExecutionWindow
         var eligible = CanUseComposer();
         InsertionTextBox.IsReadOnly = _selected is { } current && !_insertionDrafts.ContainsKey(current.Id) && _insertionDrafts.Count >= MaximumDrafts;
         InsertButton.IsEnabled = eligible;
-        InsertButton.ToolTip = eligible ? "插入补充要求" : "最近 3 分钟没有工具调用";
+        InsertButton.ToolTip = eligible ? UiText.Get("ExecutionInsertSupplement") : UiText.Get("ExecutionInsertionInactive");
         if (eligible && (_bottomPane is null || _bottomPane == InsertionPanel)) OpenDetails("", InsertionPanel);
         else if (!eligible && _bottomPane == InsertionPanel) { SaveComposerDraft(); HideBottomPane(); }
         StopConversationButton.Visibility = eligible ? Visibility.Visible : Visibility.Collapsed;
@@ -92,7 +92,7 @@ public partial class ExecutionWindow
         if (!_insertionSubmissions.TryGetValue(conversation, out var submission) || submission.Text != text)
         {
             if (_insertionSubmissions.Count >= MaximumDrafts && !_insertionSubmissions.ContainsKey(conversation))
-            { _insertionSending.Remove(conversation); InsertionStatus.Text = "待确认发送过多，请先核对已有插入状态。"; return; }
+            { _insertionSending.Remove(conversation); InsertionStatus.Text = UiText.Get("ExecutionInsertionUnconfirmedLimit"); return; }
             _insertionSubmissions[conversation] = submission = (Guid.NewGuid().ToString("N"), text);
         }
         UpdateComposerAvailability();
@@ -127,25 +127,25 @@ public partial class ExecutionWindow
     {
         if (InsertionStatus is null) return;
         WithdrawInsertionButton.Visibility = Visibility.Collapsed;
-        if (InsertionTextBox.IsReadOnly) { InsertionStatus.Text = "已有 128 个对话草稿，请先发送或清空已有草稿。"; return; }
+        if (InsertionTextBox.IsReadOnly) { InsertionStatus.Text = UiText.Get("ExecutionInsertionDraftLimit"); return; }
         if (Encoding.UTF8.GetByteCount(InsertionTextBox.Text) > InsertionTextLimit)
-        { InsertionStatus.Text = "补充内容超过 8192 字节，请缩短后发送。"; return; }
+        { InsertionStatus.Text = UiText.Get("ExecutionInsertionTextLimit"); return; }
         var items = _selected is { } selected ? _insertionStates.GetValueOrDefault(selected.Id, []) : [];
         var pending = items.Where(item => item.Text("status") is "pending" or "target_changed").ToArray();
         if (pending.Length > 0)
         {
-            InsertionStatus.Text = pending.Any(item => item.Text("status") == "target_changed") ? "目标任务已变化，请撤回后重新发送。" : $"{pending.Length} 条等待下一次工具调用";
+            InsertionStatus.Text = pending.Any(item => item.Text("status") == "target_changed") ? UiText.Get("ExecutionInsertionTargetChanged") : UiText.Format("ExecutionInsertionPending", pending.Length);
             WithdrawInsertionButton.Visibility = Visibility.Visible;
         }
         else
         {
             InsertionStatus.Text = items.LastOrDefault().Text("status") switch
             {
-                "reserved" => "已由下一次调用领取，等待返回",
-                "attached" => "已写入工具响应",
-                "expired" => "5 分钟没有新工具调用，此次插入已作废",
-                "cancelled" => "插入已取消",
-                "delivery_unknown" => "投递结果未知，未自动重发",
+                "reserved" => UiText.Get("ExecutionInsertionReserved"),
+                "attached" => UiText.Get("ExecutionInsertionAttached"),
+                "expired" => UiText.Get("ExecutionInsertionExpired"),
+                "cancelled" => UiText.Get("ExecutionInsertionCancelled"),
+                "delivery_unknown" => UiText.Get("ExecutionInsertionDeliveryUnknown"),
                 _ => ""
             };
         }
