@@ -145,7 +145,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          go test -p 2 ./... -count=1 -timeout=8m
+          # The activity package measures a strict 2s cold projection target.
+          # Do not share that measurement with unrelated in-test compiler
+          # processes on small native runners. Every package still runs, and
+          # the timed contract is repeated three times without relaxing it.
+          all_packages="$(go list ./...)"
+          activity_package="github.com/uvwt/agentdock/internal/activity"
+          remaining=()
+          found=0
+          while IFS= read -r package; do
+            if [[ "$package" == "$activity_package" ]]; then
+              found=$((found + 1))
+            else
+              remaining+=("$package")
+            fi
+          done <<< "$all_packages"
+          test "$found" -eq 1
+          test "${#remaining[@]}" -gt 0
+          go test -p 1 ./internal/activity -count=1 -timeout=8m
+          go test -p 1 ./internal/activity -run '^TestExecutionProjectionScale100k$' -count=3 -v -timeout=8m
+          go test -p 2 "${remaining[@]}" -count=1 -timeout=8m
           go vet ./...
       - name: Linux native package tools
         if: matrix.platform == 'linux'
