@@ -382,3 +382,17 @@ scripts:
     public_contract: false
     deletable: true
     notes: 在真实 Inno 父进程下验证原生执行器的最小安装器夹具。
+
+  - path: packaging/windows/prepare-bundled-rg.ps1
+    class: packaging
+    owner: release
+    public_contract: false
+    deletable: false
+    notes: Pinned Windows x64 rg and license/manifest verification in the generation payload; does not modify PATH.
+
+  - path: scripts/test/test-bundled-rg-package.ps1
+    class: test
+    owner: release
+    public_contract: false
+    deletable: false
+    notes: Cache-only bundled rg acceptance and corrupt-payload rejection fixtures; no product installation.

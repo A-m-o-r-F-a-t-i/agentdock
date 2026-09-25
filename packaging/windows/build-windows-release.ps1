@@ -4,6 +4,8 @@ param(
     [ValidateSet('amd64','arm64')][string[]] $Architectures = @('amd64','arm64'),
     [string] $OutputDirectory = '',
     [string] $CloudflaredBinary = '',
+    [string] $InnoCompiler = '',
+    [string] $ToolCacheDirectory = (Join-Path ([IO.Path]::GetTempPath()) 'agentdock-build-cache'),
     [switch] $SignedBuild,
     [switch] $Candidate
 )
@@ -79,6 +81,9 @@ try {
         Assert-NativeExit 'Core Skill bundle'
         if (Test-Path -LiteralPath (Join-Path $payload 'wsl-helper')) { Remove-Item -LiteralPath (Join-Path $payload 'wsl-helper') -Recurse -Force }
         Copy-Item -LiteralPath $helperRoot -Destination (Join-Path $payload 'wsl-helper') -Recurse
+        if ($architecture -eq 'amd64') {
+            & (Join-Path $PSScriptRoot 'prepare-bundled-rg.ps1') -Destination (Join-Path $payload 'share\agentdock\bin') -CacheDirectory $ToolCacheDirectory | Out-Null
+        }
         if ($SignedBuild) {
             & (Join-Path $PSScriptRoot 'sign-windows.ps1') -Path @('agentdock.exe','agentdock-tray.exe','agentdock-arbiter.exe','agentdock-shim.exe','agentdock-tray-shim.exe').ForEach({ Join-Path $payload $_ })
         }
@@ -88,7 +93,7 @@ try {
         Write-Checksum $archive
         $parameters = @{
             Version=$version; Architecture=$architecture; AgentDockArchive=$archive
-            AgentDockChecksumFile="$archive.sha256"; CloudflaredBinary=$CloudflaredBinary; OutputDirectory=$releaseRoot
+            AgentDockChecksumFile="$archive.sha256"; CloudflaredBinary=$CloudflaredBinary; OutputDirectory=$releaseRoot; InnoCompiler=$InnoCompiler
         }
         if ($SignedBuild) { $parameters.SignedBuild=$true }
         & (Join-Path $PSScriptRoot 'build-windows-offline-setup.ps1') @parameters

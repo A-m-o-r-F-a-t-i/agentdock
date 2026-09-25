@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"github.com/uvwt/agentdock/internal/bundledrg"
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 )
 
@@ -40,6 +41,17 @@ type windowsUpdatePlan struct {
 }
 
 func applyPlatformUpdate(ctx context.Context, request applyRequest) (applyResult, error) {
+	// The legacy flat updater cannot transact a versioned search component.
+	// Keep legacy archives readable, but never silently discard a new bundle.
+	if request.DesktopStagedPath != "" {
+		present, err := bundledrg.VerifyIfPresent(ctx, request.DesktopStagedPath)
+		if err != nil {
+			return applyResult{}, err
+		}
+		if _, _, generationAware := windowsGenerationInstall(request.CurrentPath); present && (!generationAware || request.DesktopOnly) {
+			return applyResult{}, errors.New("offline-setup-required: install or repair this AgentDock package with its verified offline Setup.exe; the legacy component updater cannot preserve generation ownership")
+		}
+	}
 	if request.DesktopOnly {
 		return applyWindowsDesktopOnlyUpdate(ctx, request)
 	}

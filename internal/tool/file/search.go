@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/uvwt/agentdock/internal/bundledrg"
 	processcontrol "github.com/uvwt/agentdock/internal/process"
 	"github.com/uvwt/agentdock/internal/workspace"
 )
@@ -96,11 +97,22 @@ func (svc *Service) SearchText(ctx context.Context, request SearchRequest) (Resu
 }
 
 func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts SearchOptions) (Result, bool, error) {
-	rg, err := exec.LookPath("rg")
+	selection, err := selectRG(ctx)
 	if err != nil {
+		if errors.Is(err, bundledrg.ErrIntegrity) {
+			return nil, true, toolErrorCause("BUNDLED_TOOL_INTEGRITY", "bundled ripgrep is incomplete or failed integrity verification; repair AgentDock using its verified offline Setup.exe", "runtime", map[string]any{"engine": "rg", "engine_source": "bundled"}, err)
+		}
+		return nil, true, searchExecutionError(ctx, "rg", err)
+	}
+	if selection.path == "" {
 		return nil, false, nil
 	}
-	args := []string{"--json", "--line-number", "--column", "--color", "never"}
+	defer selection.close()
+	return svc.searchTextSelectedRG(ctx, p, opts, selection)
+}
+
+func (svc *Service) searchTextSelectedRG(ctx context.Context, p workspace.Path, opts SearchOptions, selection rgSelection) (Result, bool, error) {
+	args := []string{"--no-config", "--json", "--line-number", "--column", "--color", "never"}
 	if !opts.Regex {
 		args = append(args, "--fixed-strings")
 	}
@@ -116,20 +128,28 @@ func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts Sea
 	if opts.ContextLines > 0 {
 		args = append(args, "--context", strconv.Itoa(opts.ContextLines))
 	}
-	args = append(args, opts.Query, p.Abs)
+	// Keep patterns (including leading hyphens) distinct from flags and paths.
+	args = append(args, "-e", opts.Query, "--", p.Abs)
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, rg, args...)
+	cmd := exec.CommandContext(ctx, selection.path, args...)
 	cmd.Dir = p.Abs
 	if info, statErr := os.Stat(p.Abs); statErr == nil && !info.IsDir() {
 		cmd.Dir = filepath.Dir(p.Abs)
 	}
 	processcontrol.Configure(cmd)
-	output, err := cmd.Output()
+	stdout := rgBoundedOutput{limit: 32 << 20, cancel: cancel}
+	stderr := rgBoundedOutput{limit: 64 << 10, cancel: cancel}
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	if stdout.exceeded || stderr.exceeded {
+		return nil, true, toolErrorCause("RESOURCE_LIMIT", "ripgrep exceeded its output budget", "runtime", map[string]any{"engine": "rg", "resource": "output"}, errSearchResourceLimit)
+	}
+	output := stdout.Bytes()
 	if err != nil {
 		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 {
-			return Result{"query": opts.Query, "engine": "rg", "matches": []map[string]any{}, "total_matches": 0, "truncated": false}, true, nil
+			return selection.annotate(Result{"query": opts.Query, "engine": "rg", "matches": []map[string]any{}, "total_matches": 0, "truncated": false}), true, nil
 		}
 		return nil, true, searchExecutionError(ctx, "rg", err)
 	}
@@ -137,7 +157,7 @@ func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts Sea
 	if !ok {
 		return nil, true, toolError("SEARCH_FAILED", "failed to parse ripgrep search results", "runtime")
 	}
-	return Result{"query": opts.Query, "engine": "rg", "matches": matches, "total_matches": len(matches), "truncated": truncated}, true, nil
+	return selection.annotate(Result{"query": opts.Query, "engine": "rg", "matches": matches, "total_matches": len(matches), "truncated": truncated}), true, nil
 }
 
 func (svc *Service) parseRGJSON(output []byte, searchRoot string, opts SearchOptions) ([]map[string]any, bool, bool) {
@@ -403,4 +423,24 @@ func searchExecutionError(ctx context.Context, engine string, err error) error {
 		return toolErrorCause("RESOURCE_LIMIT", "text search exceeded its time limit", "runtime", map[string]any{"engine": engine, "resource": "time"}, err)
 	}
 	return toolErrorCause("SEARCH_FAILED", "text search failed", "runtime", map[string]any{"engine": engine}, err)
+}
+
+// The helper is specific to structured rg output. It neither alters process
+// supervision nor silently substitutes another search engine after a failure.
+type rgBoundedOutput struct {
+	bytes.Buffer
+	limit    int
+	exceeded bool
+	cancel   context.CancelFunc
+}
+
+func (output *rgBoundedOutput) Write(data []byte) (int, error) {
+	remaining := output.limit - output.Len()
+	if len(data) <= remaining {
+		return output.Buffer.Write(data)
+	}
+	n, _ := output.Buffer.Write(data[:remaining])
+	output.exceeded = true
+	output.cancel()
+	return n, errSearchResourceLimit
 }
