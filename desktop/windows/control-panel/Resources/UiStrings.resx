@@ -921,4 +921,8 @@ Update now?</value>
   <data name="PublicMetadataMismatch" xml:space="preserve"><value>Metadata does not match the current origin</value></data>
   <data name="PublicDiscoveryAuthorizationRequired" xml:space="preserve"><value>Public endpoint reachable; authentication discovery passed</value></data>
   <data name="PublicOAuthCapabilitiesMissing" xml:space="preserve"><value>OAuth metadata is missing authorization code, S256 or refresh support.</value></data>
+  <data name="ActivitySummaryCounts" xml:space="preserve"><value>{0} running · {1} pending approval · {2} unknown outcomes</value></data>
+  <data name="ActivitySummaryLastRequest" xml:space="preserve"><value>Last tool request: {0:T}</value></data>
+  <data name="ActivitySummaryNoRequest" xml:space="preserve"><value>No recorded tool request</value></data>
+  <data name="ActivitySummaryStale" xml:space="preserve"><value>Unavailable or stale</value></data>
 </root>

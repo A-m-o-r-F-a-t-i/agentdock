@@ -49,6 +49,7 @@ public partial class MainWindow : Window
         SelectUiLanguage(UiText.ReadPreference());
         _updatingUi = false;
         Closing += MainWindow_Closing;
+        InitializeActivitySummary();
     }
 
     internal void CloseForReplacement()
@@ -83,7 +84,6 @@ public partial class MainWindow : Window
             await capabilitiesTask;
             if (!snapshot.Healthy) await RefreshCapabilitiesAsync(false, showErrors: false);
             FooterStatusText.Text = UiText.Format("LastRefresh", snapshot.CheckedAt);
-            await RefreshActivitySummaryAsync();
             await AutoTestPublicAsync(snapshot);
         }
         catch (Exception ex)

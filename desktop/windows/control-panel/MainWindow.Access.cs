@@ -7,7 +7,8 @@ public partial class MainWindow
     private long _accessRevision;
     private bool _namedDraftDirty;
     private bool _accessApplyFailed;
-    private DateTimeOffset? _activitySummaryAt;
+    private ExecutionSummaryObserver? _activitySummary;
+    private ActivityClient? _activitySummaryClient;
 
     private void InvalidateAccessChecks()
     {
@@ -48,20 +49,24 @@ public partial class MainWindow
         if (System.Windows.Application.Current is App app) app.ShowActivityCenter();
     }
 
-    private async Task RefreshActivitySummaryAsync()
+    private void InitializeActivitySummary()
     {
-        try
-        {
-            using var client = new ActivityClient(_runtime);
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(4));
-            var overview = await client.ExecutionGetAsync("/internal/runtime/execution", timeout.Token);
-            var stats = overview.Field("statistics");
-            _activitySummaryAt = DateTimeOffset.Now;
-            ActivitySummaryText.Text = $"{stats.Number("running")} 运行中 · {stats.Number("pending")} 待审批 · {stats.Number("unknown")} 结果未知";
-        }
-        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or System.IO.IOException or System.Text.Json.JsonException or OperationCanceledException or InvalidOperationException)
-        {
-            ActivitySummaryText.Text = UiText.Get("StatusUnavailable") + (_activitySummaryAt is { } at ? " · " + UiText.Format("LastRefresh", at) : "");
-        }
+        _activitySummaryClient = new ActivityClient(_runtime);
+        _activitySummary = new ExecutionSummaryObserver(
+            async token => (await _activitySummaryClient.ReadExecutionOverviewAsync(token)).Summary,
+            view =>
+            {
+                if (!IsVisible) return;
+                var text = view.Snapshot is { } snapshot
+                    ? UiText.Format("ActivitySummaryCounts", snapshot.Running, snapshot.Pending, snapshot.Unknown) + " · " +
+                      (snapshot.LastToolCallAt is { } last ? UiText.Format("ActivitySummaryLastRequest", last.ToLocalTime()) : UiText.Get("ActivitySummaryNoRequest"))
+                    : UiText.Get("StatusUnavailable");
+                if (view.Stale) text += " · " + UiText.Get("ActivitySummaryStale");
+                ActivitySummaryText.Text = text;
+                ActivitySummaryText.ToolTip = view.LastSuccess is { } at ? UiText.Format("LastRefresh", at) : UiText.Get("NotChecked");
+            });
+        Loaded += (_, _) => _activitySummary.SetVisible(IsVisible);
+        IsVisibleChanged += (_, _) => _activitySummary.SetVisible(IsLoaded && IsVisible);
+        Closed += (_, _) => { _activitySummary.Dispose(); _activitySummaryClient.Dispose(); };
     }
 }
