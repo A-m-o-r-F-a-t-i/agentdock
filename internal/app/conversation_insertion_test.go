@@ -31,7 +31,7 @@ func TestInsertionRuntimeOnlyNextExternalRootAndOwnConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := queued["insertion"].(insertion.Item)
+	item := queued["insertion"].(insertion.PublicItem)
 	if blocks := r.FinishToolResponse(callCtx, old, true); len(blocks) != 0 {
 		t.Fatal("old call consumed new input")
 	}
@@ -68,8 +68,8 @@ func TestInsertionRuntimeOnlyNextExternalRootAndOwnConversation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := view["insertions"].([]insertion.Item)
-	if items[0].Status != "delivery_unknown" || items[0].Owner != "" || items[0].ReceiptToken != "" {
+	items := view["insertions"].([]insertion.PublicItem)
+	if items[0].Status != "inner_appended" || items[0].DeliveryReason != "awaiting_receiver_receipt" || items[0].Owner != "" || items[0].ReceiptToken != "" {
 		t.Fatalf("bad queue projection=%+v", items)
 	}
 	message := next.CompletedAdditions().UserMessages[0]
@@ -99,7 +99,7 @@ func TestInsertionRuntimeTaskSwitchAndTermination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if queue["insertions"].([]insertion.Item)[0].Status != "target_changed" {
+	if queue["insertions"].([]insertion.PublicItem)[0].Status != "target_changed" {
 		t.Fatal("task switch not paused")
 	}
 	if _, err = r.RuntimeConversationLifecycle(local, id, "terminate", ConversationLifecycleRequest{Confirm: true}); err != nil {
@@ -109,7 +109,7 @@ func TestInsertionRuntimeTaskSwitchAndTermination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if queue["insertions"].([]insertion.Item)[0].Status != "cancelled" {
+	if queue["insertions"].([]insertion.PublicItem)[0].Status != "cancelled" {
 		t.Fatal("termination left input queued")
 	}
 }

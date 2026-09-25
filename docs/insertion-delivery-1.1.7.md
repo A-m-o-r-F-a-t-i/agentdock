@@ -14,11 +14,15 @@
 
 ## 投递合同
 
-原有 180 秒发送资格和 300 秒首次领取有效期不变。首次领取早于到期时，运行较久的工具仍可在结束后附加本条补充。未确认的重投限于原有效期，自动最多 3 次投递，人工重投总数最多 6 次，不延长消息有效期。过期后保留未确认状态和原因，由用户决定重新提交，不自动重放已过期要求。
+原有 180 秒发送资格和 300 秒首次领取有效期不变。首次领取早于到期时，运行较久的工具仍可在结束后附加本条补充。普通接收路径和已协商宿主透传路径只要成功附加，均从该次附加时刻开始等待 30 秒回执；等待期内不会被后续根调用自动重投。未确认的重投限于原有效期，自动最多 3 次预约投递，含人工请求的总预约次数最多 6 次，不延长消息有效期。
+
+人工重投采用明确的“跳过自动等待、只对下一次新根调用生效”策略：点击按钮本身不增加预约次数，也不能由发起按钮的同一次请求领取；只有之后到达、仍满足原对话/任务/工作区范围的新根调用才可预约同一 insertion_id。人工重投不能重跑原业务工具，也不能修复当前连接缺失的 `insertion_ack` 暴露或外层透传能力。过期后保留未确认状态和原因，由用户决定重新提交，不自动重放已过期要求。
 
 队列改为版本 2。历史 attached 转换为 delivery_unknown，注明历史内层附加且缺少接收回执，不自动重发历史消息。旧程序不能继续写版本 2 队列；回退须保留新队列，不能盲目降级其格式。
 
-每条消息使用固定 insertion_id，实际响应携带私有生成的 receipt_token。接收者确认时必须匹配已附加消息、原所有者、对话及任务范围。令牌不进入 UI 列表、诊断日志或第三方工具调用。重复确认幂等，确认以后不再投递。内层、外层、确认和未知事件记录独立阶段，日志保留内层 call_id、可用的外层 ID 和宿主来源，不推测缺失信息。
+每条消息使用固定 insertion_id，实际响应携带私有生成的 receipt_token。接收者确认时必须匹配已附加消息、原所有者、对话及任务范围。令牌不进入 UI 列表、诊断日志或第三方工具调用。重复确认幂等；确认、取消或到期会原子清理待重投标志，确认以后不再投递。`delivery_attempts` 只统计根调用预约，按钮请求不计数；`inner_appended_at`、`outer_forwarded_at`、`acknowledged_at` 和 `receipt_type` 分别表达附加、转发与确认事实，不把任一阶段冒充另一阶段。
+
+读取接口由 Core 统一返回 `receipt_type`、`delivery_reason`、`next_retry_at`、`automatic_attempts_remaining`、`total_attempts_remaining` 和 `manual_retry_available`。Windows 客户端只消费这些事实，不复制 3/6 次常量。新字段不写入版本 2 队列文件，旧记录仍可读取；缺少新字段的客户端展示为不可推断，而不是自行猜测可重投。日志保留内层 call_id、可用的外层 ID 和宿主来源，不推测缺失信息。
 
 ## 验收
 
@@ -30,7 +34,7 @@
 
 保留初始化状态的 MCP 会话在 `capabilities.experimental["agentdock/response-additions-v1"]` 中声明 `passthrough` 和 `context_acknowledgement`，后续调用的同名 `_meta` 项携带本次 `outer_call_id`。回执使用 `_meta["agentdock/response-additions-receipts-v1"]`，包含 `stage`、原外层 `outer_call_id` 与 `receipts`。`stage` 可为 `outer_forwarded` 或 `context_committed`。只有初始化已声明相应能力的会话接受宿主回执；普通工具参数不能选择确认权威。
 
-本仓库默认 Streamable HTTP 仍使用无状态模式，不为插入功能改变既有会话生命周期。无法取得已初始化能力的请求采用未协商降级：保留 `delivery_unknown`，实际接收者可通过 `insertion_ack` 提供 `receiver_receipt`。该证据不等同于宿主已提交 ChatGPT 上下文。仅在单次请求填写转发能力字段，不会绕过初始化检查。
+本仓库默认 Streamable HTTP 仍使用无状态模式，不为插入功能改变既有会话生命周期。无法取得已初始化宿主能力的请求采用普通接收路径：成功附加后记录 `inner_appended / awaiting_receiver_receipt`，并等待 30 秒。只有当前客户端实际暴露并成功调用 `insertion_ack` 时，才能形成 `receiver_receipt`；仅凭服务端存在该工具，不能声称 ChatGPT 当前连接可见，因此 UI 明确标为“尚未验证”。该证据不等同于宿主已提交 ChatGPT 上下文。仅在单次请求填写转发能力字段，不会绕过初始化检查。
 
 嵌入式外层执行器可集成 `Server.InvokeProjected`：原业务工具仅执行一次，投影脚本只读取业务字段，私有补充与回执令牌在投影返回后附回最终结果。独立的宿主提交回调成功后才记录上下文确认。该 API 不会自动修改 ChatGPT 的外部 `functions.exec` 实现。
 
@@ -41,3 +45,15 @@
 ## GitHub Heavy 状态核对
 
 本次只读检查发现：安装包清单 `plugins/github/plugin.json` 的默认值为 `heavy=true`，主机覆盖 `plugins/.state/github.json` 明确为 `heavy=false`，最终生效值为 **false**。`plugin_load` 的旧默认标题固定写成 `Load a heavy plugin`，不能据此判断实际配置。本版将其改为中性的“展开插件”，返回真实 `heavy` / `load_required`，保留主机覆盖优先规则，不修改用户的 GitHub 插件设置。
+
+## 真实 ChatGPT 连接后续验收（P0，本候选未执行）
+
+本线只提交候选源码与隔离 Actions 证据，不刷新、安装或重启生产 1.1.6，也不伪造真实 ChatGPT 回执。用户后续主动要求合并、发布并安装候选后，按以下步骤单独验收：
+
+1. 记录已安装版本、精确提交 SHA、连接地址和测试对话 ID；确认连接确实指向新版本，而不是旧进程或缓存工具目录。
+2. 在同一对话发起一个可识别的根工具调用，期间从活动中心插入一条带随机标识的补充；保留原工具只执行一次的活动证据。
+3. 检查模型实际收到的保留顶层 `response_additions`，并在任何任务/工作区切换前确认当前工具目录是否真实出现唯一的 `insertion_ack`。没有目录或调用证据时，只记录“未验证”，不得写成“不可用”或“已可用”。
+4. 若工具可见，使用该响应中的 insertion_id 与 receipt_token 调用一次 `insertion_ack`，确认状态变为 `acknowledged / receiver_receipt`，随后至少跨过 30 秒并再执行新根调用，验证同一消息不再出现。截图、日志和报告不得保存 receipt_token。
+5. 另建无回执场景，验证成功附加后 30 秒内不自动重投，边界到达后才允许第 2、3 次自动预约；第 3 次后只允许人工请求，总预约不超过 6 次，原 300 秒截止时间始终不变。
+6. 对 count-only 外层投影分别验证未接入受信任适配器时保持未确认、接入 `InvokeProjected` 且最终上下文提交成功时记录 `host_context_committed`；两种场景都不得重跑原业务工具。
+7. 汇总精确调用 ID、insertion_id、状态时间线、次数余量和客户端工具可见性证据。任何一步缺少真实外层证据时，该项继续标记为未完成，不用内存宿主测试替代。

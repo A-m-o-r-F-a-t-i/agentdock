@@ -57,7 +57,7 @@ func TestOutputBudgetBothAdaptersPreserveCopiesAndInsertion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			id := queued["insertion"].(insertion.Item).ID
+			id := queued["insertion"].(insertion.PublicItem).ID
 			envelope := call("read_file", map[string]any{"path": path})
 			assertResponseSupplement(t, envelope, id, message)
 			structured := asMap(envelope["structuredContent"])

@@ -85,7 +85,7 @@ func TestResponseAdditionsBothAdaptersPreserveSuccessAndErrors(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				id := queued["insertion"].(insertion.Item).ID
+				id := queued["insertion"].(insertion.PublicItem).ID
 				var next map[string]any
 				if fail {
 					next = call("read_file", map[string]any{"path": filepath.Join(h.runtime.Config().AgentDockDefaultDir, "missing.txt")})
@@ -111,7 +111,7 @@ func TestResponseAdditionsBothAdaptersPreserveSuccessAndErrors(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				items := queue["insertions"].([]insertion.Item)
+				items := queue["insertions"].([]insertion.PublicItem)
 				if len(items) != 1 || items[0].Status != "acknowledged" || items[0].AcknowledgedBy != "receiver_receipt" {
 					t.Fatalf("bad queue status: %#v", items)
 				}
