@@ -123,7 +123,7 @@ public sealed class ExecutionObject : INotifyPropertyChanged
     }
 }
 
-public sealed class ExecutionCallRow : INotifyPropertyChanged
+public sealed partial class ExecutionCallRow : INotifyPropertyChanged
 {
 	public ExecutionPayloadView RequestPayload { get; } = new("调用");
 	public ExecutionPayloadView ResponsePayload { get; } = new("输出");
@@ -136,11 +136,11 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
     private string _sourceTitle = "";
     private string _sourceState = "unavailable";
     public event PropertyChangedEventHandler? PropertyChanged;
-    public string Id => _value.Text("call_id");
+    public string Id => IsInsertion ? _value.Text("insertion_id") : _value.Text("call_id");
     public long CreatedSeq => _value.Number("created_seq");
     public long UpdatedSeq => _value.Number("updated_seq");
     public string Status => _value.Text("status");
-    public string State => ExecutionJson.State(Status);
+    public string State => IsInsertion ? InsertionPresentation.State(_value) : ExecutionJson.State(Status);
     public string StatusGlyph => Status switch { "succeeded" => "✓", "failed" => "×", "partial" or "unknown" => "!", "pending_approval" => "审", "cancelled" => "–", _ => "…" };
     public string Tool => _value.Text("tool_name");
     public string ApprovalId => _value.Text("approval_id");
@@ -152,14 +152,14 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
     public bool ReadOnlyLegacy => _value.Flag("read_only_legacy");
     public string Summary => _value.Text("summary");
     public string OriginalLabel => _value.Text("activity_label", _value.Text("display_title", _value.Text("title", Tool)));
-    public string Title => ExecutionTitleFormatter.Format(Tool, OriginalLabel, _value.Text("action"));
+    public string Title => IsInsertion ? "用户补充" : ExecutionTitleFormatter.Format(Tool, OriginalLabel, _value.Text("action"));
     public string TitleTooltip => Title + (OriginalLabel.Length > 0 && OriginalLabel != Title ? "\n原始说明：" + OriginalLabel : "");
     public DateTimeOffset? RequestReceivedAt => _value.Date("request_received_at");
     public DateTimeOffset? LastActivityAt => _value.Date("last_activity_at");
     public long? RpcElapsedMs => _value.OptionalNumber("rpc_elapsed_ms");
     public long? TotalElapsedMs => RpcElapsedMs is >= 0 ? RpcElapsedMs : _value.OptionalNumber("elapsed_ms") is >= 0 ? _value.OptionalNumber("elapsed_ms") : _value.OptionalNumber("operation_elapsed_ms") is >= 0 ? _value.OptionalNumber("operation_elapsed_ms") : null;
     public string DurationSource => RpcElapsedMs is >= 0 ? "rpc" : _value.OptionalNumber("elapsed_ms") is >= 0 ? "legacy" : _value.OptionalNumber("operation_elapsed_ms") is >= 0 ? "operation" : "unknown";
-    public string Duration => FormatDuration(TotalElapsedMs);
+    public string Duration => IsInsertion ? "" : FormatDuration(TotalElapsedMs);
     public string TotalTimingDetails => DurationSource switch
     {
         "rpc" => "RPC 耗时：" + Duration,
@@ -214,9 +214,9 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
     };
     public string SourceTitle { get => _sourceTitle; set => SetSource(value, "resolved"); }
     public void SetSource(string title, string state) { _sourceTitle = title; _sourceState = state; Notify(); }
-    public bool CanRetry => !ReadOnlyLegacy && Status is "failed" or "cancelled";
-    public bool CanStop => !ReadOnlyLegacy && Status is "created" or "running" or "pending_approval";
-    public bool NeedsApproval => Status == "pending_approval";
+    public bool CanRetry => !IsInsertion && !ReadOnlyLegacy && Status is "failed" or "cancelled";
+    public bool CanStop => !IsInsertion && !ReadOnlyLegacy && Status is "created" or "running" or "pending_approval";
+    public bool NeedsApproval => !IsInsertion && Status == "pending_approval";
     public bool NeedsVerification => Status == "unknown";
 	public bool HasChanges => HasEditStatistics || _value.Array("file_changes").Length > 0;
     public string Changes => string.Join("\n", _value.Array("file_changes").Select(change => change.Text("path") + (change.Flag("stats_known") ? $"  +{change.Number("insertions")} −{change.Number("deletions")}" : "")));

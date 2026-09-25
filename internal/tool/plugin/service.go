@@ -247,6 +247,7 @@ func (s *Service) Load(ctx context.Context, request LoadRequest) (Result, error)
 		"plugin": map[string]any{
 			"name": definition.Name, "description": definition.Description,
 			"version": definition.Version, "path": definition.Path, "enabled": definition.Enabled,
+			"heavy": definition.Heavy, "load_required": definition.Heavy,
 		},
 		"skills": skillItems, "mcp_servers": mcpServers,
 		"unavailable_members": unavailable, "instructions": instructions,

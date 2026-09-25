@@ -36,7 +36,7 @@ type Server struct {
 func NewServer(runtime *app.Runtime, cfg config.Config) *Server {
 	server := &Server{runtime: runtime, cfg: cfg}
 	serverOptions := &mcpsdk.ServerOptions{
-		Capabilities: &mcpsdk.ServerCapabilities{},
+		Capabilities: &mcpsdk.ServerCapabilities{Experimental: map[string]any{"agentdock/response-additions-v1": map[string]any{"passthrough": true, "receipt_tool": "insertion_ack", "context_commit_requires_host": true}}},
 		Instructions: initialServerInstructions(runtime, cfg),
 	}
 	server.sdk = mcpsdk.NewServer(
@@ -162,6 +162,9 @@ func (s *Server) callTool(ctx context.Context, name string, request *mcpsdk.Call
 	if request != nil && request.Params != nil {
 		var err error
 		ctx, err = requestConversationContext(ctx, request.Params.Meta)
+		if err == nil {
+			ctx, err = s.requestInsertionSession(ctx, request)
+		}
 		if err != nil {
 			_, _ = s.runtime.RejectToolCall(ctx, name, err.Error())
 			return nil, &sdkjsonrpc.Error{Code: sdkjsonrpc.CodeInvalidParams, Message: err.Error()}

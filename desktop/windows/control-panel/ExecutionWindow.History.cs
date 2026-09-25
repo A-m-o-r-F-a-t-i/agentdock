@@ -16,8 +16,8 @@ public partial class ExecutionWindow
     {
         var offset = FindVisualChild<ScrollViewer>(CallsList)?.VerticalOffset ?? 0;
         var height = (double)FindResource("ExecutionRowHeight");
-        var index = Calls.Count == 0 ? -1 : Math.Clamp((int)(offset / height), 0, Calls.Count - 1);
-        return new(_generation, index < 0 ? "" : Calls[index].Id, index < 0 ? 0 : offset - index * height, offset);
+        var anchor = InsertionTimeline.Anchor(Calls, offset, height);
+        return new(_generation, anchor.Id, anchor.WithinRow, offset);
     }
     private async Task RestoreCallAnchorAsync(CallScrollAnchor anchor)
     {
@@ -28,8 +28,8 @@ public partial class ExecutionWindow
             await Dispatcher.InvokeAsync(() =>
             {
                 if (_closed || anchor.Generation != _generation) return;
-                var index = anchor.Id.Length > 0 && _callsById.TryGetValue(anchor.Id, out var row) ? Calls.IndexOf(row) : -1;
-                var offset = index < 0 ? anchor.AbsoluteOffset : index * (double)FindResource("ExecutionRowHeight") + anchor.WithinRow;
+                var position = anchor.Id.Length > 0 ? InsertionTimeline.OffsetOf(Calls, anchor.Id, (double)FindResource("ExecutionRowHeight")) : null;
+                var offset = position.HasValue ? position.Value + anchor.WithinRow : anchor.AbsoluteOffset;
                 CallsList.UpdateLayout();
                 FindVisualChild<ScrollViewer>(CallsList)?.ScrollToVerticalOffset(Math.Max(0, offset));
             }, DispatcherPriority.Loaded);

@@ -263,6 +263,7 @@ public partial class ExecutionWindow : Window
         }
         finally { _updating = previousUpdating; }
         _before = (ulong)value.Number("next_before");
+		SyncInsertionTimeline();
 		_hasOlderCalls = value.Flag("has_more");
         if (value.Flag("gap")) Warn("部分历史记录已过保留期限，当前显示现有记录。", "activity_retention_gap");
         UpdateEmpty();
@@ -273,6 +274,7 @@ public partial class ExecutionWindow : Window
             _streamTask = _client.ObserveExecutionsAsync(query, _cursor, message => Dispatcher.InvokeAsync(() => ApplyStreamAsync(message, generation, epoch)).Task.Unwrap(), _streamCancellation.Token);
         }
         if (!older && _following && Calls.Count > 0) await Dispatcher.InvokeAsync(() => CallsList.ScrollIntoView(Calls[^1]), DispatcherPriority.Loaded);
+		if (!older) await GuardAsync(RefreshInsertionsAsync);
     }
     private bool MatchesScope(ExecutionCallRow row)
     {
@@ -301,12 +303,12 @@ public partial class ExecutionWindow : Window
         else
         {
             _callsById[incoming.Id] = incoming;
-            var index = Calls.Count; while (index > 0 && Calls[index - 1].CreatedSeq > incoming.CreatedSeq) index--;
+            var index = Calls.Count; while (index > 0 && (Calls[index - 1].IsInsertion ? Calls[index - 1].TimelineAt > incoming.TimelineAt : Calls[index - 1].CreatedSeq > incoming.CreatedSeq)) index--;
             Calls.Insert(index, incoming);
             if (_conversationTitles.TryGetValue(incoming.ConversationId, out var title)) incoming.SourceTitle = title;
         }
         var limit = _following ? 1000 : 10000;
-        while (Calls.Count > limit) { var removed = _following ? Calls[0] : Calls[^1]; Calls.Remove(removed); _callsById.Remove(removed.Id); }
+        while (_callsById.Count > limit) { var removed = _following ? Calls.First(row => !row.IsInsertion) : Calls.Last(row => !row.IsInsertion); Calls.Remove(removed); _callsById.Remove(removed.Id); }
         UpdateStopButton();
     }
     private async Task ApplyStreamAsync(ExecutionStreamMessage message, int generation, int epoch)
@@ -395,6 +397,7 @@ public partial class ExecutionWindow : Window
     private async void Calls_Changed(object sender, SelectionChangedEventArgs e)
     {
 		if (_updating || e.Source != CallsList || CallsList.SelectedItem is not ExecutionCallRow row) return;
+		if (row.IsInsertion) { ShowInsertionDetails(row); return; }
         _detailCall = row; CallDetailsTabs.DataContext = row; CallDetailsTabs.SelectedIndex = 0;
         OpenDetails(row.Title, CallDetailsTabs); await GuardAsync(() => LoadCallDetailAsync(row));
     }
@@ -427,7 +430,8 @@ public partial class ExecutionWindow : Window
     private void ApplyCallPresentation()
     {
         var detailed = _preferences.DetailedCalls;
-        CallsList.ItemTemplate = (DataTemplate)Resources[detailed ? "DetailedCallRowTemplate" : "CallRowTemplate"];
+        CallsList.ItemTemplate = null;
+        CallsList.ItemTemplateSelector = (DataTemplateSelector)Resources[detailed ? "DetailedTimelineSelector" : "CompactTimelineSelector"];
         DetailedCallsHeader.Visibility = detailed ? Visibility.Visible : Visibility.Collapsed;
 		UpdateCallTableWidth();
 		CallPresentationButton.Content = detailed ? "详细" : "简洁";

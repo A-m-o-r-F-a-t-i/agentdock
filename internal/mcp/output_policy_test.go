@@ -79,6 +79,10 @@ func TestOutputBudgetBothAdaptersPreserveCopiesAndInsertion(t *testing.T) {
 			if continuation["path"] == nil {
 				t.Fatal("adapter lost retained source continuation")
 			}
+			ack := call("insertion_ack", supplementReceipts(t, envelope))
+			if ack["isError"] == true {
+				t.Fatalf("supplement receipt failed: %v", ack)
+			}
 			page := call("read_file", continuation)
 			pageData := asMap(page["structuredContent"])
 			pageBody, _ := pageData["content"].(string)

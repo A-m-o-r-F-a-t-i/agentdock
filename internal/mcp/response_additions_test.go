@@ -99,6 +99,10 @@ func TestResponseAdditionsBothAdaptersPreserveSuccessAndErrors(t *testing.T) {
 				if !fail && asMap(next["structuredContent"])["conversation_id"] != conversation {
 					t.Fatal("binding fields were overwritten")
 				}
+				ack := call("insertion_ack", supplementReceipts(t, next))
+				if ack["isError"] == true {
+					t.Fatalf("receiver acknowledgement failed: %v", ack)
+				}
 				last := call("list_dir", map[string]any{"path": h.runtime.Config().AgentDockDefaultDir, "max_entries": 1})
 				if asMap(asMap(last["structuredContent"])["agentdock_guidance"])["response_additions"] != nil {
 					t.Fatal("next business call consumed the same insertion twice")
@@ -108,7 +112,7 @@ func TestResponseAdditionsBothAdaptersPreserveSuccessAndErrors(t *testing.T) {
 					t.Fatal(err)
 				}
 				items := queue["insertions"].([]insertion.Item)
-				if len(items) != 1 || items[0].Status != "attached" {
+				if len(items) != 1 || items[0].Status != "acknowledged" || items[0].AcknowledgedBy != "receiver_receipt" {
 					t.Fatalf("bad queue status: %#v", items)
 				}
 			})

@@ -69,9 +69,15 @@ func TestInsertionRuntimeOnlyNextExternalRootAndOwnConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	items := view["insertions"].([]insertion.Item)
-	if items[0].Status != "attached" || items[0].Owner != "" {
+	if items[0].Status != "delivery_unknown" || items[0].Owner != "" || items[0].ReceiptToken != "" {
 		t.Fatalf("bad queue projection=%+v", items)
 	}
+	message := next.CompletedAdditions().UserMessages[0]
+	ack, err := r.Call(host, "insertion_ack", map[string]any{"receipts": []map[string]any{{"insertion_id": message.InsertionID, "receipt_token": message.ReceiptToken}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertToolResultMatchestestOutputSchema(t, "insertion_ack", ack)
 }
 func TestInsertionRuntimeTaskSwitchAndTermination(t *testing.T) {
 	r := executionTestRuntime(t)

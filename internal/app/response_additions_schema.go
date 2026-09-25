@@ -21,7 +21,9 @@ func responseGuidanceSchema(original any) map[string]any {
 			"type":         map[string]any{"type": "string", "const": "activity_center_user"},
 			"version":      map[string]any{"type": "integer", "const": 1},
 			"insertion_id": text(), "conversation_id": text(), "text": text(),
-			"sequence": map[string]any{"type": "integer", "minimum": 1},
+			"sequence":         map[string]any{"type": "integer", "minimum": 1},
+			"receipt_token":    map[string]any{"type": "string", "pattern": "^[a-f0-9]{32}$"},
+			"delivery_attempt": map[string]any{"type": "integer", "minimum": 1, "maximum": 6},
 		},
 	}}
 	result["properties"] = properties

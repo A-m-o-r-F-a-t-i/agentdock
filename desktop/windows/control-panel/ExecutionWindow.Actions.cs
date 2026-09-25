@@ -181,16 +181,18 @@ public partial class ExecutionWindow
         ActionMenu(menu, "结构与使用说明", () => { ShowInfo("结构与使用说明", "左侧按工作区组织对话。任务位于当前对话内，任务选择和分支浏览不会改变正在执行的上下文。\n\n单条执行记录显示状态、动作、耗时和时间；点击记录后在下方查看命令、输出、来源和技术信息。右键或使用菜单可批量管理记录。\n\n终止对话会先写入服务端门禁，再取消待审批和运行调用。关闭本窗口只退出观察，不会停止执行。\n\n旧任务缺少步骤时显示“进度未记录”。未归属调用保留原始调用 ID，可以导出、隔离、归档和移入回收站。永久删除不会删除项目源码。\n\n快捷键：Ctrl+F 搜索对话，F5 刷新，Esc 关闭详情，Shift+F10 打开所选条目菜单。"); return Task.CompletedTask; });
         OpenMenu(menu);
     }
-    private string[] SelectedCallIds() => CallsList.SelectedItems.Cast<ExecutionCallRow>().Select(row => row.Id).Distinct().ToArray();
+    private string[] SelectedCallIds() => CallsList.SelectedItems.Cast<ExecutionCallRow>().Where(row => !row.IsInsertion).Select(row => row.Id).Distinct().ToArray();
     private void Calls_RightClick(object sender, MouseButtonEventArgs e)
     {
         if (Ancestor<ListBoxItem>(e.OriginalSource as DependencyObject) is not { DataContext: ExecutionCallRow row } item) return;
         if (!item.IsSelected) CallsList.SelectedItem = row;
+        if (row.IsInsertion) { ShowInsertionMenu(item,row); e.Handled=true; return; }
         ShowCallMenu(item, SelectedCallIds()); e.Handled = true;
     }
     private void CallMenu_Click(object sender, RoutedEventArgs e) => ShowCallMenu(Anchor(sender, CallsList), SelectedCallIds());
     private void ShowCallMenu(FrameworkElement anchor, string[] ids)
     {
+        if (ids.Length == 0 && CallsList.SelectedItem is ExecutionCallRow { IsInsertion:true } message) { ShowInsertionMenu(anchor,message); return; }
         var fixedIds = ids.ToArray(); var menu = Menu(anchor);
         ActionMenu(menu, "导出当前筛选", () => ExportScopeAsync(CallScopeQuery(), "执行记录"));
         ActionMenu(menu, "导出所选记录", () => ExportCallIdsAsync(fixedIds), fixedIds.Length > 0);

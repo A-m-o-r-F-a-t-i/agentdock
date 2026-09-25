@@ -42,6 +42,22 @@ func (h *activityHTTP) serveExecutionInsertions(ctx context.Context, w http.Resp
 			finish(result, err)
 			return
 		}
+		if len(parts) == 5 && parts[4] == "retry" && require("POST") {
+			var input struct{}
+			if !decodeExecutionBody(w, r, &input) {
+				return
+			}
+			retry, ok := h.runtime.(interface {
+				RuntimeRetryInsertion(context.Context, string, string) (app.Result, error)
+			})
+			if !ok {
+				writeRuntimeAPIError(w, 503, "INSERTION_UNAVAILABLE", "supplement redelivery unavailable")
+				return
+			}
+			result, err := retry.RuntimeRetryInsertion(ctx, parts[1], parts[3])
+			finish(result, err)
+			return
+		}
 		return
 	}
 	writeRuntimeAPIError(w, 404, "NOT_FOUND", "execution route not found")

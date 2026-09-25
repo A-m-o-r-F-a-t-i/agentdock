@@ -150,7 +150,9 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 	if err != nil {
 		return fail(toolError("INVALID_ARGUMENT", "tool arguments must be JSON-compatible", "validation"))
 	}
-	r.reserveInsertion(ctx, snapshot, received)
+	if spec.Name != "insertion_ack" {
+		r.reserveInsertion(ctx, snapshot, received)
+	}
 	if spec.Name == "task_manage" && (stringArg(args, "action") == "create" || stringArg(args, "workspace_id") != "") {
 		workspaceID := stringArg(args, "workspace_id")
 		if workspaceID == "" && stringArg(args, "project") == "" {
@@ -400,6 +402,9 @@ func (r *Runtime) executionScope(p *preparedExecution) string {
 func (r *Runtime) executionFacts(name string, args map[string]any, state executionObservation) permission.Facts {
 	f := permission.Facts{Binding: state.binding, Tool: name, Action: stringArg(args, "action")}
 	switch name {
+	case "insertion_ack":
+		// A receipt cannot change tasks, commands, permissions or user text.
+		f.ReadOnly = true
 	case "agentdock_context", "workspace_context", "read_file", "list_dir", "search_text", "view_image", "mcp_tool_search", "mcp_tool_list", "mcp_tool_inspect", "plugin_load", "session_observe", "browser_snapshot":
 		f.ReadOnly = true
 	case "task_manage":

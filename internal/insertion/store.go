@@ -40,21 +40,33 @@ type Target struct {
 	Conversation string `json:"conversation_id"`
 	Task         string `json:"task_id,omitempty"`
 	Thread       string `json:"thread_id,omitempty"`
+	Workspace    string `json:"workspace_id,omitempty"`
 }
 
 type Item struct {
 	Target
-	ID           string    `json:"insertion_id"`
-	SubmissionID string    `json:"submission_id"`
-	Sequence     uint64    `json:"sequence"`
-	Text         string    `json:"text"`
-	Status       string    `json:"status"`
-	ExpiredFrom  string    `json:"expired_from,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	CallID       string    `json:"call_id,omitempty"`
-	RunID        string    `json:"run_id,omitempty"`
+	ID               string     `json:"insertion_id"`
+	SubmissionID     string     `json:"submission_id"`
+	Sequence         uint64     `json:"sequence"`
+	Text             string     `json:"text"`
+	Status           string     `json:"status"`
+	ExpiredFrom      string     `json:"expired_from,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	ExpiresAt        time.Time  `json:"expires_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	CallID           string     `json:"call_id,omitempty"`
+	RunID            string     `json:"run_id,omitempty"`
+	DeliveryAttempts int        `json:"delivery_attempts,omitempty"`
+	ReceiptToken     string     `json:"receipt_token,omitempty"`
+	InnerAppendedAt  *time.Time `json:"inner_appended_at,omitempty"`
+	ForwardedAt      *time.Time `json:"outer_forwarded_at,omitempty"`
+	AcknowledgedAt   *time.Time `json:"acknowledged_at,omitempty"`
+	AcknowledgedBy   string     `json:"acknowledged_by,omitempty"`
+	OuterCallID      string     `json:"outer_call_id,omitempty"`
+	HostType         string     `json:"host_type,omitempty"`
+	DeliveryReason   string     `json:"delivery_reason,omitempty"`
+	RetryRequested   bool       `json:"retry_requested,omitempty"`
+	RetryAfter       *time.Time `json:"retry_after,omitempty"`
 }
 
 type diskState struct {
@@ -80,6 +92,7 @@ func New(root, run string, now func() time.Time) (*Store, error) {
 			item := &state.Items[index]
 			if item.Status == "reserved" && item.RunID != run {
 				item.Status = "delivery_unknown"
+				item.DeliveryReason = "process_restarted_before_receipt"
 				item.UpdatedAt = at
 				dirty = true
 			}
@@ -102,7 +115,8 @@ func (s *Store) change(ctx context.Context, fn func(*diskState, time.Time) (bool
 		return err
 	}
 	path := filepath.Join(s.root, "queue.json")
-	state := diskState{SchemaVersion: 1, Items: []Item{}}
+	state := diskState{SchemaVersion: 2, Items: []Item{}}
+	migrated := false
 	if info, err := os.Lstat(path); err == nil {
 		if !info.Mode().IsRegular() || info.Size() > MaxStoreBytes {
 			return errors.New("invalid insertion store; original preserved")
@@ -114,15 +128,26 @@ func (s *Store) change(ctx context.Context, fn func(*diskState, time.Time) (bool
 		if err = json.Unmarshal(data, &state); err != nil {
 			return fmt.Errorf("read insertion store; original preserved: %w", err)
 		}
-		if state.SchemaVersion != 1 || len(state.Items) > MaxRecords {
+		if (state.SchemaVersion != 1 && state.SchemaVersion != 2) || len(state.Items) > MaxRecords {
 			return errors.New("unsupported insertion store; original preserved")
 		}
 		ids := map[string]bool{}
 		for _, item := range state.Items {
-			if !validID.MatchString(item.ID) || ids[item.ID] || len(item.Text) > MaxTextBytes || item.CreatedAt.IsZero() || !item.ExpiresAt.Equal(item.CreatedAt.Add(Lifetime)) {
+			if !validID.MatchString(item.ID) || ids[item.ID] || len(item.Text) > MaxTextBytes || item.CreatedAt.IsZero() || !item.ExpiresAt.Equal(item.CreatedAt.Add(Lifetime)) || !validDeliveryRecord(item) {
 				return errors.New("invalid insertion record; original preserved")
 			}
 			ids[item.ID] = true
+		}
+		if state.SchemaVersion == 1 {
+			state.SchemaVersion = 2
+			migrated = true
+			for index := range state.Items {
+				item := &state.Items[index]
+				if item.Status == "attached" {
+					item.Status = "delivery_unknown"
+					item.DeliveryReason = "legacy_inner_response_without_receipt"
+				}
+			}
 		}
 	} else if !os.IsNotExist(err) {
 		return err
@@ -131,7 +156,7 @@ func (s *Store) change(ctx context.Context, fn func(*diskState, time.Time) (bool
 		return err
 	}
 	dirty, err := fn(&state, s.now().UTC())
-	if err != nil || !dirty {
+	if err != nil || (!dirty && !migrated) {
 		return err
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
@@ -152,6 +177,12 @@ func expire(state *diskState, now time.Time) bool {
 	dirty := false
 	for index := range state.Items {
 		item := &state.Items[index]
+		if unconfirmed(item.Status) && !now.Before(item.ExpiresAt) && item.DeliveryReason != "legacy_inner_response_without_receipt" {
+			if item.Status != "delivery_unknown" || item.DeliveryReason != "receipt_missing_deadline_elapsed" {
+				item.Status, item.DeliveryReason, item.UpdatedAt = "delivery_unknown", "receipt_missing_deadline_elapsed", now
+				dirty = true
+			}
+		}
 		if waiting(item.Status) && !now.Before(item.ExpiresAt) {
 			item.ExpiredFrom = item.Status
 			item.Status = "expired"
@@ -173,13 +204,13 @@ func (s *Store) Add(ctx context.Context, target Target, submissionID, text strin
 		for _, item := range state.Items {
 			if item.Conversation == target.Conversation && item.Owner == target.Owner {
 				if item.SubmissionID == submissionID {
-					if item.Text != text || item.Task != target.Task || item.Thread != target.Thread {
+					if item.Text != text || !sameTarget(item.Target, target) {
 						return false, ErrConflict
 					}
 					result = item
 					return dirty, nil
 				}
-				if waiting(item.Status) || item.Status == "reserved" {
+				if waiting(item.Status) || item.Status == "reserved" || unconfirmed(item.Status) && now.Before(item.ExpiresAt) {
 					count++
 					bytes += len(item.Text)
 				}
@@ -223,7 +254,9 @@ func (s *Store) Reserve(ctx context.Context, target Target, callID string, recei
 			// may acquire this lock first just after the deadline while that root
 			// is still completing attribution. Only a formerly pending item may
 			// be claimed in that case; paused, cancelled or delivered items cannot.
-			claimable := item.Status == "pending" || item.Status == "expired" && item.ExpiredFrom == "pending" && item.CallID == ""
+			first := item.Status == "pending" || item.Status == "expired" && item.ExpiredFrom == "pending" && item.CallID == ""
+			retry := canRedeliver(*item, received) && item.CallID != callID
+			claimable := first || retry
 			if !claimable || item.Owner != target.Owner || item.Conversation != target.Conversation {
 				continue
 			}
@@ -240,13 +273,24 @@ func (s *Store) Reserve(ctx context.Context, target Target, callID string, recei
 				dirty = true
 				continue
 			}
-			if item.Task != target.Task || item.Thread != target.Thread {
+			if !sameTarget(item.Target, target) {
 				item.Status = "target_changed"
 				item.UpdatedAt = now
 				dirty = true
 				continue
 			}
 			item.Status = "reserved"
+			if item.ReceiptToken == "" {
+				raw := make([]byte, 16)
+				if _, err := rand.Read(raw); err != nil {
+					return false, err
+				}
+				item.ReceiptToken = hex.EncodeToString(raw)
+			}
+			item.DeliveryAttempts++
+			item.RetryRequested = false
+			item.RetryAfter = nil
+			item.DeliveryReason = ""
 			item.ExpiredFrom = ""
 			item.CallID = callID
 			item.RunID = s.run
@@ -264,7 +308,7 @@ func (s *Store) VerifyTarget(ctx context.Context, callID string, target Target) 
 		dirty := false
 		for index := range state.Items {
 			item := &state.Items[index]
-			if item.Status == "reserved" && item.CallID == callID && item.RunID == s.run && item.Target != target {
+			if item.Status == "reserved" && item.CallID == callID && item.RunID == s.run && !sameTarget(item.Target, target) {
 				item.Status = "target_changed"
 				item.CallID = ""
 				item.RunID = ""
@@ -276,9 +320,13 @@ func (s *Store) VerifyTarget(ctx context.Context, callID string, target Target) 
 	})
 }
 
-// Attached means included in a response, never proof that a model read it.
-// An uncertain transport result is retained and is never automatically replayed.
+// Finish records only construction of the inner response. Receipt, not
+// serialization, terminates delivery. This store never retries business tools.
 func (s *Store) Finish(ctx context.Context, callID string, attached bool) ([]Item, error) {
+	return s.FinishForHost(ctx, callID, attached, Transport{})
+}
+
+func (s *Store) FinishForHost(ctx context.Context, callID string, attached bool, host Transport) ([]Item, error) {
 	result := []Item{}
 	err := s.change(ctx, func(state *diskState, now time.Time) (bool, error) {
 		dirty := false
@@ -288,12 +336,21 @@ func (s *Store) Finish(ctx context.Context, callID string, attached bool) ([]Ite
 				continue
 			}
 			if attached {
-				item.Status = "attached"
-				result = append(result, *item)
+				item.InnerAppendedAt = &now
+				item.Status, item.DeliveryReason = "delivery_unknown", "host_receipt_not_negotiated"
+				item.HostType, item.OuterCallID = host.HostType, host.OuterCallID
+				if host.Passthrough {
+					item.Status, item.DeliveryReason = "inner_appended", "awaiting_host_receipt"
+					after := now.Add(ReceiptWait)
+					item.RetryAfter = &after
+				}
 			} else {
-				item.Status = "delivery_unknown"
+				item.Status, item.DeliveryReason = "delivery_unknown", "inner_response_not_committed"
 			}
 			item.UpdatedAt = now
+			if attached {
+				result = append(result, *item)
+			}
 			dirty = true
 		}
 		return dirty, nil
@@ -307,10 +364,7 @@ func (s *Store) List(ctx context.Context, owner, conversation string) ([]Item, e
 		dirty := expire(state, now)
 		for _, item := range state.Items {
 			if item.Owner == owner && item.Conversation == conversation {
-				copy := item
-				copy.Owner = ""
-				copy.RunID = ""
-				result = append(result, copy)
+				result = append(result, Public(item))
 			}
 		}
 		return dirty, nil
@@ -331,7 +385,7 @@ func (s *Store) Cancel(ctx context.Context, owner, conversation, id string, incl
 			if id != "" && !includeReserved && item.Status == "reserved" {
 				return false, errors.New("insertion already reserved by a tool call; withdrawal was not performed")
 			}
-			if waiting(item.Status) || includeReserved && item.Status == "reserved" || item.Status == "expired" && item.ExpiredFrom == "pending" {
+			if waiting(item.Status) || unconfirmed(item.Status) || includeReserved && item.Status == "reserved" || item.Status == "expired" && item.ExpiredFrom == "pending" {
 				item.Status = "cancelled"
 				item.UpdatedAt = now
 				dirty = true

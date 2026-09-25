@@ -31,8 +31,8 @@ func pluginToolSpecs() []ToolSpec {
 		},
 		{
 			Name: "plugin_load", Contract: pluginToolContract,
-			Title:       "Load a heavy plugin",
-			Description: "Expand one enabled plugin from agentdock_context and reveal its contained Skill descriptions and dynamic MCP server descriptions. Load the plugin before using a plugin-owned member.",
+			Title:       "Expand plugin",
+			Description: "Expand an enabled plugin and reveal its Skill and MCP members. Only Heavy plugins require this step; ordinary plugin members already appear in agentdock_context and can be used directly. Explicit expansion is read-only and never enables Heavy mode.",
 			Annotations: readOnlyToolAnnotations(false),
 			Handler: typedToolHandler("plugin_load", func(ctx context.Context, r *Runtime, request toolplugin.LoadRequest) (Result, error) {
 				return r.plugins.Load(ctx, request)

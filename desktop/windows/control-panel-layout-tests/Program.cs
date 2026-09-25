@@ -113,6 +113,7 @@ internal static class Program
                 Check(Named<TextBox>(window,"RequestPayloadText").Text.Contains("workdir"),"Real request was not rendered.");
                 Check(Named<TextBox>(window,"ResponsePayloadText").Text.Contains("structured_content"),"Real structured output was not rendered.");
                 Check(window.FindName("ConnectionButton") is null && window.FindName("OlderCallsButton") is null && window.FindName("CompactCallsChoice") is null,"Removed toolbar controls still exist.");
+                ValidateInsertionMessage(window);
                 window.Close();
                 var panel = new MainWindow(runtime);
                 DetachRuntimeStartup(panel);
@@ -155,6 +156,7 @@ internal static class Program
         var row=new ExecutionCallRow(Json(new{call_id="call-fixture",conversation_id="conversation-0",tool_name="agentdock_context",display_title="加载上下文",status="succeeded",rpc_elapsed_ms=123,request_received_at=DateTimeOffset.UtcNow,request=new{state="complete",preview=request,bytes=request.Length,lines=3},response=new{state="complete",preview=output,bytes=output.Length,lines=4}}));
         window.Calls.Add(row);
         window.Calls.Add(new ExecutionCallRow(Json(new{tool_name="file_edit",display_title="更新 src/example.go",status="succeeded",rpc_elapsed_ms=218,request_received_at=DateTimeOffset.UtcNow,file_edit=new{stats_state="known",insertions=26,deletions=9}})));
+        window.Calls.Add(ExecutionCallRow.FromInsertion(Json(new { insertion_id="ins_layout", conversation_id="conversation-0", text="你好，我是帅哥。请先核对新增要求，再继续执行。", status="delivery_unknown", delivery_attempts=1, created_at=DateTimeOffset.UtcNow, updated_at=DateTimeOffset.UtcNow, expires_at=DateTimeOffset.UtcNow.AddMinutes(5), delivery_reason="host_receipt_not_negotiated", call_id="call-layout-original" }),DateTimeOffset.UtcNow));
         window.Calls.Add(new ExecutionCallRow(Json(new{tool_name="mcp_tool_call",display_title="读取服务状态",status="running",request_received_at=DateTimeOffset.UtcNow})));
         Named<TextBlock>(window,"ObjectTitle").Text="修复工具响应与调用记录";
         Named<FrameworkElement>(window,"EmptyPanel").Visibility=Visibility.Collapsed;
@@ -180,6 +182,26 @@ internal static class Program
         }
         else Check(scroller.ScrollableWidth<1,"Compact mode retained a wide diagnostic table.");
     }
+    private static void ValidateInsertionMessage(ExecutionWindow window)
+    {
+        Layout(window,800);
+        var list=Named<ListBox>(window,"CallsList");
+        var message=window.Calls.Single(row=>row.IsInsertion);
+        list.ScrollIntoView(message);list.UpdateLayout();
+        var container=(ListBoxItem?)list.ItemContainerGenerator.ContainerFromItem(message);
+        Check(container is not null && Math.Abs(container.ActualHeight-InsertionTimeline.MessageRowHeight)<0.1,"Actual supplement row height is inconsistent with scroll anchoring.");
+        var text=Descendants(container!).OfType<TextBlock>().Select(block=>block.Text).ToArray();
+        Check(text.Contains("用户补充") && text.Any(value=>value.Contains("你好，我是帅哥")) && text.Contains("未确认收到"),"Real timeline template did not render supplement text and evidence state.");
+        Check(Descendants(container!).OfType<Button>().Any(button=>Equals(button.Content,"重投补充")),"Supplement-only retry action was not rendered.");
+        var total=window.Calls.Count;
+        list.SelectedItem=message;
+        Check(Named<FrameworkElement>(window,"CallDetailsTabs").Visibility==Visibility.Collapsed && Named<FrameworkElement>(window,"InfoDetailsText").Visibility==Visibility.Visible,"Selecting a supplement exposed tool controls or attempted tool details.");
+        Check(Named<TextBox>(window,"InfoDetailsText").Text.Contains(message.InsertionText) && !message.CanStop && !message.NeedsApproval && !message.CanRetry,"Message details or non-tool semantics were lost.");
+        message.ApplyInsertion(Json(new { insertion_id="ins_layout", conversation_id="conversation-0", text=message.InsertionText, status="acknowledged", acknowledged_by="receiver_receipt", delivery_attempts=2, created_at=message.TimelineAt, updated_at=DateTimeOffset.UtcNow.AddSeconds(1), expires_at=DateTimeOffset.UtcNow.AddMinutes(5) }),DateTimeOffset.UtcNow);
+        Layout(window,800);
+        Check(window.Calls.Count==total && message.State=="接收端已确认收到" && !message.CanRedeliverInsertion,"Receipt transition duplicated the message or retained retry controls.");
+    }
+
     private static FrameworkElement Layout(Window window, double width = 1180)
     {
         var root=(FrameworkElement)window.Content;

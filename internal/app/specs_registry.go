@@ -5,6 +5,7 @@ package app
 func buildToolSpecs() []ToolSpec {
 	specs := make([]ToolSpec, 0, 32)
 	specs = append(specs, contextToolSpecs()...)
+	specs = append(specs, insertionToolSpecs()...)
 	specs = append(specs, fileToolSpecs()...)
 	specs = append(specs, commandToolSpecs()...)
 	specs = append(specs, taskManageToolSpecs()...)

@@ -20,6 +20,11 @@ var secretPatterns = []*regexp.Regexp{
 // Redactor never stores environment maps. Known values are provided only in memory.
 type Redactor struct{ values []string }
 
+// WithSecrets extends an immutable redactor for adapter-owned receipt tokens.
+func (r Redactor) WithSecrets(values ...string) Redactor {
+	return NewRedactor(append(append([]string{}, r.values...), values...)...)
+}
+
 func NewRedactor(values ...string) Redactor {
 	unique := map[string]bool{}
 	for _, value := range values {

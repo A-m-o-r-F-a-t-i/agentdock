@@ -60,6 +60,9 @@ func (r *Runtime) RecordToolResponse(response *ToolResponse, envelope any) {
 	}
 	response.auditRecorded = true
 	binding, name, redactor := response.auditBinding, response.auditName, response.auditRedactor
+	for _, message := range response.additions.UserMessages {
+		redactor = redactor.WithSecrets(message.ReceiptToken)
+	}
 	received, status := response.auditReceived, response.auditStatus
 	response.mu.Unlock()
 	r.recordExecutionPayload(binding, name, "response", envelope, redactor)
