@@ -55,6 +55,10 @@
 
 ## 4. 平台覆盖与停止条件
 
+　　任务调度器在重新注册旧描述符时可能把显式 Allow ACE 稳定移到继承 ACE 前，并标记 `D:AI`。本版区分“原始描述符完全一致”和“任务调度器的纯 Allow 规范化”。后者仅接受每个 ACE 的二进制内容、重复数量、各组相对顺序全部不变，以及只新增自动继承标志的情况；SID、权限位、保护状态、ACE 继承标记改变，Deny/对象/回调 ACE 的重排都拒绝并保留恢复材料。原始备份不被改写，原生报告分别记录两种结果。普通文件备份不使用这个比较器，仍核对 owner/group/DACL/属性原样一致。
+
+　　这一任务级比较边界对应 Windows 的显式 ACE 优先顺序与继承模型转换，见 Microsoft 的 [Automatic Propagation of Inheritable ACEs](https://learn.microsoft.com/en-us/windows/win32/secauthz/automatic-propagation-of-inheritable-aces) 和 [Order of ACEs in a DACL](https://learn.microsoft.com/en-us/windows/win32/secauthz/order-of-aces-in-a-dacl)。相邻测试逐位改变权限、变更 SID、保护/继承标志、增删 ACE 以及重排拒绝项，均必须失败。任务恢复注册还关闭 registration trigger 的自动触发，避免单纯恢复定义重放任务动作。
+
 　　新发行需在 Windows x64/ARM64 上通过真实任务调度器和备份元数据验证，再执行 Windows 两架构包验证与隔离安装、修复、卸载。Linux DEB 在匹配架构的 Ubuntu runner 原生安装/验证/移除；RPM 使用匹配 CPU 的真实 RPM 事务引擎与独立根数据库，不宣称完成所有 Fedora/RHEL 发行版兼容测试。macOS 保留 Intel/Apple Silicon 原生后端与通用 App 校验。
 
 　　这些测试没有操作用户正在运行的生产任务或 Core。发布者签名、Apple Developer ID 公证、所有物理显示器与外部 ChatGPT 宿主集成不属于已自动完成能力。未知/不支持的元数据必须拒绝并保留原对象，不能用“忽略比较”使测试变绿。新增恢复/输入门禁任何失败时不发布新版本。最终运行编号、源码 SHA、测试数字和包校验记录在交付证据中逐项列出。

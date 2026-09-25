@@ -16,6 +16,7 @@ internal static class TaskAdminService
     private const int TaskTriggerLogon = 9;
     private const int TaskCreateOrUpdate = 6;
     private const int TaskDontAddPrincipalAce = 0x10;
+    private const int TaskIgnoreRegistrationTriggers = 0x20;
     private const int TaskLogonInteractiveToken = 3;
     private const int TaskRunLevelHighest = 1;
     private const int TaskInstancesIgnoreNew = 2;
@@ -366,7 +367,7 @@ internal static class TaskAdminService
         dynamic task = root.RegisterTask(
             taskName,
             xml,
-            TaskCreateOrUpdate | TaskDontAddPrincipalAce,
+            TaskCreateOrUpdate | TaskDontAddPrincipalAce | TaskIgnoreRegistrationTriggers,
             userId,
             null,
             TaskLogonInteractiveToken,
@@ -395,7 +396,7 @@ internal static class TaskAdminService
             throw new IOException("高权限计划任务未达到预期状态。");
     }
 
-    internal static void VerifyRestoredBackup(string taskName, string backupDirectory)
+    internal static TaskSecurityMatch VerifyRestoredBackup(string taskName, string backupDirectory)
     {
         var (state, xml, userId) = ReadBackup(backupDirectory);
         using var scheduler = new SchedulerSession();
@@ -403,7 +404,7 @@ internal static class TaskAdminService
         if (!state.Exists)
         {
             if (task is not null) throw new IOException("原本不存在的计划任务未移除。");
-            return;
+            return TaskSecurityMatch.Exact;
         }
         if (task is null || (bool)task.Enabled != state.WasEnabled ||
             !string.Equals(ReadTaskUserId((string)task.Xml), userId, StringComparison.OrdinalIgnoreCase))
@@ -419,10 +420,11 @@ internal static class TaskAdminService
         }
         if (!string.IsNullOrWhiteSpace(state.SecurityDescriptor))
         {
-            var expected = new RawSecurityDescriptor(state.SecurityDescriptor).GetSddlForm(AccessControlSections.Access);
-            var actual = new RawSecurityDescriptor((string)task.GetSecurityDescriptor(DaclSecurityInformation)).GetSddlForm(AccessControlSections.Access);
-            if (expected != actual) throw new IOException("计划任务恢复后的权限不符。");
+            var comparison = TaskSecurityDescriptor.Compare(state.SecurityDescriptor, (string)task.GetSecurityDescriptor(DaclSecurityInformation));
+            if (comparison == TaskSecurityMatch.Mismatch) throw new IOException("计划任务恢复后的权限不符，保留原始描述符和恢复材料。");
+            return comparison;
         }
+        return TaskSecurityMatch.Exact;
     }
 
     private static string ReadTaskUserId(string xml)

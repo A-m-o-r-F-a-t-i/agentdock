@@ -6,7 +6,7 @@ using System.Security.Principal;
 using System.Text.Json;
 using AgentDock.ControlPanel;
 
-internal static class Program
+internal static partial class Program
 {
     private static int _assertions;
     private static readonly List<object> Evidence = [];
@@ -20,6 +20,12 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        TaskSecurityDescriptorTests.Run(Check);
+        if (args.Length == 1 && args[0] == "--security-contract-only")
+        {
+            Console.WriteLine($"Task security descriptor contract: {_assertions} assertions; no scheduler or file permissions changed.");
+            return 0;
+        }
         if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") != "true" || Environment.GetEnvironmentVariable("AGENTDOCK_NATIVE_ACCEPTANCE") != "1")
         {
             Console.Error.WriteLine("Native acceptance requires an explicitly enabled isolated GitHub runner.");
@@ -49,6 +55,8 @@ internal static class Program
                 try { RunAbsentTask(service, folder, identity, root, elevated); }
                 catch (Exception error) { Failures.Add($"absent/elevated={elevated}: {error}"); Console.Error.WriteLine(Failures[^1]); }
             }
+            try { RunDaclRestoration(service, folder, identity, root); }
+            catch (Exception error) { Failures.Add($"native DACL contract: {error}"); Console.Error.WriteLine(Failures[^1]); }
             var report = new
             {
                 assertions = _assertions, platform = RuntimeInformation.OSDescription,
@@ -135,6 +143,7 @@ internal static class Program
         original.Enabled = false;
         string oldXml = original.Xml;
         int restoreCount = 0;
+        TaskSecurityMatch? securityResult = null;
         bool injectedBoundaryReached = false;
         Exception? failure = null;
         Process? unknown = null;
@@ -196,7 +205,7 @@ internal static class Program
                 },
                 token =>
                 {
-                    TaskAdminService.VerifyRestoredBackup(name, recovery);
+                    securityResult = TaskAdminService.VerifyRestoredBackup(name, recovery);
                     Check(File.ReadAllText(manifest) == "original", "Original manifest restored");
                     if (scenario == "verify_restored") { injectedBoundaryReached = true; throw new IOException("Injected recovered verification failure"); }
                     return Task.CompletedTask;
@@ -230,7 +239,7 @@ internal static class Program
                 Check(!(bool)restored.Enabled && Convert.ToInt32(restored.Definition.Principal.RunLevel) == (elevated ? 0 : 1) &&
                     (string)restored.Definition.Actions.Item(1).Arguments == "/d /c exit 0", "Actual task policy and action restored");
             }
-            Evidence.Add(new { scenario, elevated, restored = restoreCount, retained, expected_failure = failure is not null, original_task_bytes = oldXml.Length, process_exit_unknown = scenario == "native_unknown" });
+            Evidence.Add(new { scenario, elevated, restored = restoreCount, retained, expected_failure = failure is not null, original_task_bytes = oldXml.Length, process_exit_unknown = scenario == "native_unknown", security_comparison = securityResult?.ToString() });
         }
         finally
         {
