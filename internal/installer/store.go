@@ -153,6 +153,7 @@ func resultFromTransaction(transaction Transaction) Result {
 		FallbackVersion: transaction.FallbackVersion,
 		Failure:         transaction.Failure,
 		Warnings:        append([]string(nil), transaction.Warnings...),
+		Timing:          cloneTimingSummary(transaction.Timing),
 		StartedAt:       transaction.StartedAt,
 	}
 	if transaction.CompletedAt != nil {
@@ -182,6 +183,16 @@ func (store *Store) Complete(transaction Transaction, state updateengine.State, 
 	transaction.CompletedAt = &now
 	transaction.Failure = result.Failure
 	transaction.Warnings = append([]string(nil), result.Warnings...)
+	if result.Timing != nil {
+		transaction.Timing = cloneTimingSummary(result.Timing)
+	}
+	if transaction.Timing != nil {
+		wall := now.Sub(transaction.StartedAt).Milliseconds()
+		if wall < 0 {
+			wall = 0
+		}
+		transaction.Timing.WallDurationMS = wall
+	}
 	switch state {
 	case updateengine.StateCommitted:
 		transaction.Phase = PhaseCommit
@@ -213,10 +224,68 @@ func (store *Store) Complete(transaction Transaction, state updateengine.State, 
 	result.Action = transaction.Action
 	result.State = state
 	result.Phase = transaction.Phase
+	result.Timing = cloneTimingSummary(transaction.Timing)
 	result.StartedAt = transaction.StartedAt
 	result.CompletedAt = now
 	if result.Version == "" {
 		result.Version = transaction.TargetVersion
+	}
+	if err := store.WriteResult(result); err != nil {
+		return Result{}, err
+	}
+	return result, nil
+}
+
+// AppendTerminalWarnings records best-effort post-commit work, such as
+// generation cleanup failures, without changing the completed transaction's
+// state or timestamp. Writing the transaction first keeps ReadResult able to
+// reconstruct the authoritative result if the derived result write fails.
+func (store *Store) AppendTerminalWarnings(transactionID string, warnings ...string) (Result, error) {
+	transactionID = strings.TrimSpace(transactionID)
+	if transactionID == "" {
+		return Result{}, errors.New("install transaction-id is required")
+	}
+	transaction, err := store.ReadTransaction()
+	if err != nil {
+		return Result{}, err
+	}
+	if transaction.TransactionID != transactionID {
+		return Result{}, fmt.Errorf("install transaction %s is not current", transactionID)
+	}
+	if !isTerminalInstallState(transaction.State) {
+		return Result{}, fmt.Errorf("install transaction %s is not terminal", transactionID)
+	}
+	result, err := store.ReadResult(transactionID)
+	if err != nil {
+		result = resultFromTransaction(transaction)
+	}
+
+	existing := make(map[string]struct{}, len(transaction.Warnings)+len(warnings))
+	for _, warning := range transaction.Warnings {
+		warning = strings.TrimSpace(warning)
+		if warning != "" {
+			existing[warning] = struct{}{}
+		}
+	}
+	changed := false
+	for _, warning := range warnings {
+		warning = strings.TrimSpace(warning)
+		if warning == "" {
+			continue
+		}
+		if _, ok := existing[warning]; ok {
+			continue
+		}
+		existing[warning] = struct{}{}
+		transaction.Warnings = append(transaction.Warnings, warning)
+		changed = true
+	}
+	if !changed {
+		return result, nil
+	}
+	result.Warnings = append([]string(nil), transaction.Warnings...)
+	if err := store.WriteTransaction(transaction); err != nil {
+		return Result{}, err
 	}
 	if err := store.WriteResult(result); err != nil {
 		return Result{}, err
