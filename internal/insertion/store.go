@@ -49,6 +49,7 @@ type Item struct {
 	SubmissionID string    `json:"submission_id"`
 	Sequence     uint64    `json:"sequence"`
 	Text         string    `json:"text"`
+	Summary      string    `json:"summary,omitempty"`
 	Status       string    `json:"status"`
 	ExpiredFrom  string    `json:"expired_from,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -135,6 +136,11 @@ func (s *Store) change(ctx context.Context, fn func(*diskState, time.Time) (bool
 	if err != nil || !dirty {
 		return err
 	}
+	// Summary is an API projection. Persist the original text only once;
+	// legacy readers and absolute delivery deadlines keep the existing schema.
+	for index := range state.Items {
+		state.Items[index].Summary = ""
+	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return err
@@ -175,6 +181,7 @@ func (s *Store) Add(ctx context.Context, target Target, submissionID, text strin
 						return false, ErrConflict
 					}
 					result = item
+					result.Summary = Summarize(item.Text)
 					return dirty, nil
 				}
 				if waiting(item.Status) || item.Status == "reserved" {
@@ -201,7 +208,7 @@ func (s *Store) Add(ctx context.Context, target Target, submissionID, text strin
 			return false, err
 		}
 		state.Sequence++
-		result = Item{Target: target, ID: "ins_" + hex.EncodeToString(raw), SubmissionID: submissionID, Sequence: state.Sequence, Text: text, Status: "pending", CreatedAt: now, ExpiresAt: now.Add(Lifetime), UpdatedAt: now}
+		result = Item{Target: target, ID: "ins_" + hex.EncodeToString(raw), SubmissionID: submissionID, Sequence: state.Sequence, Text: text, Summary: Summarize(text), Status: "pending", CreatedAt: now, ExpiresAt: now.Add(Lifetime), UpdatedAt: now}
 		state.Items = append(state.Items, result)
 		return true, nil
 	})
@@ -306,6 +313,8 @@ func (s *Store) List(ctx context.Context, owner, conversation string) ([]Item, e
 		for _, item := range state.Items {
 			if item.Owner == owner && item.Conversation == conversation {
 				copy := item
+				// Derive legacy/missing previews without rewriting the original text.
+				copy.Summary = Summarize(item.Text)
 				copy.Owner = ""
 				copy.RunID = ""
 				result = append(result, copy)

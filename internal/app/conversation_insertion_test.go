@@ -27,11 +27,14 @@ func TestInsertionRuntimeOnlyNextExternalRootAndOwnConversation(t *testing.T) {
 	if _, err = r.RuntimeEnqueueInsertion(context.Background(), id, InsertionRequest{SubmissionID: "req_bad", Text: "bad"}); err == nil {
 		t.Fatal("remote management accepted")
 	}
-	queued, err := r.RuntimeEnqueueInsertion(local, id, InsertionRequest{SubmissionID: "req_a", Text: "保留同一源码，先修改要求"})
+	queued, err := r.RuntimeEnqueueInsertion(local, id, InsertionRequest{SubmissionID: "req_a", Text: "보존할 원문\n" + strings.Repeat("긴 추가 지시 🙂 ", 60)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	item := queued["insertion"].(insertion.Item)
+	if item.Summary != insertion.Summarize(item.Text) || item.Summary == item.Text {
+		t.Fatal("long insertion summary missing")
+	}
 	if blocks := r.FinishToolResponse(callCtx, old, true); len(blocks) != 0 {
 		t.Fatal("old call consumed new input")
 	}
@@ -58,6 +61,9 @@ func TestInsertionRuntimeOnlyNextExternalRootAndOwnConversation(t *testing.T) {
 	replay := next.CompletedAdditions()
 	if len(replay.UserMessages) != 1 || replay.UserMessages[0].InsertionID != item.ID || len(replay.TextBlocks) != 1 {
 		t.Fatal("completed response cannot be reconstructed")
+	}
+	if replay.UserMessages[0].Text != item.Text {
+		t.Fatal("response substituted display summary for full instruction")
 	}
 	replay.UserMessages[0].Text = "mutated copy"
 	replay.TextBlocks[0] = "mutated block"
