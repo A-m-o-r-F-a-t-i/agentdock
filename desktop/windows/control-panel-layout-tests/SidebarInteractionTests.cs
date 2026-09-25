@@ -50,7 +50,16 @@ internal static class SidebarInteractionTests
     {
         var button = More(window, project);
         if (preview)
-            button.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent, Source = button });
+        {
+            // The button-specific preview is Direct, not Tunnel. Raising it
+            // on the child bypasses the real ListBoxItem event setter. Start
+            // with Mouse.PreviewMouseDown so WPF reraises the left-button
+            // event at each ancestor, matching the actual input route.
+            var input = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                { RoutedEvent = Mouse.PreviewMouseDownEvent, Source = button };
+            button.RaiseEvent(input);
+            if (!input.Handled) throw new InvalidOperationException("Footer input was not consumed by the production preview route.");
+        }
         else button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, button));
     }
     private static void Settled(ExecutionWindow window) => PumpUntil(() => !Field<bool>(window, "_sidebarLoading") && Field<HashSet<string>>(window, "_sidebarPaging").Count == 0);
@@ -79,7 +88,8 @@ internal static class SidebarInteractionTests
             check(window.Objects.Count(row => !row.IsGroupFooter) == 10, "Initial project pages were not retained.");
             var before = handler.Requests;
             Click(window, "A", preview: true); Settled(window);
-            check(handler.Requests == before + 1 && navigation.For("A").HistoryLimit == 20, "Preview event did not perform exactly one page advance.");
+            check(handler.Requests == before + 1 && navigation.For("A").HistoryLimit == 20,
+                $"Preview event did not perform exactly one page advance: requests {before}->{handler.Requests}, limit={navigation.For("A").HistoryLimit}, unexpected={handler.UnexpectedRequests}.");
             var completion = handler.DelayNext();
             before = handler.Requests;
             Click(window, "A");
