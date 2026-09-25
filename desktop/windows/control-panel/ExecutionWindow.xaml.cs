@@ -429,6 +429,7 @@ public partial class ExecutionWindow : Window
         var detailed = _preferences.DetailedCalls;
         CallsList.ItemTemplate = (DataTemplate)Resources[detailed ? "DetailedCallRowTemplate" : "CallRowTemplate"];
         DetailedCallsHeader.Visibility = detailed ? Visibility.Visible : Visibility.Collapsed;
+		UpdateCallTableWidth();
 		CallPresentationButton.Content = detailed ? "详细" : "简洁";
 		CallPresentationButton.ToolTip = detailed ? "切换到简洁视图" : "切换到详细视图";
     }

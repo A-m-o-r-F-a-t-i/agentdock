@@ -75,12 +75,15 @@ internal static class Program
                 Populate(window);
                 foreach (var mode in new[] {"compact","detailed"})
                 {
-                    Named<ListBox>(window,"CallsList").ItemTemplate = (DataTemplate)window.FindResource(mode=="compact" ? "CallRowTemplate" : "DetailedCallRowTemplate");
-                    Named<Button>(window,"CallPresentationButton").Content = mode=="compact" ? "简洁" : "详细";
-                    var header = window.FindName("DetailedCallsHeader") as FrameworkElement;
-                    if (header is not null) header.Visibility = mode=="detailed" ? Visibility.Visible : Visibility.Collapsed;
+                    var preferences=typeof(ExecutionWindow).GetField("_preferences",BindingFlags.Instance|BindingFlags.NonPublic)!.GetValue(window)!;
+                    preferences.GetType().GetProperty("DetailedCalls")!.SetValue(preferences,mode=="detailed");
+                    typeof(ExecutionWindow).GetMethod("ApplyCallPresentation",BindingFlags.Instance|BindingFlags.NonPublic)!.Invoke(window,null);
                     foreach (var width in new[] {800.0,1280.0})
+                    {
+                        Layout(window,width);
+                        ValidateCallTable(window,mode=="detailed");
                         foreach (var scale in new[] {1.0,1.25,1.5,2.0}) Render(window,output,$"execution-{theme}-{mode}-{(int)width}",scale,width);
+                    }
                 }
                 // Expanding/collapsing is driven through the production bound
                 // key. No backend request is permitted in this unstarted view.
@@ -159,6 +162,23 @@ internal static class Program
         var details=Named<FrameworkElement>(window,"DetailsPanel");details.Height=280;details.Visibility=Visibility.Visible;
         Named<FrameworkElement>(window,"InsertionPanel").Visibility=Visibility.Collapsed;
         var tabs=Named<TabControl>(window,"CallDetailsTabs");tabs.DataContext=row;tabs.Visibility=Visibility.Visible;
+    }
+    private static void ValidateCallTable(Window window,bool detailed)
+    {
+        var table=Named<Grid>(window,"CallTable");
+        var scroller=Named<ScrollViewer>(window,"CallTableScroller");
+        var header=Named<Grid>(window,"DetailedCallsHeader");
+        if(detailed)
+        {
+            Check(table.ActualWidth>=940,"Detailed table compressed below its readable minimum.");
+            Check(header.ColumnDefinitions[0].ActualWidth>=280,"Detailed tool title was squeezed by fixed diagnostic columns.");
+            if(scroller.ActualWidth<940) Check(scroller.ScrollableWidth>0 && scroller.ComputedHorizontalScrollBarVisibility==Visibility.Visible,"Narrow detailed view has no horizontal access to diagnostic columns.");
+            var row=Descendants(Named<ListBox>(window,"CallsList")).OfType<Grid>().First(grid=>grid.ColumnDefinitions.Count==8 && grid.DataContext is ExecutionCallRow);
+            var stats=row.Children.OfType<ContentControl>().Single(control=>Grid.GetColumn(control)==1);
+            Check(stats.ActualWidth>=100,"Detailed modification numbers were clipped.");
+            Check(Math.Abs(row.ColumnDefinitions[0].ActualWidth-header.ColumnDefinitions[0].ActualWidth)<2,"Detailed header and row columns are misaligned.");
+        }
+        else Check(scroller.ScrollableWidth<1,"Compact mode retained a wide diagnostic table.");
     }
     private static FrameworkElement Layout(Window window, double width = 1180)
     {

@@ -36,7 +36,7 @@
       </DataTemplate>
       <DataTemplate x:Key="DetailedCallRowTemplate">
         <Grid Height="{StaticResource ExecutionRowHeight}" Margin="6,0">
-		  <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="96"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+		  <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="112"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
           <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip="{Binding TitleTooltip}" VerticalAlignment="Center" Margin="8,0"/>
 		  <ContentControl Grid.Column="1" Content="{Binding}" ContentTemplate="{StaticResource EditStatsTemplate}" Margin="0,0,8,0"/>
           <TextBlock Grid.Column="2" Width="84" Text="{Binding Started}" FontSize="12" VerticalAlignment="Center" Visibility="{Binding ShowTimestamps, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/>
@@ -163,13 +163,15 @@
           <Button Content="···" Width="30" Padding="0" Click="CallMenu_Click" ToolTip="记录管理" AutomationProperties.Name="记录管理"/>
         </StackPanel>
       </Grid>
-      <Grid Grid.Row="4" Margin="14,0,14,8">
+      <ScrollViewer x:Name="CallTableScroller" Grid.Row="4" Margin="14,0,14,8" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Disabled" SizeChanged="CallTable_SizeChanged">
+      <Grid x:Name="CallTable">
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-        <Grid x:Name="DetailedCallsHeader" Height="26" Margin="6,0" Visibility="Collapsed">
-          <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="96"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <Grid x:Name="DetailedCallsHeader" Height="26" Margin="7,0,19,0" Visibility="Collapsed">
+          <Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="112"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="56"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="70"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
 		  <TextBlock Text="工具与动作" Style="{StaticResource MutedText}" Margin="8,0"/><TextBlock Grid.Column="1" Text="修改" Style="{StaticResource MutedText}" HorizontalAlignment="Right" Margin="0,0,8,0"/><TextBlock Grid.Column="2" Width="84" Text="开始" Style="{StaticResource MutedText}" Visibility="{Binding ShowTimestamps, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolVisibility}}"/><TextBlock Grid.Column="3" Text="状态" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="4" Text="总耗时" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="5" Text="执行" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="6" Text="等待" Style="{StaticResource MutedText}"/><TextBlock Grid.Column="7" Text="来源" Style="{StaticResource MutedText}"/>
         </Grid>
         <ListBox x:Name="CallsList" Grid.Row="1" ItemsSource="{Binding Calls}" ItemTemplate="{StaticResource CallRowTemplate}" SelectionMode="Extended"
+                 Padding="0" ScrollViewer.VerticalScrollBarVisibility="Visible"
                  SelectionChanged="Calls_Changed" PreviewMouseRightButtonDown="Calls_RightClick" PreviewMouseWheel="Calls_Wheel" ScrollViewer.ScrollChanged="Calls_ScrollChanged"
 				 VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" VirtualizingPanel.ScrollUnit="Pixel" ScrollViewer.CanContentScroll="True">
           <ListBox.ItemContainerStyle><Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}"><Setter Property="Height" Value="{StaticResource ExecutionRowHeight}"/></Style></ListBox.ItemContainerStyle>
@@ -177,6 +179,7 @@
 		<Button x:Name="HistoryRetryButton" Grid.Row="1" Content="历史加载失败，重试" Click="RetryHistory_Click" Visibility="Collapsed" VerticalAlignment="Top" HorizontalAlignment="Center"/>
         <StackPanel x:Name="EmptyPanel" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"><TextBlock x:Name="EmptyText" Text="暂无执行记录" Foreground="{DynamicResource SecondaryText}"/><Button Content="刷新" Click="Refresh_Click" Margin="0,8,0,0"/></StackPanel>
       </Grid>
+      </ScrollViewer>
       <Border x:Name="DetailsPanel" Grid.Row="6" Height="270" Visibility="Collapsed" Background="{DynamicResource PanelBackground}" BorderBrush="{DynamicResource SeparatorBrush}" BorderThickness="0,1,0,0" Padding="18,5,18,12">
         <Border.Effect><DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.08"/></Border.Effect>
         <DockPanel>
