@@ -4,7 +4,7 @@ English | [简体中文](./README.zh-CN.md)
 
 <img src="./docs/assets/agentdock-logo.png" alt="AgentDock logo" width="128" />
 
-# AgentDock MCP
+# AgentDock Workbench MCP
 
 This fork's current Windows candidate: **AgentDock 1.1.4** · [1.1.4 release notes and verification](./docs/releases/v1.1.4.md) · [Differences from upstream and migration](./docs/official-version-differences-and-migration.md) · [Tailscale Funnel configuration](./docs/tailscale-funnel.md). This fork publishes Windows packages only; upstream platform downloads remain separate.
 

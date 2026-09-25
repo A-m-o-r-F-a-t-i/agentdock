@@ -4,7 +4,7 @@
 
 <img src="./docs/assets/agentdock-logo.png" alt="AgentDock logo" width="128" />
 
-# AgentDock MCP
+# AgentDock Workbench MCP
 
 本分支当前 Windows 候选版：**AgentDock 1.1.4** · [1.1.4 发布说明与验证](./docs/releases/v1.1.4.md) · [与上游官方版的差异及迁移](./docs/official-version-differences-and-migration.md) · [Tailscale Funnel 配置](./docs/tailscale-funnel.md)。本分支仅发布 Windows 安装包，其他平台的上游发行版保持独立。
 

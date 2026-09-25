@@ -12,7 +12,7 @@ internal sealed class TaskNotificationWindow : Window
     private readonly DispatcherTimer _timeout = new() { Interval = TimeSpan.FromSeconds(8) };
     internal TaskNotificationWindow(TaskNotification notification, Func<TaskNotification, Task> navigate)
     {
-        Title = "AgentDock"; Width = 360; Height = 116;
+        Title = "AgentDock Workbench"; Width = 360; Height = 116;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
         ShowInTaskbar = false; ShowActivated = false; Topmost = true;
         FontFamily = new System.Windows.Media.FontFamily("Segoe UI, Microsoft YaHei UI"); FontSize = 14;

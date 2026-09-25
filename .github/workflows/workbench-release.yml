@@ -1,0 +1,240 @@
+name: AgentDock Workbench Release
+run-name: AgentDock Workbench ${{ inputs.ref || github.ref_name }}
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Exact commit or branch to validate and build'
+        type: string
+        required: true
+        default: main
+      publish:
+        description: 'Publish a formal Latest release only after every platform passes'
+        type: boolean
+        default: false
+      installation_tests:
+        description: 'Run isolated Windows Setup installation/uninstall on the hosted runner'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workbench-release-${{ inputs.ref || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-source:
+    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
+    runs-on: ubuntu-24.04
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
+      version: ${{ steps.identity.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse --verify 'HEAD^{commit}')"
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          version="$(go run ./tools/release version)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          python3 scripts/test/check-workbench-brand.py
+          python3 -B scripts/test/test-workbench-release.py
+
+  windows:
+    needs: resolve-source
+    permissions:
+      contents: write
+    uses: ./.github/workflows/windows-package.yml
+    with:
+      ref: ${{ needs.resolve-source.outputs.commit }}
+      architectures: amd64,arm64
+      release_build: true
+      publish: false
+      installation_tests: ${{ inputs.installation_tests || false }}
+
+  unix:
+    needs: resolve-source
+    name: Native ${{ matrix.platform }} ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: amd64
+            runner: ubuntu-24.04
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - platform: darwin
+            arch: amd64
+            runner: macos-15-intel
+          - platform: darwin
+            arch: arm64
+            runner: macos-15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-source.outputs.commit }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Native backend regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -p 2 ./... -count=1 -timeout=8m
+          go vet ./...
+      - name: Linux native package tools
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+      - name: Native macOS app and packaging contracts
+        if: matrix.platform == 'darwin'
+        run: zsh scripts/test/test-macos-app.sh
+      - name: Build native payload and verify its actual identity
+        env:
+          EXPECTED_COMMIT: ${{ needs.resolve-source.outputs.commit }}
+          TARGET_OS: ${{ matrix.platform }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 packaging/build-unix-release.py --os "$TARGET_OS" --arch "$TARGET_ARCH" --commit "$EXPECTED_COMMIT" --output dist/unix
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workbench-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_id }}
+          path: dist/unix/*
+          if-no-files-found: error
+          retention-days: 30
+
+  macos-app:
+    needs: [resolve-source, unix]
+    name: Universal macOS Workbench application
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-source.outputs.commit }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: workbench-darwin-*-${{ github.run_id }}
+          path: payload
+          merge-multiple: true
+      - name: Verify official cloudflared inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for architecture in amd64 arm64; do
+            archive="$RUNNER_TEMP/cloudflared-$architecture.tgz"
+            directory="$RUNNER_TEMP/cloudflared-$architecture"
+            curl -fL --retry 5 --retry-delay 2 "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-$architecture.tgz" -o "$archive"
+            mkdir -p "$directory"
+            tar -xzf "$archive" -C "$directory"
+            test -f "$directory/cloudflared" && test ! -L "$directory/cloudflared"
+            codesign --verify --deep --strict --verbose=2 "$directory/cloudflared"
+            install -m 0755 "$directory/cloudflared" "payload/cloudflared_darwin_$architecture"
+            (cd payload && shasum -a 256 "cloudflared_darwin_$architecture" > "cloudflared_darwin_$architecture.sha256")
+          done
+      - name: Build ad-hoc signed universal DMG and update ZIP
+        env:
+          AGENTDOCK_MACOS_ARCHES: arm64,x86_64
+          AGENTDOCK_MACOS_APP_OUTPUT_DIR: dist/macos-app
+          AGENTDOCK_MACOS_OFFLINE_PAYLOAD_DIR: ${{ github.workspace }}/payload
+        run: zsh packaging/macos/build-app.sh
+      - name: Verify universal architecture, branding and embedded source
+        env:
+          EXPECTED_COMMIT: ${{ needs.resolve-source.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.resolve-source.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/test/verify-macos-workbench.py dist/macos-app "$EXPECTED_VERSION" "$EXPECTED_COMMIT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workbench-macos-app-${{ github.run_id }}
+          path: |
+            dist/macos-app/*.dmg
+            dist/macos-app/*.zip
+            dist/macos-app/*.sha256
+            dist/macos-app/verification-macos-app.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: [resolve-source, windows, unix, macos-app]
+    name: Verify complete artifact set and publish Latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-source.outputs.commit }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: workbench-*-${{ github.run_id }}
+          path: input/unix
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.windows.outputs.artifact_name }}
+          path: input/windows
+      - name: Validate reports and assemble complete release
+        env:
+          EXPECTED_COMMIT: ${{ needs.resolve-source.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.resolve-source.outputs.version }}
+          WINDOWS_COMMIT: ${{ needs.windows.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test "$EXPECTED_COMMIT" = "$WINDOWS_COMMIT"
+          python3 scripts/release/publish-workbench.py --input input --dist dist/release --version "$EXPECTED_VERSION" --commit "$EXPECTED_COMMIT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workbench-complete-${{ github.run_id }}
+          path: dist/release/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Publish only verified complete release
+        if: github.event_name == 'push' || inputs.publish == true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_COMMIT: ${{ needs.resolve-source.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.resolve-source.outputs.version }}
+        run: python3 scripts/release/publish-workbench.py --input input --dist dist/release --version "$EXPECTED_VERSION" --commit "$EXPECTED_COMMIT" --publish

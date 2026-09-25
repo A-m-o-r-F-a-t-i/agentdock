@@ -90,7 +90,7 @@ public partial class MainWindow
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or ArgumentException)
         {
-            MessageBox.Show(this, ex.Message, "AgentDock", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, ex.Message, "AgentDock Workbench", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -106,7 +106,7 @@ public partial class MainWindow
         catch (Exception ex)
         {
             RuntimeOptionsStatusText.Text = ex.Message;
-            MessageBox.Show(this, ex.Message, "AgentDock", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, ex.Message, "AgentDock Workbench", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally { SetRuntimeOptionsBusy(false); }
     }

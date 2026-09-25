@@ -6,6 +6,31 @@
 review_threshold_lines: 300
 
 scripts:
+  - path: scripts/test/test-workbench-release.py
+    class: test
+    owner: release
+    public_contract: false
+    notes: 合成六平台产物验证缺包、摘要、跨提交证据、重复文件和发布白名单，测试不调用网络写入。
+  - path: packaging/build-unix-release.py
+    class: packaging
+    owner: release
+    public_contract: false
+    notes: 原生Linux/macOS载荷、Debian/RPM元数据与实际版本校验，不启动服务。
+  - path: scripts/release/publish-workbench.py
+    class: ci
+    owner: release
+    public_contract: false
+    notes: 全平台同SHA报告和摘要校验，草稿上传成功后才发布正式Latest。
+  - path: scripts/test/check-workbench-brand.py
+    class: test
+    owner: release
+    public_contract: false
+    notes: 跨平台产品显示名称、版本及保留的升级标识验证。
+  - path: scripts/test/verify-macos-workbench.py
+    class: test
+    owner: release
+    public_contract: false
+    notes: 通用Mac应用的原生架构、签名完整性、产品名、内嵌Core和归档校验。
   - path: scripts/test/test-execution-upgrade.py
     class: test
     owner: runtime

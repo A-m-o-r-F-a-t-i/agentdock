@@ -22,14 +22,14 @@
 
 [Setup]
 AppId={{D6788C7A-4104-48D4-B5C3-F4858B5606EA}
-AppName=AgentDock
+AppName=AgentDock Workbench
 AppVersion={#AppVersion}
-AppPublisher=AgentDock
+AppPublisher=AgentDock Workbench
 AppPublisherURL=https://github.com/A-m-o-r-F-a-t-i/agentdock
 AppSupportURL=https://github.com/A-m-o-r-F-a-t-i/agentdock/issues
 AppUpdatesURL=https://github.com/A-m-o-r-F-a-t-i/agentdock/releases
 DefaultDirName={localappdata}\AgentDock
-DefaultGroupName=AgentDock
+DefaultGroupName=AgentDock Workbench
 DisableProgramGroupPage=yes
 DisableDirPage=no
 PrivilegesRequired=lowest
@@ -87,7 +87,7 @@ Type: files; Name: "{app}\desktop-version.txt"
 Type: files; Name: "{userdesktop}\{code:GetLocalizedMessage|DesktopShortcutName}.lnk"
 
 [Icons]
-Name: "{group}\AgentDock"; Filename: "{app}\bin\agentdock-tray.exe"; WorkingDir: "{app}"; IconFilename: "{app}\installer\agentdock.ico"; AppUserModelID: "com.uvwt.agentdock.controlpanel"
+Name: "{group}\AgentDock Workbench"; Filename: "{app}\bin\agentdock-tray.exe"; WorkingDir: "{app}"; IconFilename: "{app}\installer\agentdock.ico"; AppUserModelID: "com.uvwt.agentdock.controlpanel"
 Name: "{group}\{code:GetLocalizedMessage|DocsShortcut}"; Filename: "https://uvwt.github.io/agentdock-docs/"
 Name: "{group}\{code:GetLocalizedMessage|UninstallShortcut}"; Filename: "{uninstallexe}"
 

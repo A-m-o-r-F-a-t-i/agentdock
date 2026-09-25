@@ -184,6 +184,7 @@ test "$(plutil -extract LimitLoadToSessionType raw -o - "$MENU_AGENT_PLIST")" = 
 # pipefail 下不要用 grep -q 提前关闭命令输出，避免上游偶发 SIGPIPE(141)。
 core_helper_version="$("$CORE_HELPER" --version)"
 [[ "$core_helper_version" == "AgentDock v"* ]]
+[[ "$core_helper_version" == *"product: AgentDock Workbench"* ]]
 cloudflared_helper_version="$("$CLOUDFLARED_HELPER" --version)"
 [[ "$cloudflared_helper_version" == "cloudflared version test"* ]]
 codesign --verify --strict --verbose=2 "$MENU_LOGIN_HELPER"
@@ -203,6 +204,8 @@ test -f "$DMG.sha256"
 test -f "$ZIP"
 test -f "$ZIP.sha256"
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
+test "$(plutil -extract CFBundleDisplayName raw -o - "$APP/Contents/Info.plist")" = "AgentDock Workbench"
+test "$(plutil -extract CFBundleName raw -o - "$APP/Contents/Info.plist")" = "AgentDock Workbench"
 test "$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")" = "com.uvwt.agentdock"
 test "$(plutil -extract CFBundleIconFile raw -o - "$APP/Contents/Info.plist")" = "AgentDock.icns"
 test "$(plutil -extract CFBundleDevelopmentRegion raw -o - "$APP/Contents/Info.plist")" = "en"

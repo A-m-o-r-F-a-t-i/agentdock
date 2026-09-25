@@ -7,8 +7,9 @@ enum AppVersion {
     }
 
     static func matchesCoreVersion(_ output: String, expectedDisplayVersion: String = current) -> Bool {
-        output.split(whereSeparator: \.isNewline).first.map(String.init)
-            == "AgentDock \(expectedDisplayVersion)"
+        let firstLine = output.split(whereSeparator: \.isNewline).first.map(String.init)
+        return firstLine == "AgentDock Workbench \(expectedDisplayVersion)"
+            || firstLine == "AgentDock \(expectedDisplayVersion)"
     }
 
     static func matchesHealthVersion(_ raw: String?, expectedDisplayVersion: String = current) -> Bool {

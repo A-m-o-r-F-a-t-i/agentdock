@@ -574,6 +574,10 @@ func TestRunSkipsCurrentAndNewerVersions(t *testing.T) {
 }
 
 func TestParseVersionOutputRequiresExactVersionLine(t *testing.T) {
+	workbench, workbenchErr := parseVersionOutput([]byte("AgentDock Workbench v1.1.7\ncommit: abc\n"))
+	if workbenchErr != nil || workbench != "v1.1.7" {
+		t.Fatalf("Workbench version=%q err=%v", workbench, workbenchErr)
+	}
 	version, err := parseVersionOutput([]byte("AgentDock v0.4.5\ncommit: abc\n"))
 	if err != nil || version != "v0.4.5" {
 		t.Fatalf("version=%q err=%v", version, err)

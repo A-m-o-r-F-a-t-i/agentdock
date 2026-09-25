@@ -74,7 +74,7 @@ Copy-Item (Join-Path $extractRoot 'manage-windows.ps1') (Join-Path $runtimeRoot 
 
 $versionOutput = (& $core --version | Out-String).Trim()
 if ([string]::IsNullOrWhiteSpace($Version)) {
-    if ($versionOutput -notmatch '^AgentDock v(?<version>[0-9]+\.[0-9]+\.[0-9]+)') {
+    if ($versionOutput -notmatch '^AgentDock(?: Workbench)? v(?<version>[0-9]+\.[0-9]+\.[0-9]+)') {
         throw "cannot derive Release version from: $versionOutput"
     }
     $Version = $Matches.version
@@ -116,7 +116,7 @@ $manifest = [ordered]@{
 [IO.File]::WriteAllText((Join-Path $runtimeRoot 'credential-owner-sid.txt'), ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value + [Environment]::NewLine), $utf8NoBom)
 
 try {
-    if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch [regex]::Escape("AgentDock v$Version")) {
+    if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch ("AgentDock(?: Workbench)? v" + [regex]::Escape($Version))) {
         throw "flat Core version mismatch: $versionOutput"
     }
 
@@ -242,7 +242,7 @@ try {
                 continue
             }
             $stableVersion = (& $core --version | Out-String).Trim()
-            if ($LASTEXITCODE -ne 0 -or $stableVersion -notmatch [regex]::Escape("AgentDock v$Version")) {
+            if ($LASTEXITCODE -ne 0 -or $stableVersion -notmatch ("AgentDock(?: Workbench)? v" + [regex]::Escape($Version))) {
                 continue
             }
             $health = Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:$port/healthz" -TimeoutSec 2

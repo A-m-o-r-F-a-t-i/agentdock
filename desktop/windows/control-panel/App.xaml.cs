@@ -296,7 +296,7 @@ public partial class App : System.Windows.Application
 
         _notifyIcon = new Forms.NotifyIcon
         {
-            Text = "AgentDock",
+            Text = "AgentDock Workbench",
             Visible = true,
             Icon = LoadIcon(),
             ContextMenuStrip = _trayMenu
@@ -374,7 +374,7 @@ public partial class App : System.Windows.Application
             menu.Items.Add(CreateMenuItem(UiText.Get("RegenerateTemporaryAddress"), async (_, _) =>
             {
                 try { await Runtime.RegenerateQuickTunnelAsync(); await RefreshTraySnapshotAsync(); }
-                catch (Exception ex) { _notifyIcon?.ShowBalloonTip(5000, "AgentDock", ex.Message, Forms.ToolTipIcon.Error); }
+                catch (Exception ex) { _notifyIcon?.ShowBalloonTip(5000, "AgentDock Workbench", ex.Message, Forms.ToolTipIcon.Error); }
             }));
         }
         menu.Items.Add(new Forms.ToolStripSeparator());
@@ -618,7 +618,7 @@ public partial class App : System.Windows.Application
         }
         catch (Exception ex)
         {
-            _notifyIcon?.ShowBalloonTip(5000, "AgentDock", LastNonEmptyLine(ex.Message, UiText.Get("OperationFailed")), Forms.ToolTipIcon.Error);
+            _notifyIcon?.ShowBalloonTip(5000, "AgentDock Workbench", LastNonEmptyLine(ex.Message, UiText.Get("OperationFailed")), Forms.ToolTipIcon.Error);
         }
     }
 

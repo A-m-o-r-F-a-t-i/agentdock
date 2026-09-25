@@ -1,11 +1,46 @@
 name: Windows Package
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      architectures:
+        type: string
+        default: amd64
+      release_build:
+        type: boolean
+        default: false
+      publish:
+        type: boolean
+        default: false
+      tag:
+        type: string
+        default: ''
+      prerelease:
+        type: boolean
+        default: false
+      installation_tests:
+        type: boolean
+        default: false
+    outputs:
+      artifact_name:
+        value: ${{ jobs.build.outputs.artifact_name }}
+      commit:
+        value: ${{ jobs.build.outputs.commit }}
+      version:
+        value: ${{ jobs.build.outputs.version }}
   workflow_dispatch:
     inputs:
+      architectures:
+        description: 'Windows target architectures: amd64 or amd64,arm64'
+        type: string
+        default: amd64
+      release_build:
+        description: 'Prepare release-channel bytes without publishing'
+        type: boolean
+        default: false
       ref:
         description: 'Git ref to build; use main for a candidate or an existing vX.Y.Z tag for publication'
         required: true
@@ -49,7 +84,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+          ref: ${{ inputs.ref || github.ref }}
       - id: identity
         shell: bash
         run: |
@@ -98,7 +133,7 @@ jobs:
   build:
     needs: [resolve-source, linux-contracts]
     if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
-    name: Build verified unsigned Windows x64 package
+    name: Build verified unsigned Windows packages
     runs-on: windows-latest
     timeout-minutes: 45
     defaults:
@@ -108,6 +143,7 @@ jobs:
       CGO_ENABLED: '0'
       DOTNET_CLI_TELEMETRY_OPTOUT: '1'
       DOTNET_NOLOGO: '1'
+      BUILD_ARCHITECTURES: ${{ inputs.architectures || 'amd64' }}
     outputs:
       version: ${{ steps.metadata.outputs.version }}
       commit: ${{ steps.metadata.outputs.commit }}
@@ -165,7 +201,10 @@ jobs:
           $publish = $false
           $prerelease = $false
           $tag = ''
-          if ($env:EVENT_NAME -eq 'push') {
+          if ('${{ inputs.release_build }}' -eq 'true') {
+            # A reusable all-platform build never publishes Windows early.
+            $publish = $false
+          } elseif ($env:EVENT_NAME -eq 'push') {
             if ($env:GITHUB_REF -notlike 'refs/tags/v*') {
               throw 'Automatic publication is only supported for v* tags.'
             }
@@ -174,12 +213,13 @@ jobs:
           } else {
             $publish = $env:MANUAL_PUBLISH -eq 'true'
             $prerelease = $env:MANUAL_PRERELEASE -eq 'true'
-            $tag = $env:MANUAL_TAG.Trim()
+            $tag = ([string]$env:MANUAL_TAG).Trim()
             if ($publish -and [string]::IsNullOrWhiteSpace($tag)) {
               throw 'Manual publication requires the tag input.'
             }
           }
 
+          if ($publish -and [version]$version -ge [version]'1.1.7') { throw 'Use AgentDock Workbench Release for complete all-platform publication.' }
           if (-not [string]::IsNullOrWhiteSpace($tag)) {
             & go run ./tools/release verify-version $tag
             if ($LASTEXITCODE -ne 0) {
@@ -191,7 +231,7 @@ jobs:
             }
           }
 
-          $channel = if ($publish) { 'release' } else { 'candidate-not-released' }
+          $channel = if ($publish -or '${{ inputs.release_build }}' -eq 'true') { 'release' } else { 'candidate-not-released' }
           $artifactName = "agentdock-windows-$version-$env:GITHUB_RUN_ID"
           "version=$version" | Out-File $env:GITHUB_OUTPUT -Encoding ascii -Append
           "commit=$commit" | Out-File $env:GITHUB_OUTPUT -Encoding ascii -Append
@@ -242,11 +282,11 @@ jobs:
           $staticOnly = '${{ inputs.installation_tests }}' -ne 'true'
           & .\scripts\test\test-install-windows.ps1 -StaticOnly:$staticOnly
 
-      - name: Build Windows x64 ZIP and offline Setup
+      - name: Build Windows ZIP and offline Setup for each architecture
         run: |
           $ErrorActionPreference = 'Stop'
           $parameters = @{
-            Architectures = @('amd64')
+            Architectures = @($env:BUILD_ARCHITECTURES -split ',')
             OutputDirectory = (Join-Path $PWD 'dist\windows-package')
           }
           if ('${{ steps.metadata.outputs.channel }}' -eq 'candidate-not-released') {
@@ -258,18 +298,18 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $outputRoot = Join-Path $PWD 'dist\windows-package'
-          $verification = & .\scripts\test\verify-windows-release-assets.ps1 `
-            -ReleaseDirectory (Join-Path $outputRoot 'release') `
-            -BuildReport (Join-Path $outputRoot 'build-report.json') `
-            -ExpectedVersion '${{ steps.metadata.outputs.version }}' `
-            -ExpectedCommit '${{ steps.metadata.outputs.commit }}' `
-            -ExpectedChannel '${{ steps.metadata.outputs.channel }}' `
-            -ExpectedAuthenticode unsigned
-          [IO.File]::WriteAllText(
-            (Join-Path $outputRoot 'verification.json'),
-            (($verification | Out-String).Trim() + "`n"),
-            [Text.UTF8Encoding]::new($false)
-          )
+          $architectures = @($env:BUILD_ARCHITECTURES -split ',')
+          $verification = foreach ($architecture in $architectures) {
+            $result = & .\scripts\test\verify-windows-release-assets.ps1 `
+              -ReleaseDirectory (Join-Path $outputRoot 'release') `
+              -BuildReport (Join-Path $outputRoot 'build-report.json') `
+              -ExpectedVersion '${{ steps.metadata.outputs.version }}' `
+              -ExpectedCommit '${{ steps.metadata.outputs.commit }}' `
+              -ExpectedChannel '${{ steps.metadata.outputs.channel }}' `
+              -ExpectedAuthenticode unsigned -Architecture $architecture -Architectures $architectures
+            ($result | Out-String) | ConvertFrom-Json
+          }
+          ConvertTo-Json -InputObject @($verification) -Depth 8 | Set-Content -Encoding utf8 (Join-Path $outputRoot 'verification.json')
           git diff --exit-code
           if ($LASTEXITCODE -ne 0) { throw 'Build modified tracked source.' }
 
@@ -287,6 +327,7 @@ jobs:
         run: |
           $installed = '${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.installation_tests }}' -eq 'true'
           $scope = @{
+            version = '${{ steps.metadata.outputs.version }}'
             automated_regression = 'passed'
             metadata_checksums = 'passed'
             installation_tests = $(if ($installed) { 'passed' } else { 'not_run_user_requested' })
@@ -358,13 +399,17 @@ jobs:
       - name: Verify downloaded package again
         run: |
           $ErrorActionPreference = 'Stop'
+          $report = Get-Content '.\dist\windows-package\build-report.json' -Raw | ConvertFrom-Json
+          $architectures = @($report.platforms | ForEach-Object { ($_ -split '/')[1] })
+          foreach ($architecture in $architectures) {
           & .\scripts\test\verify-windows-release-assets.ps1 `
             -ReleaseDirectory .\dist\windows-package\release `
             -BuildReport .\dist\windows-package\build-report.json `
             -ExpectedVersion '${{ needs.build.outputs.version }}' `
             -ExpectedCommit '${{ needs.build.outputs.commit }}' `
             -ExpectedChannel release `
-            -ExpectedAuthenticode unsigned | Out-Null
+            -ExpectedAuthenticode unsigned -Architecture $architecture -Architectures $architectures | Out-Null
+          }
           $scope = Get-Content '.\dist\windows-package\verification-scope.json' -Raw | ConvertFrom-Json
           $commit = '${{ needs.resolve-source.outputs.commit }}'
           if ($scope.commit -ne $commit -or $scope.resolved_commit -ne $commit -or $scope.linux_tested_commit -ne $commit -or '${{ needs.build.outputs.commit }}' -ne $commit -or '${{ needs.linux-contracts.outputs.commit }}' -ne $commit) {
@@ -405,7 +450,7 @@ jobs:
             $notes = $matches[0].FullName
           }
 
-          $title = "AgentDock $version for Windows x64"
+          $title = "AgentDock Workbench $version"
           & gh release view $tag --repo $env:GITHUB_REPOSITORY --json url *> $null
           if ($LASTEXITCODE -ne 0) {
             & gh release create $tag `
@@ -418,9 +463,9 @@ jobs:
           }
 
           $assets = @(Get-ChildItem $releaseRoot -File | Sort-Object Name)
-          if ($assets.Count -ne 6) {
-            throw "Expected six Windows release assets, found $($assets.Count)."
-          }
+          $buildReport = Get-Content .\dist\windows-package\build-report.json -Raw | ConvertFrom-Json
+          $expectedCount = 4 * @($buildReport.platforms).Count + 2
+          if ($assets.Count -ne $expectedCount) { throw "Expected $expectedCount Windows assets, found $($assets.Count)." }
           & gh release upload $tag @($assets.FullName) `
             --repo $env:GITHUB_REPOSITORY `
             --clobber

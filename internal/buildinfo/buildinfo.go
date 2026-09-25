@@ -10,12 +10,16 @@ import (
 
 const Version = "1.1.7"
 
+// ProductName is the display identity from 1.1.7 onward; machine IDs remain stable.
+const ProductName = "AgentDock Workbench"
+
 var (
 	Commit    string
 	BuildDate string
 )
 
 type Info struct {
+	ProductName            string `json:"product_name"`
 	ExecutionPolicyVersion int    `json:"execution_policy_version"`
 	Version                string `json:"version"`
 	Commit                 string `json:"commit"`
@@ -26,6 +30,7 @@ type Info struct {
 
 func Current() Info {
 	info := Info{
+		ProductName:            ProductName,
 		ExecutionPolicyVersion: executioncompat.PolicyVersion,
 		Version:                strings.TrimSpace(Version),
 		Commit:                 strings.TrimSpace(Commit),

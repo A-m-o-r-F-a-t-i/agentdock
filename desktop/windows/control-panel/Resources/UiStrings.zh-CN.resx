@@ -13,7 +13,7 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="MainWindowTitle" xml:space="preserve">
-    <value>AgentDock 控制面板</value>
+    <value>AgentDock Workbench 控制面板</value>
   </data>
   <data name="WindowsControlPanel" xml:space="preserve">
     <value>Windows 控制面板</value>
@@ -235,16 +235,16 @@
     <value>运行权限</value>
   </data>
   <data name="RunCoreElevated" xml:space="preserve">
-    <value>以管理员权限运行 AgentDock 核心</value>
+    <value>以管理员权限运行 AgentDock Workbench 核心</value>
   </data>
   <data name="Startup" xml:space="preserve">
     <value>开机启动</value>
   </data>
   <data name="CoreStartup" xml:space="preserve">
-    <value>AgentDock 核心开机启动</value>
+    <value>AgentDock Workbench 核心开机启动</value>
   </data>
   <data name="TrayStartup" xml:space="preserve">
-    <value>AgentDock 控制面板托盘开机启动</value>
+    <value>AgentDock Workbench 控制面板托盘开机启动</value>
   </data>
   <data name="SaveAndRestart" xml:space="preserve">
     <value>保存并重启</value>
@@ -262,10 +262,10 @@
     <value>刷新</value>
   </data>
   <data name="UpdateWindowTitle" xml:space="preserve">
-    <value>AgentDock 更新</value>
+    <value>AgentDock Workbench 更新</value>
   </data>
   <data name="UpdatingAgentDock" xml:space="preserve">
-    <value>正在更新 AgentDock</value>
+    <value>正在更新 AgentDock Workbench</value>
   </data>
   <data name="PreparingUpdate" xml:space="preserve">
     <value>正在准备更新…</value>
@@ -277,16 +277,16 @@
     <value>状态不可用</value>
   </data>
   <data name="OpenAgentDock" xml:space="preserve">
-    <value>打开 AgentDock</value>
+    <value>打开 AgentDock Workbench</value>
   </data>
   <data name="StopAgentDock" xml:space="preserve">
-    <value>停止 AgentDock</value>
+    <value>停止 AgentDock Workbench</value>
   </data>
   <data name="RestartAgentDock" xml:space="preserve">
-    <value>重启 AgentDock</value>
+    <value>重启 AgentDock Workbench</value>
   </data>
   <data name="StartAgentDock" xml:space="preserve">
-    <value>启动 AgentDock</value>
+    <value>启动 AgentDock Workbench</value>
   </data>
   <data name="CheckingForUpdates" xml:space="preserve">
     <value>正在检查更新…</value>
@@ -313,7 +313,7 @@
     <value>正在检查更新，请稍候…</value>
   </data>
   <data name="NewVersionPrompt" xml:space="preserve">
-    <value>发现 AgentDock 新版本。
+    <value>发现 AgentDock Workbench 新版本。
 
 当前版本：{0}
 最新版本：{1}
@@ -330,16 +330,16 @@
     <value>更新失败。</value>
   </data>
   <data name="UpdateRolledBack" xml:space="preserve">
-    <value>更新未能提交，AgentDock 已恢复到上一版本。</value>
+    <value>更新未能提交，AgentDock Workbench 已恢复到上一版本。</value>
   </data>
   <data name="UpdateTransactionResultTimeout" xml:space="preserve">
-    <value>更新事务未返回最终结果。如果问题持续，请重新打开 AgentDock 或执行修复安装。</value>
+    <value>更新事务未返回最终结果。如果问题持续，请重新打开 AgentDock Workbench 或执行修复安装。</value>
   </data>
   <data name="UpdateStageRollingBack" xml:space="preserve">
     <value>正在恢复上一版本…</value>
   </data>
   <data name="PleaseWaitUpdating" xml:space="preserve">
-    <value>正在更新 AgentDock…</value>
+    <value>正在更新 AgentDock Workbench…</value>
   </data>
   <data name="UpdateStageChecking" xml:space="preserve">
     <value>正在检查更新…</value>
@@ -483,7 +483,7 @@
     <value>请填写 NexusDock 地址和一次性配对码。</value>
   </data>
   <data name="PairingAndRestarting" xml:space="preserve">
-    <value>正在配对并重启 AgentDock…</value>
+    <value>正在配对并重启 AgentDock Workbench…</value>
   </data>
   <data name="SwitchingAdmin" xml:space="preserve">
     <value>正在切换到管理员模式…</value>
@@ -534,34 +534,34 @@
     <value>NexusDock 地址和一次性配对码不能为空。</value>
   </data>
   <data name="RuntimeJsonMissing" xml:space="preserve">
-    <value>找不到 AgentDock runtime.json。</value>
+    <value>找不到 AgentDock Workbench runtime.json。</value>
   </data>
   <data name="RuntimeJsonInvalid" xml:space="preserve">
-    <value>AgentDock runtime.json 格式无效。</value>
+    <value>AgentDock Workbench runtime.json 格式无效。</value>
   </data>
   <data name="CoreBinaryMissing" xml:space="preserve">
-    <value>找不到 AgentDock 核心程序（{0}），请运行 Setup.exe 修复安装。</value>
+    <value>找不到 AgentDock Workbench 核心程序（{0}），请运行 Setup.exe 修复安装。</value>
   </data>
   <data name="TrayBinaryMissing" xml:space="preserve">
-    <value>找不到 AgentDock 托盘程序（{0}）。</value>
+    <value>找不到 AgentDock Workbench 托盘程序（{0}）。</value>
   </data>
   <data name="CurrentWindowsIdentityUnavailable" xml:space="preserve">
     <value>无法读取当前 Windows 用户身份。</value>
   </data>
   <data name="AdminSwitchCancelled" xml:space="preserve">
-    <value>已取消 AgentDock 管理员权限切换。</value>
+    <value>已取消 AgentDock Workbench 管理员权限切换。</value>
   </data>
   <data name="StartupRegistryUnavailable" xml:space="preserve">
     <value>无法打开 Windows 开机启动注册表。</value>
   </data>
   <data name="CoreStartFailed" xml:space="preserve">
-    <value>无法启动 AgentDock 核心程序。</value>
+    <value>无法启动 AgentDock Workbench 核心程序。</value>
   </data>
   <data name="ManagerStartFailed" xml:space="preserve">
-    <value>无法启动 AgentDock 管理程序。</value>
+    <value>无法启动 AgentDock Workbench 管理程序。</value>
   </data>
   <data name="ManagerFailedWithExitCode" xml:space="preserve">
-    <value>AgentDock 管理程序执行失败，退出码：{0}。</value>
+    <value>AgentDock Workbench 管理程序执行失败，退出码：{0}。</value>
   </data>
   <data name="DeviceIdentityInvalid" xml:space="preserve">
     <value>设备身份文件无效，请重新配对。</value>
@@ -582,16 +582,16 @@
     <value>更新检查结果为空。</value>
   </data>
   <data name="ParseUpdateCheckFailed" xml:space="preserve">
-    <value>无法解析 AgentDock 更新检查结果。</value>
+    <value>无法解析 AgentDock Workbench 更新检查结果。</value>
   </data>
   <data name="UnsupportedStartupComponent" xml:space="preserve">
     <value>不支持的开机启动组件。</value>
   </data>
   <data name="PrivilegeSwitchRollbackFailed" xml:space="preserve">
-    <value>切换 AgentDock 管理员模式失败，且回滚未完成。</value>
+    <value>切换 AgentDock Workbench 管理员模式失败，且回滚未完成。</value>
   </data>
   <data name="ManagementBinaryMissing" xml:space="preserve">
-    <value>找不到 AgentDock 管理程序（{0}）。</value>
+    <value>找不到 AgentDock Workbench 管理程序（{0}）。</value>
   </data>
   <data name="UnsupportedCoreServiceAction" xml:space="preserve">
     <value>不支持的核心服务操作。</value>
@@ -603,16 +603,16 @@
     <value>不支持的 Coding Agent：{0}</value>
   </data>
   <data name="UnsupportedTaskAdminAction" xml:space="preserve">
-    <value>不支持的 AgentDock 计划任务操作：{0}</value>
+    <value>不支持的 AgentDock Workbench 计划任务操作：{0}</value>
   </data>
   <data name="InvalidTaskAdminAction" xml:space="preserve">
-    <value>AgentDock 计划任务管理动作无效。</value>
+    <value>AgentDock Workbench 计划任务管理动作无效。</value>
   </data>
   <data name="MissingAdminArgument" xml:space="preserve">
-    <value>缺少 AgentDock 管理参数：{0}</value>
+    <value>缺少 AgentDock Workbench 管理参数：{0}</value>
   </data>
   <data name="TaskAdminRequiresElevation" xml:space="preserve">
-    <value>AgentDock 计划任务配置需要管理员权限。</value>
+    <value>AgentDock Workbench 计划任务配置需要管理员权限。</value>
   </data>
   <data name="ElevatedModeMissingSid" xml:space="preserve">
     <value>管理员增强模式缺少当前 Windows 用户 SID。</value>
@@ -621,37 +621,37 @@
     <value>管理员增强模式必须由当前登录的 Windows 账号确认 UAC。</value>
   </data>
   <data name="AdminArgumentBoolean" xml:space="preserve">
-    <value>AgentDock 管理参数 {0} 必须是 true 或 false。</value>
+    <value>AgentDock Workbench 管理参数 {0} 必须是 true 或 false。</value>
   </data>
   <data name="TaskEnabledStateRequired" xml:space="preserve">
-    <value>AgentDock 计划任务启用状态不能为空。</value>
+    <value>AgentDock Workbench 计划任务启用状态不能为空。</value>
   </data>
   <data name="ScheduledTaskMissing" xml:space="preserve">
-    <value>找不到 AgentDock 计划任务。</value>
+    <value>找不到 AgentDock Workbench 计划任务。</value>
   </data>
   <data name="TaskBackupDirectoryRequired" xml:space="preserve">
-    <value>AgentDock 计划任务备份目录不能为空。</value>
+    <value>AgentDock Workbench 计划任务备份目录不能为空。</value>
   </data>
   <data name="RuntimeDirectoryRequired" xml:space="preserve">
-    <value>AgentDock 运行目录不能为空。</value>
+    <value>AgentDock Workbench 运行目录不能为空。</value>
   </data>
   <data name="StopCoreFailed" xml:space="preserve">
-    <value>无法停止正在运行的 AgentDock Core：{0}</value>
+    <value>无法停止正在运行的 AgentDock Workbench Core：{0}</value>
   </data>
   <data name="TaskBackupStateMissing" xml:space="preserve">
-    <value>找不到 AgentDock 计划任务备份状态：{0}</value>
+    <value>找不到 AgentDock Workbench 计划任务备份状态：{0}</value>
   </data>
   <data name="TaskBackupStateReadFailed" xml:space="preserve">
-    <value>无法读取 AgentDock 计划任务备份状态。</value>
+    <value>无法读取 AgentDock Workbench 计划任务备份状态。</value>
   </data>
   <data name="TaskBackupXmlMissing" xml:space="preserve">
-    <value>找不到 AgentDock 计划任务备份 XML：{0}</value>
+    <value>找不到 AgentDock Workbench 计划任务备份 XML：{0}</value>
   </data>
   <data name="TaskBackupUserMissing" xml:space="preserve">
-    <value>AgentDock 计划任务备份缺少用户标识。</value>
+    <value>AgentDock Workbench 计划任务备份缺少用户标识。</value>
   </data>
   <data name="ElevatedTaskArgumentsIncomplete" xml:space="preserve">
-    <value>AgentDock 管理员增强计划任务参数不完整。</value>
+    <value>AgentDock Workbench 管理员增强计划任务参数不完整。</value>
   </data>
   <data name="TaskSchedulerComUnavailable" xml:space="preserve">
     <value>Windows Task Scheduler COM 服务不可用。</value>
@@ -660,13 +660,13 @@
     <value>无法连接 Windows Task Scheduler。</value>
   </data>
   <data name="CoreJobCreateFailed" xml:space="preserve">
-    <value>无法创建 AgentDock Core Job Object。</value>
+    <value>无法创建 AgentDock Workbench Core Job Object。</value>
   </data>
   <data name="CoreJobConfigureFailed" xml:space="preserve">
-    <value>无法配置 AgentDock Core Job Object。</value>
+    <value>无法配置 AgentDock Workbench Core Job Object。</value>
   </data>
   <data name="CoreJobAssignFailed" xml:space="preserve">
-    <value>无法把 AgentDock Core 加入后台 Job Object。</value>
+    <value>无法把 AgentDock Workbench Core 加入后台 Job Object。</value>
   </data>
   <data name="AcpPackageHint" xml:space="preserve">
     <value> 或 {0}</value>
@@ -714,7 +714,7 @@
     <value>独立 MCP 服务</value>
   </data>
   <data name="CapabilitiesRequireRunningCore" xml:space="preserve">
-    <value>启动 AgentDock Core 后才能管理功能。</value>
+    <value>启动 AgentDock Workbench Core 后才能管理功能。</value>
   </data>
   <data name="LoadingCapabilities" xml:space="preserve">
     <value>正在读取功能配置…</value>
@@ -807,13 +807,13 @@
     <value>至少选择一个 Skill 或 MCP 服务。</value>
   </data>
   <data name="RuntimeApiEmptyResponse" xml:space="preserve">
-    <value>AgentDock Runtime API 返回了空响应。</value>
+    <value>AgentDock Workbench Runtime API 返回了空响应。</value>
   </data>
   <data name="RuntimeApiInvalidResponse" xml:space="preserve">
-    <value>AgentDock Runtime API 返回的数据格式无效。</value>
+    <value>AgentDock Workbench Runtime API 返回的数据格式无效。</value>
   </data>
   <data name="RuntimeApiRequestFailed" xml:space="preserve">
-    <value>AgentDock Runtime API 请求失败，HTTP 状态码为 {0}。</value>
+    <value>AgentDock Workbench Runtime API 请求失败，HTTP 状态码为 {0}。</value>
   </data>
   <data name="HeavyPluginHelp" xml:space="preserve">
     <value>Heavy：先展示插件摘要，调用 plugin_load 后展开成员。关闭时直接展示已启用的 Skill/MCP。开关保存在宿主状态中，不改写插件包。</value>
@@ -876,7 +876,7 @@
     <value>配置位置（只读）</value>
   </data>
   <data name="AgentDockDataDirectory" xml:space="preserve">
-    <value>AgentDock 数据目录</value>
+    <value>AgentDock Workbench 数据目录</value>
   </data>
   <data name="ConfigurationFiles" xml:space="preserve">
     <value>设置文件与运行清单</value>
@@ -887,7 +887,7 @@
   <data name="RuntimeOptionsInvalid" xml:space="preserve">
     <value>请填写绝对工作区路径、有效的 JSON 字符串映射，并确保 ACP 数值在标注范围内。</value>
   </data>
-  <data name="TailscaleDescription" xml:space="preserve"><value>使用当前设备的 .ts.net HTTPS 域名。请先安装并登录 Tailscale，无需 Tunnel Token。AgentDock 仅管理自身映射，并保留 Bearer Token／OAuth 认证。</value></data>
+  <data name="TailscaleDescription" xml:space="preserve"><value>使用当前设备的 .ts.net HTTPS 域名。请先安装并登录 Tailscale，无需 Tunnel Token。AgentDock Workbench 仅管理自身映射，并保留 Bearer Token／OAuth 认证。</value></data>
   <data name="TailscaleClient" xml:space="preserve"><value>客户端</value></data>
   <data name="TailscaleDevice" xml:space="preserve"><value>设备名</value></data>
   <data name="TailscaleDomain" xml:space="preserve"><value>设备域名（只读）</value></data>
@@ -895,13 +895,13 @@
   <data name="TailscaleLocalTarget" xml:space="preserve"><value>本机目标</value></data>
   <data name="TailscaleDetect" xml:space="preserve"><value>检测 Tailscale</value></data>
   <data name="TailscaleEnable" xml:space="preserve"><value>启用 Funnel</value></data>
-  <data name="TailscaleStop" xml:space="preserve"><value>停用 AgentDock Funnel</value></data>
+  <data name="TailscaleStop" xml:space="preserve"><value>停用 AgentDock Workbench Funnel</value></data>
   <data name="TailscaleAuthorize" xml:space="preserve"><value>打开 Tailscale 授权页</value></data>
   <data name="TailscaleNotInstalled" xml:space="preserve"><value>未检测到 Tailscale</value></data>
   <data name="TailscalePending" xml:space="preserve"><value>映射已运行，等待验证</value></data>
   <data name="TailscaleNoKeyExpiry" xml:space="preserve"><value>客户端未报告到期日期</value></data>
   <data name="TailscaleOutputTooLarge" xml:space="preserve"><value>Tailscale 状态输出超过大小上限。</value></data>
-  <data name="PublicAccessSwitchWarning" xml:space="preserve"><value>从“{0}”切换到“{1}”？AgentDock 将停止当前由它管理的公网入口并重启 Core，现有公网连接可能中断。其他 Tailscale 服务和账户设置保持不变。</value></data>
+  <data name="PublicAccessSwitchWarning" xml:space="preserve"><value>从“{0}”切换到“{1}”？AgentDock Workbench 将停止当前由它管理的公网入口并重启 Core，现有公网连接可能中断。其他 Tailscale 服务和账户设置保持不变。</value></data>
   <data name="CopyPublicMcp" xml:space="preserve"><value>复制公网 MCP 地址</value></data>
   <data name="TaskActivityCenter" xml:space="preserve"><value>任务活动中心</value></data>
   <data name="ActivityCounts" xml:space="preserve"><value>进行中：{0} · 待处理：{1} · 最近最多 200 项任务{2} · {3:HH:mm:ss}</value></data>

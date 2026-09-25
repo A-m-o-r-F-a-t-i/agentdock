@@ -40,7 +40,7 @@ public partial class MainWindow
             CapabilityStatusText.Text = ex.Message;
             if (showErrors)
             {
-                MessageBox.Show(this, ex.Message, "AgentDock", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(this, ex.Message, "AgentDock Workbench", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
         finally
@@ -123,7 +123,7 @@ public partial class MainWindow
         catch (Exception ex)
         {
             CapabilityStatusText.Text = ex.Message;
-            MessageBox.Show(this, ex.Message, "AgentDock", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, ex.Message, "AgentDock Workbench", MessageBoxButton.OK, MessageBoxImage.Error);
             RenderCapabilityInventory();
         }
         finally
@@ -517,7 +517,7 @@ public partial class MainWindow
         var confirm = MessageBox.Show(
             this,
             UiText.Format("ConfirmRemovePlugin", name),
-            "AgentDock",
+            "AgentDock Workbench",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
         if (confirm != MessageBoxResult.Yes)

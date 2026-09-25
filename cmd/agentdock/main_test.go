@@ -18,7 +18,7 @@ func TestRunPrintsVersionWithoutLoadingServerConfiguration(t *testing.T) {
 	if err := run(context.Background(), []string{"--version"}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(stdout.String(), "AgentDock v"+strings.TrimPrefix(buildinfo.Version, "v")) || !strings.Contains(stdout.String(), "platform:") {
+	if !strings.HasPrefix(stdout.String(), "AgentDock v"+strings.TrimPrefix(buildinfo.Version, "v")+"\n") || !strings.Contains(stdout.String(), "product: "+buildinfo.ProductName) || !strings.Contains(stdout.String(), "platform:") {
 		t.Fatalf("unexpected version output: %s", stdout.String())
 	}
 	if stderr.Len() != 0 {
@@ -27,6 +27,13 @@ func TestRunPrintsVersionWithoutLoadingServerConfiguration(t *testing.T) {
 }
 
 func TestRunPrintsMachineReadableBuildInfo(t *testing.T) {
+	var human bytes.Buffer
+	if err := run(context.Background(), []string{"version"}, &human, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(human.String(), "AgentDock Workbench v"+buildinfo.Version+"\n") {
+		t.Fatal("human version output lost Workbench branding")
+	}
 	var stdout bytes.Buffer
 	if err := run(context.Background(), []string{"version", "--json"}, &stdout, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
@@ -35,7 +42,7 @@ func TestRunPrintsMachineReadableBuildInfo(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &info); err != nil {
 		t.Fatalf("version --json returned invalid JSON: %v", err)
 	}
-	if info.Version != buildinfo.Version || info.Platform == "" || info.GoVersion == "" {
+	if info.ProductName != "AgentDock Workbench" || info.Version != buildinfo.Version || info.Platform == "" || info.GoVersion == "" {
 		t.Fatalf("unexpected build info: %#v", info)
 	}
 }

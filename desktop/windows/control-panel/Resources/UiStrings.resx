@@ -13,7 +13,7 @@
     <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
   </resheader>
   <data name="MainWindowTitle" xml:space="preserve">
-    <value>AgentDock Control Panel</value>
+    <value>AgentDock Workbench Control Panel</value>
   </data>
   <data name="WindowsControlPanel" xml:space="preserve">
     <value>Windows Control Panel</value>
@@ -235,16 +235,16 @@
     <value>Runtime permissions</value>
   </data>
   <data name="RunCoreElevated" xml:space="preserve">
-    <value>Run AgentDock core with administrator privileges</value>
+    <value>Run AgentDock Workbench core with administrator privileges</value>
   </data>
   <data name="Startup" xml:space="preserve">
     <value>Startup</value>
   </data>
   <data name="CoreStartup" xml:space="preserve">
-    <value>Start AgentDock core at sign-in</value>
+    <value>Start AgentDock Workbench core at sign-in</value>
   </data>
   <data name="TrayStartup" xml:space="preserve">
-    <value>Start AgentDock control panel tray at sign-in</value>
+    <value>Start AgentDock Workbench control panel tray at sign-in</value>
   </data>
   <data name="SaveAndRestart" xml:space="preserve">
     <value>Save and restart</value>
@@ -262,10 +262,10 @@
     <value>Refresh</value>
   </data>
   <data name="UpdateWindowTitle" xml:space="preserve">
-    <value>AgentDock Update</value>
+    <value>AgentDock Workbench Update</value>
   </data>
   <data name="UpdatingAgentDock" xml:space="preserve">
-    <value>Updating AgentDock</value>
+    <value>Updating AgentDock Workbench</value>
   </data>
   <data name="PreparingUpdate" xml:space="preserve">
     <value>Preparing update…</value>
@@ -277,16 +277,16 @@
     <value>Status unavailable</value>
   </data>
   <data name="OpenAgentDock" xml:space="preserve">
-    <value>Open AgentDock</value>
+    <value>Open AgentDock Workbench</value>
   </data>
   <data name="StopAgentDock" xml:space="preserve">
-    <value>Stop AgentDock</value>
+    <value>Stop AgentDock Workbench</value>
   </data>
   <data name="RestartAgentDock" xml:space="preserve">
-    <value>Restart AgentDock</value>
+    <value>Restart AgentDock Workbench</value>
   </data>
   <data name="StartAgentDock" xml:space="preserve">
-    <value>Start AgentDock</value>
+    <value>Start AgentDock Workbench</value>
   </data>
   <data name="CheckingForUpdates" xml:space="preserve">
     <value>Checking for updates…</value>
@@ -313,7 +313,7 @@
     <value>Checking for updates, please wait…</value>
   </data>
   <data name="NewVersionPrompt" xml:space="preserve">
-    <value>A new AgentDock version is available.
+    <value>A new AgentDock Workbench version is available.
 
 Current version: {0}
 Latest version: {1}
@@ -330,16 +330,16 @@ Update now?</value>
     <value>Update failed.</value>
   </data>
   <data name="UpdateRolledBack" xml:space="preserve">
-    <value>The update could not be committed and AgentDock was restored to the previous version.</value>
+    <value>The update could not be committed and AgentDock Workbench was restored to the previous version.</value>
   </data>
   <data name="UpdateTransactionResultTimeout" xml:space="preserve">
-    <value>The update did not report a final result. Reopen AgentDock or run repair if the problem persists.</value>
+    <value>The update did not report a final result. Reopen AgentDock Workbench or run repair if the problem persists.</value>
   </data>
   <data name="UpdateStageRollingBack" xml:space="preserve">
     <value>Restoring the previous version…</value>
   </data>
   <data name="PleaseWaitUpdating" xml:space="preserve">
-    <value>Updating AgentDock…</value>
+    <value>Updating AgentDock Workbench…</value>
   </data>
   <data name="UpdateStageChecking" xml:space="preserve">
     <value>Checking for updates…</value>
@@ -483,7 +483,7 @@ Update now?</value>
     <value>Enter the NexusDock address and one-time pairing code.</value>
   </data>
   <data name="PairingAndRestarting" xml:space="preserve">
-    <value>Pairing and restarting AgentDock…</value>
+    <value>Pairing and restarting AgentDock Workbench…</value>
   </data>
   <data name="SwitchingAdmin" xml:space="preserve">
     <value>Switching to administrator mode…</value>
@@ -534,34 +534,34 @@ Update now?</value>
     <value>NexusDock address and one-time pairing code cannot be empty.</value>
   </data>
   <data name="RuntimeJsonMissing" xml:space="preserve">
-    <value>AgentDock runtime.json was not found.</value>
+    <value>AgentDock Workbench runtime.json was not found.</value>
   </data>
   <data name="RuntimeJsonInvalid" xml:space="preserve">
-    <value>AgentDock runtime.json is invalid.</value>
+    <value>AgentDock Workbench runtime.json is invalid.</value>
   </data>
   <data name="CoreBinaryMissing" xml:space="preserve">
-    <value>AgentDock core executable was not found ({0}). Run Setup.exe to repair the installation.</value>
+    <value>AgentDock Workbench core executable was not found ({0}). Run Setup.exe to repair the installation.</value>
   </data>
   <data name="TrayBinaryMissing" xml:space="preserve">
-    <value>AgentDock tray executable was not found ({0}).</value>
+    <value>AgentDock Workbench tray executable was not found ({0}).</value>
   </data>
   <data name="CurrentWindowsIdentityUnavailable" xml:space="preserve">
     <value>Unable to read the current Windows user identity.</value>
   </data>
   <data name="AdminSwitchCancelled" xml:space="preserve">
-    <value>AgentDock administrator privilege switch was cancelled.</value>
+    <value>AgentDock Workbench administrator privilege switch was cancelled.</value>
   </data>
   <data name="StartupRegistryUnavailable" xml:space="preserve">
     <value>Unable to open the Windows startup registry.</value>
   </data>
   <data name="CoreStartFailed" xml:space="preserve">
-    <value>Unable to start the AgentDock core executable.</value>
+    <value>Unable to start the AgentDock Workbench core executable.</value>
   </data>
   <data name="ManagerStartFailed" xml:space="preserve">
-    <value>Unable to start the AgentDock management executable.</value>
+    <value>Unable to start the AgentDock Workbench management executable.</value>
   </data>
   <data name="ManagerFailedWithExitCode" xml:space="preserve">
-    <value>AgentDock management executable failed with exit code {0}.</value>
+    <value>AgentDock Workbench management executable failed with exit code {0}.</value>
   </data>
   <data name="DeviceIdentityInvalid" xml:space="preserve">
     <value>Device identity file is invalid. Pair again.</value>
@@ -582,16 +582,16 @@ Update now?</value>
     <value>Update check returned an empty result.</value>
   </data>
   <data name="ParseUpdateCheckFailed" xml:space="preserve">
-    <value>Unable to parse the AgentDock update check result.</value>
+    <value>Unable to parse the AgentDock Workbench update check result.</value>
   </data>
   <data name="UnsupportedStartupComponent" xml:space="preserve">
     <value>Unsupported startup component.</value>
   </data>
   <data name="PrivilegeSwitchRollbackFailed" xml:space="preserve">
-    <value>Failed to switch AgentDock administrator mode and the rollback did not complete.</value>
+    <value>Failed to switch AgentDock Workbench administrator mode and the rollback did not complete.</value>
   </data>
   <data name="ManagementBinaryMissing" xml:space="preserve">
-    <value>AgentDock management executable was not found ({0}).</value>
+    <value>AgentDock Workbench management executable was not found ({0}).</value>
   </data>
   <data name="UnsupportedCoreServiceAction" xml:space="preserve">
     <value>Unsupported core service action.</value>
@@ -603,16 +603,16 @@ Update now?</value>
     <value>Unsupported Coding Agent: {0}</value>
   </data>
   <data name="UnsupportedTaskAdminAction" xml:space="preserve">
-    <value>Unsupported AgentDock scheduled-task action: {0}</value>
+    <value>Unsupported AgentDock Workbench scheduled-task action: {0}</value>
   </data>
   <data name="InvalidTaskAdminAction" xml:space="preserve">
-    <value>Invalid AgentDock scheduled-task management action.</value>
+    <value>Invalid AgentDock Workbench scheduled-task management action.</value>
   </data>
   <data name="MissingAdminArgument" xml:space="preserve">
-    <value>Missing AgentDock management argument: {0}</value>
+    <value>Missing AgentDock Workbench management argument: {0}</value>
   </data>
   <data name="TaskAdminRequiresElevation" xml:space="preserve">
-    <value>AgentDock scheduled-task configuration requires administrator privileges.</value>
+    <value>AgentDock Workbench scheduled-task configuration requires administrator privileges.</value>
   </data>
   <data name="ElevatedModeMissingSid" xml:space="preserve">
     <value>Administrator mode is missing the current Windows user SID.</value>
@@ -621,37 +621,37 @@ Update now?</value>
     <value>Administrator mode must be confirmed through UAC by the currently signed-in Windows account.</value>
   </data>
   <data name="AdminArgumentBoolean" xml:space="preserve">
-    <value>AgentDock management argument {0} must be true or false.</value>
+    <value>AgentDock Workbench management argument {0} must be true or false.</value>
   </data>
   <data name="TaskEnabledStateRequired" xml:space="preserve">
-    <value>The AgentDock scheduled-task enabled state cannot be empty.</value>
+    <value>The AgentDock Workbench scheduled-task enabled state cannot be empty.</value>
   </data>
   <data name="ScheduledTaskMissing" xml:space="preserve">
-    <value>AgentDock scheduled task was not found.</value>
+    <value>AgentDock Workbench scheduled task was not found.</value>
   </data>
   <data name="TaskBackupDirectoryRequired" xml:space="preserve">
-    <value>AgentDock scheduled-task backup directory cannot be empty.</value>
+    <value>AgentDock Workbench scheduled-task backup directory cannot be empty.</value>
   </data>
   <data name="RuntimeDirectoryRequired" xml:space="preserve">
-    <value>AgentDock runtime directory cannot be empty.</value>
+    <value>AgentDock Workbench runtime directory cannot be empty.</value>
   </data>
   <data name="StopCoreFailed" xml:space="preserve">
-    <value>Unable to stop the running AgentDock Core: {0}</value>
+    <value>Unable to stop the running AgentDock Workbench Core: {0}</value>
   </data>
   <data name="TaskBackupStateMissing" xml:space="preserve">
-    <value>AgentDock scheduled-task backup state was not found: {0}</value>
+    <value>AgentDock Workbench scheduled-task backup state was not found: {0}</value>
   </data>
   <data name="TaskBackupStateReadFailed" xml:space="preserve">
-    <value>Unable to read the AgentDock scheduled-task backup state.</value>
+    <value>Unable to read the AgentDock Workbench scheduled-task backup state.</value>
   </data>
   <data name="TaskBackupXmlMissing" xml:space="preserve">
-    <value>AgentDock scheduled-task backup XML was not found: {0}</value>
+    <value>AgentDock Workbench scheduled-task backup XML was not found: {0}</value>
   </data>
   <data name="TaskBackupUserMissing" xml:space="preserve">
-    <value>AgentDock scheduled-task backup is missing the user identity.</value>
+    <value>AgentDock Workbench scheduled-task backup is missing the user identity.</value>
   </data>
   <data name="ElevatedTaskArgumentsIncomplete" xml:space="preserve">
-    <value>AgentDock administrator-mode scheduled-task arguments are incomplete.</value>
+    <value>AgentDock Workbench administrator-mode scheduled-task arguments are incomplete.</value>
   </data>
   <data name="TaskSchedulerComUnavailable" xml:space="preserve">
     <value>Windows Task Scheduler COM service is unavailable.</value>
@@ -660,13 +660,13 @@ Update now?</value>
     <value>Unable to connect to Windows Task Scheduler.</value>
   </data>
   <data name="CoreJobCreateFailed" xml:space="preserve">
-    <value>Unable to create the AgentDock Core Job Object.</value>
+    <value>Unable to create the AgentDock Workbench Core Job Object.</value>
   </data>
   <data name="CoreJobConfigureFailed" xml:space="preserve">
-    <value>Unable to configure the AgentDock Core Job Object.</value>
+    <value>Unable to configure the AgentDock Workbench Core Job Object.</value>
   </data>
   <data name="CoreJobAssignFailed" xml:space="preserve">
-    <value>Unable to assign AgentDock Core to the background Job Object.</value>
+    <value>Unable to assign AgentDock Workbench Core to the background Job Object.</value>
   </data>
   <data name="AcpPackageHint" xml:space="preserve">
     <value> or {0}</value>
@@ -714,7 +714,7 @@ Update now?</value>
     <value>Standalone MCP servers</value>
   </data>
   <data name="CapabilitiesRequireRunningCore" xml:space="preserve">
-    <value>Start AgentDock Core to manage capabilities.</value>
+    <value>Start AgentDock Workbench Core to manage capabilities.</value>
   </data>
   <data name="LoadingCapabilities" xml:space="preserve">
     <value>Loading capability configuration…</value>
@@ -807,13 +807,13 @@ Update now?</value>
     <value>Select at least one Skill or MCP server.</value>
   </data>
   <data name="RuntimeApiEmptyResponse" xml:space="preserve">
-    <value>The AgentDock Runtime API returned an empty response.</value>
+    <value>The AgentDock Workbench Runtime API returned an empty response.</value>
   </data>
   <data name="RuntimeApiInvalidResponse" xml:space="preserve">
-    <value>The AgentDock Runtime API returned an invalid response.</value>
+    <value>The AgentDock Workbench Runtime API returned an invalid response.</value>
   </data>
   <data name="RuntimeApiRequestFailed" xml:space="preserve">
-    <value>The AgentDock Runtime API request failed with HTTP status {0}.</value>
+    <value>The AgentDock Workbench Runtime API request failed with HTTP status {0}.</value>
   </data>
   <data name="HeavyPluginHelp" xml:space="preserve">
     <value>Heavy: expose only the plugin summary until plugin_load. Off: expose enabled Skills and MCP servers directly. This switch is saved in host state, not in the package.</value>
@@ -876,7 +876,7 @@ Update now?</value>
     <value>Configuration locations (read-only)</value>
   </data>
   <data name="AgentDockDataDirectory" xml:space="preserve">
-    <value>AgentDock data directory</value>
+    <value>AgentDock Workbench data directory</value>
   </data>
   <data name="ConfigurationFiles" xml:space="preserve">
     <value>Settings file and runtime manifest</value>
@@ -887,7 +887,7 @@ Update now?</value>
   <data name="RuntimeOptionsInvalid" xml:space="preserve">
     <value>Enter an absolute workspace path, valid JSON string-to-string references, and ACP values within the stated ranges.</value>
   </data>
-  <data name="TailscaleDescription" xml:space="preserve"><value>Use this device's .ts.net HTTPS address. Install and sign in to Tailscale first; no Tunnel Token is required. AgentDock manages only its own mapping and keeps Bearer/OAuth authentication.</value></data>
+  <data name="TailscaleDescription" xml:space="preserve"><value>Use this device's .ts.net HTTPS address. Install and sign in to Tailscale first; no Tunnel Token is required. AgentDock Workbench manages only its own mapping and keeps Bearer/OAuth authentication.</value></data>
   <data name="TailscaleClient" xml:space="preserve"><value>Client</value></data>
   <data name="TailscaleDevice" xml:space="preserve"><value>Device</value></data>
   <data name="TailscaleDomain" xml:space="preserve"><value>Device domain (read-only)</value></data>
@@ -895,13 +895,13 @@ Update now?</value>
   <data name="TailscaleLocalTarget" xml:space="preserve"><value>Local target</value></data>
   <data name="TailscaleDetect" xml:space="preserve"><value>Detect Tailscale</value></data>
   <data name="TailscaleEnable" xml:space="preserve"><value>Enable Funnel</value></data>
-  <data name="TailscaleStop" xml:space="preserve"><value>Stop AgentDock Funnel</value></data>
+  <data name="TailscaleStop" xml:space="preserve"><value>Stop AgentDock Workbench Funnel</value></data>
   <data name="TailscaleAuthorize" xml:space="preserve"><value>Open Tailscale authorization</value></data>
   <data name="TailscaleNotInstalled" xml:space="preserve"><value>Tailscale was not detected</value></data>
   <data name="TailscalePending" xml:space="preserve"><value>Mapping active; verification pending</value></data>
   <data name="TailscaleNoKeyExpiry" xml:space="preserve"><value>No expiry date reported</value></data>
   <data name="TailscaleOutputTooLarge" xml:space="preserve"><value>Tailscale status output exceeded the size limit.</value></data>
-  <data name="PublicAccessSwitchWarning" xml:space="preserve"><value>Switch from {0} to {1}? AgentDock will stop its current public entry and restart Core. Other Tailscale services and account settings are preserved. Existing public connections may be interrupted.</value></data>
+  <data name="PublicAccessSwitchWarning" xml:space="preserve"><value>Switch from {0} to {1}? AgentDock Workbench will stop its current public entry and restart Core. Other Tailscale services and account settings are preserved. Existing public connections may be interrupted.</value></data>
   <data name="CopyPublicMcp" xml:space="preserve"><value>Copy public MCP address</value></data>
   <data name="TaskActivityCenter" xml:space="preserve"><value>Task activity center</value></data>
   <data name="ActivityCounts" xml:space="preserve"><value>In progress: {0} · Needs attention: {1} · Latest 200 tasks{2} · {3:HH:mm:ss}</value></data>

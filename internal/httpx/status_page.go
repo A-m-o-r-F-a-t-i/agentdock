@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	agentDockRepositoryURL = "https://github.com/uvwt/agentdock"
+	agentDockRepositoryURL = "https://github.com/A-m-o-r-F-a-t-i/agentdock"
 	agentDockDocsURL       = "https://uvwt.github.io/agentdock-docs/"
 	agentDockQQGroup       = "1081337019"
 	agentDockQQGroupURL    = "https://qun.qq.com/universal-share/share?ac=1&authKey=Rp86bSzI7vqm87KoYlKawgsPZ440Ubhyezw6Qkgcn3JISwX3zXxsXkbS5598RrY5&busi_data=eyJncm91cENvZGUiOiIxMDgxMzM3MDE5IiwidG9rZW4iOiJ0Mlg1bUU1ZWtuZzF3SHJDT3pSaGsrOURIMlNYaXBlYllOUjNLZ1BUb1hzM2lJSTZjeVNldzU0ajl0SjRVZkx2IiwidWluIjoiMzIwMjA4ODAzMiJ9&data=W28mWvuqaLf_Fwnf0CgAJXuDs6l3A78V7AoWZnizPboCpKoQMzHzZ-UlluYo47U3tmIBHK2xIgWEVEJbTiGsPQ&svctype=4&tempid=h5_group_info"
@@ -68,7 +68,7 @@ var statusPageEnglish = statusPageText{
 	Subtitle:          "AI Agent device runtime",
 	Online:            "Online",
 	ReadyTitle:        "Ready for AI agents.",
-	ReadyDescription:  "This AgentDock instance is online and ready to expose local capabilities through MCP.",
+	ReadyDescription:  "This AgentDock Workbench instance is online and ready to expose local capabilities through MCP.",
 	Version:           "Version",
 	System:            "System",
 	Capabilities:      "Capabilities",
@@ -85,7 +85,7 @@ var statusPageEnglish = statusPageText{
 	Copy:              "Copy",
 	Copied:            "Copied",
 	CopyFailed:        "Copy failed",
-	EndpointHint:      "Use this endpoint to connect AgentDock with an MCP client.",
+	EndpointHint:      "Use this endpoint to connect AgentDock Workbench with an MCP client.",
 	Resources:         "Resources",
 	Repository:        "GitHub Repository",
 	RepositoryDesc:    "Source code, releases and issue tracking.",
@@ -93,7 +93,7 @@ var statusPageEnglish = statusPageText{
 	DocumentationDesc: "Installation, configuration and usage guides.",
 	QQGroup:           "QQ Group",
 	QQGroupDesc:       "Community discussion, support and feedback.",
-	OpenSource:        "AgentDock · Open Source",
+	OpenSource:        "AgentDock Workbench · Open Source",
 	License:           "MIT License",
 	DocumentationURL:  agentDockDocsURL,
 }
@@ -103,7 +103,7 @@ var statusPageChinese = statusPageText{
 	Subtitle:          "AI Agent 设备运行时",
 	Online:            "在线",
 	ReadyTitle:        "已准备好为 AI Agent 提供能力。",
-	ReadyDescription:  "当前 AgentDock 实例在线，可通过 MCP 提供本机能力。",
+	ReadyDescription:  "当前 AgentDock Workbench 实例在线，可通过 MCP 提供本机能力。",
 	Version:           "版本",
 	System:            "系统",
 	Capabilities:      "能力",
@@ -120,7 +120,7 @@ var statusPageChinese = statusPageText{
 	Copy:              "复制",
 	Copied:            "已复制",
 	CopyFailed:        "复制失败",
-	EndpointHint:      "使用此端点将 AgentDock 连接到 MCP 客户端。",
+	EndpointHint:      "使用此端点将 AgentDock Workbench 连接到 MCP 客户端。",
 	Resources:         "资源",
 	Repository:        "GitHub 仓库",
 	RepositoryDesc:    "源代码、版本发布与问题反馈。",
@@ -128,7 +128,7 @@ var statusPageChinese = statusPageText{
 	DocumentationDesc: "安装、配置与使用指南。",
 	QQGroup:           "QQ 群",
 	QQGroupDesc:       "社区交流、使用支持与反馈。",
-	OpenSource:        "AgentDock · 开源",
+	OpenSource:        "AgentDock Workbench · 开源",
 	License:           "MIT 许可证",
 	DocumentationURL:  agentDockDocsURL + "zh-CN/",
 }

@@ -1236,7 +1236,7 @@ func TestWindowsSetupDirectorySelectionUsesAgentDockIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"AppName=AgentDock", "DefaultDirName={localappdata}\\AgentDock",
+		"AppName=AgentDock Workbench", "DefaultDirName={localappdata}\\AgentDock",
 		"DisableDirPage=no", "UsePreviousAppDir=yes", "AgentDockSetup-amd64", "AgentDockSetup-arm64",
 	} {
 		if !strings.Contains(string(data), want) {

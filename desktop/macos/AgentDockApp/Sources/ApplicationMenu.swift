@@ -5,10 +5,10 @@ enum ApplicationMenu {
     private static var quitMenuItem: NSMenuItem?
 
     static func install() {
-        let mainMenu = NSMenu(title: "AgentDock")
+        let mainMenu = NSMenu(title: "AgentDock Workbench")
 
         let applicationMenuItem = NSMenuItem()
-        let applicationMenu = NSMenu(title: "AgentDock")
+        let applicationMenu = NSMenu(title: "AgentDock Workbench")
         // Quit 在更新事务期间需要保持显式禁用，避免 AppKit 自动校验重新启用它。
         applicationMenu.autoenablesItems = false
         applicationMenu.addItem(

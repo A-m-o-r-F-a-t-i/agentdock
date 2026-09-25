@@ -21,7 +21,7 @@ public partial class App
         var index = Array.FindIndex(arguments, argument => string.Equals(argument, "--runtime-root", StringComparison.OrdinalIgnoreCase));
         if (index >= 0 && (index + 1 == arguments.Length || arguments[index + 1].StartsWith("--", StringComparison.Ordinal)))
         {
-            System.Windows.MessageBox.Show("--runtime-root requires an explicit directory.", "AgentDock", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show("--runtime-root requires an explicit directory.", "AgentDock Workbench", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(2);
             return true;
         }

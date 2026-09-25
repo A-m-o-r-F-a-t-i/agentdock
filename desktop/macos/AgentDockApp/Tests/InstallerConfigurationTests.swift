@@ -161,6 +161,8 @@ struct InstallerConfigurationTests {
             "AgentDock v0.7.1\ncommit: test\n",
             expectedDisplayVersion: "v0.7.2"
         ))
+        precondition(AppVersion.matchesCoreVersion("AgentDock Workbench v1.1.7\ncommit: test\n", expectedDisplayVersion: "v1.1.7"))
+        precondition(!AppVersion.matchesCoreVersion("AgentDock Workbench v1.1.6\n", expectedDisplayVersion: "v1.1.7"))
         precondition(AppVersion.matchesHealthVersion("0.7.2", expectedDisplayVersion: "v0.7.2"))
         precondition(!AppVersion.matchesHealthVersion("0.7.1", expectedDisplayVersion: "v0.7.2"))
 

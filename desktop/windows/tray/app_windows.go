@@ -349,7 +349,7 @@ func (app *trayApp) addIcon() error {
 		CallbackMessage: wmTrayIcon,
 		Icon:            app.icon,
 	}
-	copyUTF16(data.Tip[:], "AgentDock")
+	copyUTF16(data.Tip[:], "AgentDock Workbench")
 	result, _, err := procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&data)))
 	if result == 0 {
 		return fmt.Errorf("add tray icon: %w", err)
@@ -448,41 +448,41 @@ func (app *trayApp) handleMenu(command uint16) {
 	switch command {
 	case menuCopyLocal:
 		if err := setClipboardText(state.Manifest.LocalMCPURL); err != nil {
-			app.notify("AgentDock", fmt.Sprintf(labels.CopyLocalFailed, err), true)
+			app.notify("AgentDock Workbench", fmt.Sprintf(labels.CopyLocalFailed, err), true)
 			return
 		}
-		app.notify("AgentDock", labels.CopyLocalSucceeded, false)
+		app.notify("AgentDock Workbench", labels.CopyLocalSucceeded, false)
 	case menuCopyPublic:
 		publicOrigin := state.Manifest.EffectivePublicAccess().URL
 		if publicOrigin == "" {
 			return
 		}
 		if err := setClipboardText(strings.TrimRight(publicOrigin, "/") + "/mcp"); err != nil {
-			app.notify("AgentDock", fmt.Sprintf(labels.CopyPublicFailed, err), true)
+			app.notify("AgentDock Workbench", fmt.Sprintf(labels.CopyPublicFailed, err), true)
 			return
 		}
-		app.notify("AgentDock", labels.CopyPublicSucceeded, false)
+		app.notify("AgentDock Workbench", labels.CopyPublicSucceeded, false)
 	case menuRefreshQuickURL:
 		if err := regenerateQuickTunnel(state.Manifest); err != nil {
-			app.notify("AgentDock", fmt.Sprintf(labels.RefreshQuickFailed, err), true)
+			app.notify("AgentDock Workbench", fmt.Sprintf(labels.RefreshQuickFailed, err), true)
 			return
 		}
-		app.notify("AgentDock", labels.RefreshQuickStarted, false)
+		app.notify("AgentDock Workbench", labels.RefreshQuickStarted, false)
 	case menuStart:
 		if err := startAgentDock(state.Manifest); err != nil {
-			app.notify("AgentDock", fmt.Sprintf(labels.StartFailed, err), true)
+			app.notify("AgentDock Workbench", fmt.Sprintf(labels.StartFailed, err), true)
 			return
 		}
-		app.notify("AgentDock", labels.StartStarted, false)
+		app.notify("AgentDock Workbench", labels.StartStarted, false)
 	case menuRestart:
 		if err := restartAgentDock(state.Manifest); err != nil {
-			app.notify("AgentDock", fmt.Sprintf(labels.RestartFailed, err), true)
+			app.notify("AgentDock Workbench", fmt.Sprintf(labels.RestartFailed, err), true)
 			return
 		}
-		app.notify("AgentDock", labels.RestartStarted, false)
+		app.notify("AgentDock Workbench", labels.RestartStarted, false)
 	case menuUpdate:
 		if err := launchUpdate(state.Manifest); err != nil {
-			app.notify("AgentDock", fmt.Sprintf(labels.UpdateFailed, err), true)
+			app.notify("AgentDock Workbench", fmt.Sprintf(labels.UpdateFailed, err), true)
 		}
 	case menuOpenFolder:
 		_ = exec.Command("explorer.exe", filepath.Dir(app.manifestPath)).Start()

@@ -670,7 +670,10 @@ func verifyBinaryVersion(ctx context.Context, binaryPath, targetVersion string) 
 
 func parseVersionOutput(output []byte) (string, error) {
 	firstLine := strings.TrimSpace(strings.SplitN(string(output), "\n", 2)[0])
-	const prefix = "AgentDock v"
+	prefix := "AgentDock Workbench v"
+	if !strings.HasPrefix(firstLine, prefix) {
+		prefix = "AgentDock v"
+	}
 	if !strings.HasPrefix(firstLine, prefix) {
 		return "", fmt.Errorf("无法识别版本输出 %q", firstLine)
 	}

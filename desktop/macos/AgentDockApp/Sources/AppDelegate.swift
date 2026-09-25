@@ -409,7 +409,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.autosaveName = "AgentDockMenuBarItem"
             item.isVisible = true
             if let button = item.button {
-                button.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: "AgentDock")
+                button.image = NSImage(systemSymbolName: "shippingbox.fill", accessibilityDescription: "AgentDock Workbench")
                 button.image?.isTemplate = true
             }
             statusItem = item

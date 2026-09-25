@@ -20,7 +20,7 @@
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
         <StackPanel>
-          <TextBlock Text="AgentDock" FontSize="24" FontWeight="SemiBold" />
+          <TextBlock Text="AgentDock Workbench" FontSize="24" FontWeight="SemiBold" />
           <TextBlock Text="{local:Loc WindowsControlPanel}" Foreground="{DynamicResource SecondaryText}" Margin="0,3,0,0" />
         </StackPanel>
         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">

@@ -14,7 +14,9 @@ param(
     [ValidateSet('release', 'candidate-not-released')]
     [string] $ExpectedChannel,
     [ValidateSet('signed', 'unsigned')]
-    [string] $ExpectedAuthenticode = 'unsigned'
+    [string] $ExpectedAuthenticode = 'unsigned',
+    [ValidateSet('amd64','arm64')][string] $Architecture = 'amd64',
+    [ValidateSet('amd64','arm64')][string[]] $Architectures = @('amd64')
 )
 
 Set-StrictMode -Version Latest
@@ -91,14 +93,10 @@ if (-not (Test-Path -LiteralPath $releaseRoot -PathType Container)) {
     throw "Release directory was not found: $releaseRoot"
 }
 $reportPath = Resolve-RequiredFile -Path $BuildReport -Description 'Build report'
-$expectedNames = @(
-    'AgentDockSetup-amd64.exe',
-    'AgentDockSetup-amd64.exe.sha256',
-    'agentdock_windows_amd64.zip',
-    'agentdock_windows_amd64.zip.sha256',
-    'install.ps1',
-    'install.ps1.sha256'
-) | Sort-Object
+if ($Architectures -notcontains $Architecture -or @($Architectures | Select-Object -Unique).Count -ne $Architectures.Count) { throw 'Invalid architecture verification scope.' }
+$expectedNames = @('install.ps1','install.ps1.sha256') + @($Architectures | ForEach-Object {
+    "AgentDockSetup-$_.exe"; "AgentDockSetup-$_.exe.sha256"; "agentdock_windows_$_.zip"; "agentdock_windows_$_.zip.sha256"
+}) | Sort-Object
 $actualNames = @(Get-ChildItem -LiteralPath $releaseRoot -File | Select-Object -ExpandProperty Name | Sort-Object)
 $difference = @(Compare-Object -ReferenceObject $expectedNames -DifferenceObject $actualNames)
 if ($difference.Count -ne 0) {
@@ -106,7 +104,7 @@ if ($difference.Count -ne 0) {
 }
 
 $digests = [ordered]@{}
-foreach ($name in @('AgentDockSetup-amd64.exe', 'agentdock_windows_amd64.zip', 'install.ps1')) {
+foreach ($name in @("AgentDockSetup-$Architecture.exe", "agentdock_windows_$Architecture.zip", 'install.ps1')) {
     $digests[$name] = Assert-Checksum `
         -PayloadPath (Join-Path $releaseRoot $name) `
         -ChecksumPath (Join-Path $releaseRoot "$name.sha256")
@@ -126,7 +124,7 @@ if ([bool]$report.source_dirty) {
     throw 'Release build report marks the source as dirty.'
 }
 $platforms = @($report.platforms)
-if ($platforms.Count -ne 1 -or [string]$platforms[0] -ne 'windows/amd64') {
+if (@(Compare-Object @($Architectures | ForEach-Object {"windows/$_"}) $platforms).Count -ne 0) {
     throw "Unexpected build platforms: $($platforms -join ', ')"
 }
 if ([string]$report.agentdock_authenticode -ne $ExpectedAuthenticode) {
@@ -140,22 +138,40 @@ $temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('agentdock-release-verify
 New-Item -ItemType Directory -Path $temporaryRoot | Out-Null
 try {
     Expand-Archive `
-        -LiteralPath (Join-Path $releaseRoot 'agentdock_windows_amd64.zip') `
+        -LiteralPath (Join-Path $releaseRoot "agentdock_windows_$Architecture.zip") `
         -DestinationPath $temporaryRoot
     $corePath = Resolve-RequiredFile `
         -Path (Join-Path $temporaryRoot 'agentdock.exe') `
         -Description 'Packaged AgentDock Core'
+    $nativeArchitecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+    $native = ($Architecture -eq 'amd64' -and $nativeArchitecture -eq 'X64') -or ($Architecture -eq 'arm64' -and $nativeArchitecture -eq 'Arm64')
+    $expectedMachine = if ($Architecture -eq 'arm64') { 0xaa64 } else { 0x8664 }
+    foreach ($binaryName in @('agentdock.exe','agentdock-tray.exe','agentdock-arbiter.exe','agentdock-shim.exe','agentdock-tray-shim.exe')) {
+        $binaryPath = Resolve-RequiredFile (Join-Path $temporaryRoot $binaryName) 'Required packaged executable'
+        $image = [IO.File]::ReadAllBytes($binaryPath)
+        if ($image.Length -lt 64) { throw 'Invalid PE header.' }
+        $pe = [BitConverter]::ToInt32($image,0x3c)
+        if ($pe -lt 0 -or $pe + 26 -gt $image.Length -or [BitConverter]::ToUInt32($image,$pe) -ne 0x4550 -or [BitConverter]::ToUInt16($image,$pe+4) -ne $expectedMachine) { throw "Incorrect PE architecture: $binaryName" }
+    }
+    $buildMetadata = (& go version -m $corePath | Out-String)
+    if ($LASTEXITCODE -ne 0 -or -not $buildMetadata.Contains('GOARCH='+$Architecture) -or -not $buildMetadata.Contains($ExpectedCommit)) { throw 'Packaged Core build metadata does not match the verified source/architecture.' }
+    $desktopProduct = (Get-Item (Join-Path $temporaryRoot 'agentdock-tray.exe')).VersionInfo.ProductName
+    if ($desktopProduct -ne 'AgentDock Workbench') { throw "Unexpected desktop product name: $desktopProduct" }
+    $expectedSkills = @('agentdock-user-guide','skill-authoring','skill-installation')
+    $bootstrapState = if ($native) { 'passed' } else { 'not_run_non_native_architecture' }
+    if ($native) {
     $core = (& $corePath version --json | Out-String).Trim() | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0) {
         throw 'Packaged AgentDock Core version query failed.'
     }
+    if ([string]$core.product_name -ne 'AgentDock Workbench') { throw 'Packaged Core product name mismatch.' }
     if ([string]$core.version -ne $ExpectedVersion) {
         throw "Packaged Core version mismatch: $($core.version)"
     }
     if ([string]$core.commit -ne $ExpectedCommit.Substring(0, 12).ToLowerInvariant()) {
         throw "Packaged Core commit mismatch: $($core.commit)"
     }
-    if ([string]$core.platform -ne 'windows/amd64') {
+    if ([string]$core.platform -ne "windows/$Architecture") {
         throw "Packaged Core platform mismatch: $($core.platform)"
     }
 
@@ -186,11 +202,12 @@ try {
             [void](Resolve-RequiredFile -Path (Join-Path $skillHome "skills/.system/$($entry.name)/SKILL.md") -Description 'Installed core Skill')
         }
     }
+    }
 } finally {
     Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-$setupVersion = (Get-Item -LiteralPath (Join-Path $releaseRoot 'AgentDockSetup-amd64.exe')).VersionInfo.ProductVersion.Trim()
+$setupVersion = (Get-Item -LiteralPath (Join-Path $releaseRoot "AgentDockSetup-$Architecture.exe")).VersionInfo.ProductVersion.Trim()
 if ($setupVersion -ne $ExpectedVersion) {
     throw "Offline Setup product version mismatch: $setupVersion"
 }
@@ -199,10 +216,12 @@ if ($setupVersion -ne $ExpectedVersion) {
     version = $ExpectedVersion
     commit = $ExpectedCommit.ToLowerInvariant()
     channel = $ExpectedChannel
-    platform = 'windows/amd64'
+    platform = "windows/$Architecture"
+    product_name = 'AgentDock Workbench'
+    native_execution = $native
     agentdock_authenticode = $ExpectedAuthenticode
     cloudflared_authenticode = 'valid'
-    core_skill_bootstrap = @{ fresh = 'passed'; repeat = 'passed'; count = $expectedSkills.Count }
+    core_skill_bootstrap = @{ fresh = $bootstrapState; repeat = $bootstrapState; count = $expectedSkills.Count }
     assets = $digests
     verified_at = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
 } | ConvertTo-Json -Depth 5

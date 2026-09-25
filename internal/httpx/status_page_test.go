@@ -38,9 +38,9 @@ func TestStatusPageRendersConnectionAndResourceLinks(t *testing.T) {
 	}
 	body := response.Body.String()
 	for _, expected := range []string{
-		"AgentDock",
+		"AgentDock Workbench",
 		"https://agentdock.example.com/mcp",
-		"github.com/uvwt/agentdock",
+		"github.com/A-m-o-r-F-a-t-i/agentdock",
 		"uvwt.github.io/agentdock-docs",
 		"1081337019",
 		`class="state-enabled"`,

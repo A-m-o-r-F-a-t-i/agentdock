@@ -217,7 +217,7 @@ try {
     Copy-Item (Join-Path $repository 'packaging\windows') (Join-Path $copyRoot 'packaging\windows') -Recurse
     Copy-Item (Join-Path $repository 'scripts\install') (Join-Path $copyRoot 'scripts\install') -Recurse
     $definition = Join-Path $copyRoot 'packaging\windows\AgentDock.iss'
-    $definitionText = [IO.File]::ReadAllText($definition).Replace('D6788C7A-4104-48D4-B5C3-F4858B5606EA', $id).Replace('DefaultGroupName=AgentDock', "DefaultGroupName=$prefix")
+    $definitionText = [IO.File]::ReadAllText($definition).Replace('D6788C7A-4104-48D4-B5C3-F4858B5606EA', $id).Replace('DefaultGroupName=AgentDock Workbench', "DefaultGroupName=$prefix")
     Set-TestText $definition $definitionText
     $codePath = Join-Path $copyRoot 'packaging\windows\includes\code.iss'
     $code = [IO.File]::ReadAllText($codePath)

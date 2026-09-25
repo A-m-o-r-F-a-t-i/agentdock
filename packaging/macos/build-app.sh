@@ -341,7 +341,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleDisplayName</key>
-  <string>AgentDock</string>
+  <string>AgentDock Workbench</string>
   <key>CFBundleExecutable</key>
   <string>AgentDock</string>
   <key>CFBundleIdentifier</key>
@@ -351,7 +351,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>AgentDock</string>
+  <string>AgentDock Workbench</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -422,7 +422,7 @@ ln -s /Applications "$DMG_STAGE_DIR/Applications"
 
 print -- "==> 创建 AgentDock DMG"
 hdiutil create \
-  -volname "AgentDock" \
+  -volname "AgentDock Workbench" \
   -srcfolder "$DMG_STAGE_DIR" \
   -ov \
   -format UDZO \

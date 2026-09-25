@@ -7,8 +7,8 @@ set -eu
 
 umask 077
 
-DEFAULT_BASE_URL="https://github.com/uvwt/agentdock/releases/latest/download"
-GITHUB_RELEASES_URL="https://github.com/uvwt/agentdock/releases"
+DEFAULT_BASE_URL="https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/latest/download"
+GITHUB_RELEASES_URL="https://github.com/A-m-o-r-F-a-t-i/agentdock/releases"
 CLOUDFLARED_BASE_URL="${AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL:-https://github.com/cloudflare/cloudflared/releases/latest/download}"
 BASE_URL="${AGENTDOCK_INSTALLER_BASE_URL:-$DEFAULT_BASE_URL}"
 RELEASE_VERSION="${AGENTDOCK_RELEASE_VERSION:-latest}"
@@ -615,7 +615,7 @@ esac
 if [ -n "$TUNNEL_TOKEN_FILE" ]; then rm -f "$TUNNEL_TOKEN_FILE"; fi
 
 {
-  printf '\nAgentDock 安装完成。\n'
+  printf '\nAgentDock Workbench 安装完成。\n'
   printf '安装目录：%s\n' "$INSTALL_ROOT"
   printf '运行配置：%s\n' "$RUNTIME_ROOT"
   case "$PLATFORM" in

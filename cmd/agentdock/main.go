@@ -29,7 +29,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if len(args) == 1 && args[0] == "--version" {
-		printVersion(stdout)
+		// Existing 1.1.6 updaters parse this first line as a wire contract.
+		// The human version command and JSON product_name use the new brand.
+		printVersionLabel(stdout, "AgentDock")
 		return nil
 	}
 	if len(args) > 0 && args[0] == "version" {

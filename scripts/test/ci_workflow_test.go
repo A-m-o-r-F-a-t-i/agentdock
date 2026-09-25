@@ -126,13 +126,13 @@ func TestWindowsReleaseKeepsBoundedCompleteValidation(t *testing.T) {
 	}
 }
 
-func TestWindowsPackageOwnsAutomaticVersionTagRelease(t *testing.T) {
+func TestWindowsPackageReusableAndSingleAutomaticReleaseOwner(t *testing.T) {
 	workflow := readWorkflow(t, "windows-package.yml")
 	for _, want := range []string{
-		"push:\n    tags:\n      - 'v*'",
+		"workflow_call:",
 		"workflow_dispatch:",
-		"name: Build verified unsigned Windows x64 package",
-		"Architectures = @('amd64')",
+		"name: Build verified unsigned Windows packages",
+		"inputs.architectures",
 		"build-windows-release.ps1",
 		"verify-windows-release-assets.ps1",
 		"name: Verify offline Setup installation and uninstall",
@@ -151,9 +151,18 @@ func TestWindowsPackageOwnsAutomaticVersionTagRelease(t *testing.T) {
 		}
 	}
 
+	if strings.Contains(workflow, "push:\n    tags:") {
+		t.Fatal("Windows-only workflow must not race all-platform publication")
+	}
+	unified := readWorkflow(t, "workbench-release.yml")
+	for _, required := range []string{"push:\n    tags:", "windows-package.yml", "needs: [resolve-source, windows, unix, macos-app]", "publish-workbench.py"} {
+		if !strings.Contains(unified, required) {
+			t.Fatalf("all-platform release gate missing %q", required)
+		}
+	}
 	crossPlatform := readWorkflow(t, "release.yml")
 	if strings.Contains(crossPlatform, "push:\n    tags:") {
-		t.Fatal("cross-platform signed release must remain manual; windows-package.yml owns automatic version tags")
+		t.Fatal("cross-platform signed release must remain manual; workbench-release.yml owns automatic version tags")
 	}
 }
 

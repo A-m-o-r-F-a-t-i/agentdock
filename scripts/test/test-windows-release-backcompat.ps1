@@ -17,7 +17,7 @@ if ([string]::IsNullOrWhiteSpace($TargetVersion)) {
     try {
         Expand-Archive -LiteralPath $archive -DestinationPath $versionProbeRoot -Force
         $versionOutput = (& (Join-Path $versionProbeRoot 'agentdock.exe') --version | Out-String).Trim()
-        if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch '^AgentDock v(?<version>[0-9]+\.[0-9]+\.[0-9]+)') {
+        if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch '^AgentDock(?: Workbench)? v(?<version>[0-9]+\.[0-9]+\.[0-9]+)') {
             throw "cannot derive Windows Release version from: $versionOutput"
         }
         $TargetVersion = $Matches.version
