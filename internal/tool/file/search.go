@@ -96,6 +96,9 @@ func (svc *Service) SearchText(ctx context.Context, request SearchRequest) (Resu
 }
 
 func (svc *Service) searchTextRG(ctx context.Context, p workspace.Path, opts SearchOptions) (Result, bool, error) {
+	if restrictedFileTools(ctx) {
+		return nil, false, nil
+	}
 	rg, err := exec.LookPath("rg")
 	if err != nil {
 		return nil, false, nil
@@ -256,7 +259,7 @@ func (svc *Service) searchTextGoWithLimits(ctx context.Context, p workspace.Path
 		re = compiled
 	}
 	matches := make([]map[string]any, 0)
-	ignore := loadIgnoreMatcher(svc.ws.Root())
+	ignore := loadContextIgnoreMatcher(ctx, svc.ws.Root())
 	entriesVisited := 0
 	filesScanned := 0
 	bytesScanned := int64(0)

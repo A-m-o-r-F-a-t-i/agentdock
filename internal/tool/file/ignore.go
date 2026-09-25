@@ -8,9 +8,10 @@ import (
 )
 
 type ignoreMatcher struct {
-	root    string
-	exclude []gitignoreRule
-	files   map[string][]gitignoreRule
+	disabled bool
+	root     string
+	exclude  []gitignoreRule
+	files    map[string][]gitignoreRule
 }
 
 type gitignoreRule struct {
@@ -32,6 +33,9 @@ func loadIgnoreMatcher(root string) *ignoreMatcher {
 }
 
 func (m *ignoreMatcher) Ignored(rel string, isDir bool) bool {
+	if m.disabled {
+		return false
+	}
 	rel = filepath.ToSlash(filepath.Clean(rel))
 	if rel == "." || rel == "" {
 		return false

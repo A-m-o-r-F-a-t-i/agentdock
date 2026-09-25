@@ -69,12 +69,12 @@ internal static class ExecutionDialogs
         var a = detail.Field("approval"); var pending = a.Text("status") == "pending" && detail.Flag("request_available");
         var ui = Create(owner, "执行前审批 · 固定请求", 840, 730);
         var panel = new DockPanel(); ui.Root.Children.Add(panel);
-        var header = Label($"来源对话：{a.Text("conversation_id")}\n关联任务：{(a.Text("task_id") == "" ? "无" : a.Text("task_id"))}\n操作：{a.Text("tool")}\n拦截规则：{a.Text("rule_id")}\n原因：{a.Text("reason")}\n\n影响范围：\n{a.Text("scope_description")}\n\n当前状态：{(pending ? "尚未执行" : a.Text("status"))}"); DockPanel.SetDock(header, Dock.Top); panel.Children.Add(header);
-        var grant = new CheckBox { Content = "同时允许此工作区的同类工具操作（创建下列 Allow 规则）", IsEnabled = pending && a.Text("workspace_id") != "", Margin = new Thickness(0, 9, 0, 5) };
+        var header = Label($"来源对话：{a.Text("conversation_id")}\n关联任务：{(a.Text("task_id") == "" ? "无" : a.Text("task_id"))}\n操作：{a.Text("tool")}\n拦截规则：{a.Text("rule_id")}\n审批主体：{(a.Text("approval_reviewer") == "" ? "user" : a.Text("approval_reviewer"))}\n审查结论：{a.Text("review_reason")}\n原因：{a.Text("reason")}\n\n影响范围：\n{a.Text("scope_description")}\n\n当前状态：{(pending ? "尚未执行" : a.Text("status"))}"); DockPanel.SetDock(header, Dock.Top); panel.Children.Add(header);
+        var grant = new CheckBox { Content = "同时允许此工作区的同类工具操作（创建下列 Allow 规则）", IsEnabled = pending && a.Text("workspace_id") != "" && a.Text("approval_reviewer") != "auto_review", Margin = new Thickness(0, 9, 0, 5) };
         var grantPanel = new StackPanel(); grantPanel.Children.Add(grant); var rule = Readonly(detail.Field("rule_preview").Pretty()); rule.Height = 120; grantPanel.Children.Add(rule); DockPanel.SetDock(grantPanel, Dock.Bottom); panel.Children.Add(grantPanel);
         var fixedText = Readonly(detail.Text("fixed_request")); AutomationProperties.SetAutomationId(fixedText, "ApprovalFixedRequest"); panel.Children.Add(fixedText);
         (string, bool)? result = null; var reject = Action("拒绝", "ApprovalReject"); var once = Action("允许一次", "ApprovalApproveOnce"); var cancel = Action("返回");
-        reject.IsEnabled = once.IsEnabled = pending;
+        reject.IsEnabled = pending; once.IsEnabled = pending && a.Text("approval_reviewer") != "auto_review";
         grant.Checked += (_, _) => once.Content = "批准并保存工作区规则"; grant.Unchecked += (_, _) => once.Content = "允许一次";
         reject.Click += (_, _) => { result = ("reject", false); ui.Window.DialogResult = true; };
         once.Click += (_, _) => { result = ("approve", grant.IsChecked == true); ui.Window.DialogResult = true; };
@@ -93,14 +93,16 @@ internal static class ExecutionDialogs
         panel.Children.Add(Label("作用范围")); var scope = new ComboBox { ItemsSource = scopes, DisplayMemberPath = "Title", SelectedIndex = 0, MinHeight = 34 }; panel.Children.Add(scope);
         panel.Children.Add(Label("执行模式")); var mode = new ComboBox { ItemsSource = new[] { new ExecutionChoice("readonly", "只读检查：写入和未知副作用禁止派发"), new ExecutionChoice("rules", "按规则审批：已确认安全项直行，其余等待决定"), new ExecutionChoice("full", "完全权限：当前范围免审批，显式禁止仍生效") }, DisplayMemberPath = "Title", MinHeight = 34 }; panel.Children.Add(mode);
         AutomationProperties.SetAutomationId(scope, "PermissionScope"); AutomationProperties.SetAutomationId(mode, "PermissionMode");
+        var profileSettings = new PermissionSettingsEditor(policy); panel.Children.Add(profileSettings.View);
         void SelectMode()
         {
             var selected = ((scope.SelectedItem as ExecutionChoice)?.Id ?? "global:").Split(':', 2);
             var name = policy.Text("global_mode");
             if (selected[0] == "conversation")
-                foreach (var existing in policy.Array("scopes")) if (existing.Text("kind") == "workspace" && existing.Text("id") == detail.Text("workspace_id")) name = existing.Text("mode");
-            foreach (var existing in policy.Array("scopes")) if (existing.Text("kind") == selected[0] && existing.Text("id") == selected[1]) name = existing.Text("mode");
+                foreach (var existing in policy.Array("scopes")) if (existing.Text("kind") == "workspace" && existing.Text("id") == detail.Text("workspace_id") && existing.Text("mode").Length > 0) name = existing.Text("mode");
+            foreach (var existing in policy.Array("scopes")) if (existing.Text("kind") == selected[0] && existing.Text("id") == selected[1] && existing.Text("mode").Length > 0) name = existing.Text("mode");
             mode.SelectedItem = mode.Items.Cast<ExecutionChoice>().FirstOrDefault(item => item.Id == name) ?? mode.Items[1];
+            profileSettings.SelectScope(selected[0], selected[1]);
         }
         SelectMode(); scope.SelectionChanged += (_, _) => SelectMode();
         var enableRuleEdit = new CheckBox { Content = "同时修改危险规则（高级）", Margin = new Thickness(0, 14, 0, 5) }; panel.Children.Add(enableRuleEdit);
@@ -125,6 +127,7 @@ internal static class ExecutionDialogs
                     if (parsed.RootElement.ValueKind != JsonValueKind.Array) throw new JsonException("规则必须是 JSON 数组。");
                     change["rules"] = parsed.RootElement.Clone();
                 }
+                profileSettings.AddChange(change);
                 result = change; ui.Window.DialogResult = true;
             }
             catch (JsonException ex) { MessageBox.Show(ui.Window, ex.Message, "规则无效", MessageBoxButton.OK, MessageBoxImage.Error); }

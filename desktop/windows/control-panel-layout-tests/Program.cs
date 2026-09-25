@@ -133,6 +133,7 @@ internal static class Program
                 Directory.Delete(root,true);
             }
             SidebarInteractionTests.Run(Check);
+            PermissionEditorTests.Run(Check);
             File.WriteAllText(Path.Combine(output,"layout-validation.json"),JsonSerializer.Serialize(new { assertions=_assertions, samples=Samples, mode="offscreen-wpf", sidebar_transport="in_memory", sidebar_cycles=100, runtime_started=false, installer_started=false, physical_monitor_dpi_test=false, physical_keyboard_test=false },new JsonSerializerOptions{WriteIndented=true}));
             Console.WriteLine($"Offscreen WPF regression passed: {_assertions} assertions, {Samples.Count} rendered samples; no runtime, tray, installer, or visible window started.");
             return 0;
