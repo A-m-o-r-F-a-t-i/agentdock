@@ -142,22 +142,11 @@ func runSetupLaunchBroker(path string, request SetupLaunchRequest) error {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		data, err := os.ReadFile(filepath.Join(root, "result.json"))
-		if err == nil {
-			var result setupLaunchResult
-			if err := json.Unmarshal(data, &result); err != nil {
-				return err
-			}
-			// A manually retried request path can still contain the previous
-			// worker's receipt. Only this launch's nonce may acknowledge success.
-			if result.TaskName != request.TaskName {
-				select {
-				case <-deadline.C:
-					return errors.New("native setup did not replace a stale launch receipt")
-				case <-ticker.C:
-					continue
-				}
-			}
+		result, ready, err := readSetupReceipt(filepath.Join(root, "result.json"), request.TaskName)
+		if err != nil {
+			return err
+		}
+		if ready {
 			completed = true
 			stdout, stdoutErr := setupStdout(filepath.Join(root, "stdout.log"), 4<<20)
 			stderr := setupLogTail(filepath.Join(root, "stderr.log"), 16<<10)
@@ -171,9 +160,6 @@ func runSetupLaunchBroker(path string, request SetupLaunchRequest) error {
 				return nil
 			}
 			_, err = io.WriteString(os.Stdout, stdout)
-			return err
-		}
-		if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		select {
@@ -365,4 +351,62 @@ func deleteSetupTask(name string, stop bool) error {
 		_, err := invokeDispatch(folder, "DeleteTask", dispatchMethod, variantBSTR(name), variantInt32(0))
 		return err
 	})
+}
+
+// A worker publishes atomically, but Windows scanners can temporarily deny
+// sharing. These pending reads retain the broker's original nonce and deadline.
+// Access-denied and arbitrary I/O errors are not retried as missing receipts.
+func setupReceiptPending(err error) bool {
+	return errors.Is(err, os.ErrNotExist) || errors.Is(err, windows.ERROR_SHARING_VIOLATION) || errors.Is(err, windows.ERROR_LOCK_VIOLATION)
+}
+
+func readSetupReceipt(path, expected string) (setupLaunchResult, bool, error) {
+	var result setupLaunchResult
+	file, err := os.Open(path)
+	if err != nil {
+		if setupReceiptPending(err) {
+			return result, false, nil
+		}
+		return result, false, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return result, false, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 64<<10 {
+		return result, false, errors.New("invalid setup receipt file")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, (64<<10)+1))
+	if err != nil {
+		if setupReceiptPending(err) {
+			return result, false, nil
+		}
+		return result, false, err
+	}
+	if len(data) > 64<<10 {
+		return result, false, errors.New("setup receipt exceeds size limit")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&result); err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return result, false, nil
+		}
+		return result, false, err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return result, false, errors.New("setup receipt must contain one JSON object")
+	}
+	if result.TaskName != expected || expected == "" {
+		return result, false, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return result, false, err
+	}
+	if value := fields["exit_code"]; len(value) == 0 || string(value) == "null" {
+		return result, false, errors.New("setup receipt omitted exit_code")
+	}
+	return result, true, nil
 }
