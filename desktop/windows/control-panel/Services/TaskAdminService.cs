@@ -15,6 +15,7 @@ internal static class TaskAdminService
     private const int TaskActionExec = 0;
     private const int TaskTriggerLogon = 9;
     private const int TaskCreateOrUpdate = 6;
+    private const int TaskDontAddPrincipalAce = 0x10;
     private const int TaskLogonInteractiveToken = 3;
     private const int TaskRunLevelHighest = 1;
     private const int TaskInstancesIgnoreNew = 2;
@@ -365,16 +366,14 @@ internal static class TaskAdminService
         dynamic task = root.RegisterTask(
             taskName,
             xml,
-            TaskCreateOrUpdate | 0x10, // TASK_DONT_ADD_PRINCIPAL_ACE: restore the saved ACL verbatim.
+            TaskCreateOrUpdate | TaskDontAddPrincipalAce,
             userId,
             null,
             TaskLogonInteractiveToken,
             string.IsNullOrWhiteSpace(state.SecurityDescriptor) ? null : state.SecurityDescriptor);
         task.Enabled = state.WasEnabled;
-        if (!string.IsNullOrWhiteSpace(state.SecurityDescriptor))
-        {
-            task.SetSecurityDescriptor(state.SecurityDescriptor, 0x10);
-        }
+        // Registration received the complete original DACL and explicitly
+        // disabled principal-ACE insertion. Do not rewrite it a second time.
         if (state.WasRunning)
         {
             task.Enabled = true;

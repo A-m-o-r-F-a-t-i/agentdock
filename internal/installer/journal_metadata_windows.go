@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"golang.org/x/sys/windows"
+	"io"
 	"runtime"
 	"unicode/utf16"
 	"unsafe"
@@ -21,7 +22,7 @@ type backupNativeMetadata struct {
 	Attributes uint32 `json:"attributes"`
 }
 
-var setLegacyBackupSecurity = windows.NewLazySystemDLL("advapi32.dll").NewProc("SetFileSecurityW")
+var writeBackupSecurity = windows.NewLazySystemDLL("kernel32.dll").NewProc("BackupWrite")
 
 func readBackupNativeMetadata(path string) (*backupNativeMetadata, error) {
 	name, err := windows.UTF16PtrFromString(path)
@@ -98,7 +99,7 @@ func readBackupNativeMetadata(path string) (*backupNativeMetadata, error) {
 	return &backupNativeMetadata{Security: encoded, Attributes: attributes & backupSettableAttributes}, nil
 }
 
-func applyBackupNativeMetadata(path string, metadata *backupNativeMetadata) error {
+func applyBackupNativeMetadata(path string, metadata *backupNativeMetadata) (resultErr error) {
 	if metadata == nil {
 		return errors.New("missing Windows backup metadata")
 	}
@@ -106,55 +107,46 @@ func applyBackupNativeMetadata(path string, metadata *backupNativeMetadata) erro
 	if err != nil {
 		return err
 	}
-	control, _, err := security.Control()
-	if err != nil {
-		return err
-	}
-	information := uint32(backupSecurityInformation)
-	if control&windows.SE_DACL_PROTECTED != 0 {
-		information |= windows.PROTECTED_DACL_SECURITY_INFORMATION
-	}
-	// Do not request UNPROTECTED_DACL here: that explicitly recomputes ACEs
-	// from the private temporary parent, replacing the source's inherited ACEs.
-	// Fresh copy targets are unprotected; protection is set only when recorded.
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return err
 	}
-	owner, _, err := security.Owner()
+	length := int(security.Length())
+	if length < 20 || length > 65536 {
+		return errors.New("invalid backup security descriptor size")
+	}
+	// BACKUP_SECURITY_DATA is the documented restoration path. General ACL
+	// editing APIs can recompute inherited ACEs from our private stage parent.
+	// No privilege is enabled here: the handle must grant WRITE_DAC/WRITE_OWNER.
+	handle, err := windows.CreateFile(name, windows.WRITE_DAC|windows.WRITE_OWNER|windows.READ_CONTROL, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_BACKUP_SEMANTICS|windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 	if err != nil {
 		return err
 	}
-	group, _, err := security.Group()
-	if err != nil {
-		return err
-	}
-	dacl, _, err := security.DACL()
-	if err != nil {
-		return err
-	}
-	// The modern ACL API retains auto-inheritance control. All destinations
-	// remain inside a private stage and parent-before-child application is
-	// followed by exact read-back of owner, group, DACL and supported attributes.
-	if control&windows.SE_DACL_AUTO_INHERITED != 0 {
-		err = windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.SECURITY_INFORMATION(information), owner, group, dacl, nil)
-	} else {
-		// A legacy descriptor must not acquire the auto-inherited control bit.
-		// This API intentionally does not propagate ACLs to children; every
-		// child is restored separately and exact read-back remains mandatory.
-		legacyInformation := uint32(backupSecurityInformation)
-		if control&windows.SE_DACL_PROTECTED != 0 {
-			legacyInformation |= windows.PROTECTED_DACL_SECURITY_INFORMATION
-		}
-		result, _, failure := setLegacyBackupSecurity.Call(uintptr(unsafe.Pointer(name)), uintptr(legacyInformation), uintptr(unsafe.Pointer(security)))
-		runtime.KeepAlive(name)
-		if result == 0 {
-			err = fmt.Errorf("restore legacy Windows security metadata: %w", failure)
-		}
-	}
+	defer windows.CloseHandle(handle)
+	storage := make([]uint64, (20+length+7)/8)
+	buffer := unsafe.Slice((*byte)(unsafe.Pointer(&storage[0])), 20+length)
+	binary.LittleEndian.PutUint32(buffer[0:], 3) // BACKUP_SECURITY_DATA
+	binary.LittleEndian.PutUint32(buffer[4:], 2) // STREAM_CONTAINS_SECURITY
+	binary.LittleEndian.PutUint64(buffer[8:], uint64(length))
+	copy(buffer[20:], unsafe.Slice((*byte)(unsafe.Pointer(security)), length))
 	runtime.KeepAlive(security)
-	if err != nil {
-		return fmt.Errorf("restore Windows security metadata: %w", err)
+	var context uintptr
+	defer func() {
+		if context != 0 {
+			ok, _, failure := writeBackupSecurity.Call(uintptr(handle), 0, 0, 0, 1, 1, uintptr(unsafe.Pointer(&context)))
+			if ok == 0 {
+				resultErr = errors.Join(resultErr, fmt.Errorf("release backup restoration context: %w", failure))
+			}
+		}
+	}()
+	var written uint32
+	ok, _, failure := writeBackupSecurity.Call(uintptr(handle), uintptr(unsafe.Pointer(&buffer[0])), uintptr(len(buffer)), uintptr(unsafe.Pointer(&written)), 0, 1, uintptr(unsafe.Pointer(&context)))
+	runtime.KeepAlive(storage)
+	if ok == 0 {
+		return fmt.Errorf("restore backup security stream: %w", failure)
+	}
+	if int(written) != len(buffer) {
+		return io.ErrShortWrite
 	}
 	attributes := metadata.Attributes
 	if attributes == 0 {

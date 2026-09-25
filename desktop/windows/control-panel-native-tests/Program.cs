@@ -204,6 +204,14 @@ internal static class Program
                 () => File.Exists(Path.Combine(recovery, "state.json")));
             try { PrivilegeTransition.RunAsync(recovery, actions, cancelled.Token).GetAwaiter().GetResult(); }
             catch (Exception error) { failure = error; }
+            if (failure is not null && File.Exists(Path.Combine(recovery,"state.json")))
+            {
+                using var state=JsonDocument.Parse(File.ReadAllText(Path.Combine(recovery,"state.json")));
+                dynamic? retainedTask=FindTask(folder,name);
+                string? actualSecurity=retainedTask is null ? null : (string)retainedTask.GetSecurityDescriptor(4);
+                var expectedSecurity=state.RootElement.GetProperty("SecurityDescriptor").GetString();
+                File.WriteAllText(Path.Combine(output,label+"-acl-difference.json"),JsonSerializer.Serialize(new{expected=expectedSecurity,actual=actualSecurity}));
+            }
             Check((failure is null) == (scenario == "success"), "Native outcome " + label + ": " + failure);
             if (scenario != "success") Check(injectedBoundaryReached, "Expected native failure boundary not reached: " + failure);
             var retained = scenario is "native_unknown" or "restore" or "verify_restored" or "tampered_definition";
