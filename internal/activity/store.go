@@ -31,6 +31,8 @@ const maxAppendBatch = 64
 type Options struct {
 	SegmentBytes int64
 	Segments     int
+	AppendEvents int
+	AppendBytes  int64
 }
 type Store struct {
 	projection       *callProjection
@@ -41,6 +43,7 @@ type Store struct {
 	appendQueueMu    sync.Mutex
 	appendQueue      []*appendRequest
 	appendWorker     bool
+	appendBudget     appendBudget
 	changed          chan struct{}
 	redactor         Redactor
 	payloadDirectory os.FileInfo
@@ -56,6 +59,8 @@ type appendRequest struct {
 	mu        sync.Mutex
 	cancelled bool
 	committed bool
+	ticket    *appendTicket
+	enqueued  time.Time
 }
 type appendResult struct {
 	event Event
@@ -91,7 +96,18 @@ func New(root string, options Options, secrets ...string) (*Store, error) {
 	if options.Segments > 64 {
 		return nil, errors.New("activity segment count exceeds 64")
 	}
-	return &Store{root: abs, options: options, changed: make(chan struct{}), redactor: NewRedactor(secrets...)}, nil
+	if options.AppendEvents == 0 {
+		options.AppendEvents = 256
+	}
+	if options.AppendBytes == 0 {
+		options.AppendBytes = 8 << 20
+	}
+	if options.AppendEvents < 1 || options.AppendEvents > 4096 || options.AppendBytes < MaxEventBytes || options.AppendBytes > 128<<20 {
+		return nil, errors.New("invalid activity append capacity")
+	}
+	store := &Store{root: abs, options: options, changed: make(chan struct{}), redactor: NewRedactor(secrets...)}
+	store.appendBudget.stats = AppendStatistics{EventLimit: options.AppendEvents, ByteLimit: options.AppendBytes}
+	return store, nil
 }
 
 func (s *Store) Changed() <-chan struct{} { s.mu.Lock(); defer s.mu.Unlock(); return s.changed }
@@ -130,12 +146,20 @@ func (s *Store) lockResource(ctx context.Context, mutex *sync.Mutex, name string
 }
 
 func (s *Store) Append(ctx context.Context, e Event) (Event, error) {
-	var err error
-	e, err = s.prepareAppend(ctx, e)
+	reservation, err := s.ReserveAppend(ctx, 1)
 	if err != nil {
 		return Event{}, err
 	}
-	request := &appendRequest{ctx: ctx, event: e, done: make(chan appendResult, 1)}
+	defer reservation.Close()
+	return reservation.Append(ctx, e)
+}
+
+func (s *Store) enqueueAppend(ctx context.Context, e Event, ticket *appendTicket) (Event, error) {
+	if err := ctx.Err(); err != nil {
+		ticket.finish(Event{}, err)
+		return Event{}, err
+	}
+	request := &appendRequest{ctx: ctx, event: e, done: make(chan appendResult, 1), ticket: ticket, enqueued: time.Now()}
 	s.appendQueueMu.Lock()
 	s.appendQueue = append(s.appendQueue, request)
 	if !s.appendWorker {
@@ -154,7 +178,10 @@ func (s *Store) Append(ctx context.Context, e Event) (Event, error) {
 			return result.event, result.err
 		}
 		request.cancelled = true
+		request.event = Event{}
 		request.mu.Unlock()
+		s.removeQueued(request)
+		ticket.finish(Event{}, ctx.Err())
 		return Event{}, ctx.Err()
 	}
 }
@@ -162,20 +189,39 @@ func (s *Store) Append(ctx context.Context, e Event) (Event, error) {
 // AppendBatch durably appends a small, already ordered lifecycle group with a
 // single journal synchronization. The cross-process lock and projection update
 // cover the whole group, so readers can never observe reordered sequence IDs.
-func (s *Store) AppendBatch(ctx context.Context, events []Event) ([]Event, error) {
+func (s *Store) AppendBatch(ctx context.Context, events []Event) (written []Event, resultErr error) {
 	if len(events) == 0 {
 		return []Event{}, nil
 	}
 	if len(events) > maxAppendBatch {
 		return nil, fmt.Errorf("activity append batch exceeds %d events", maxAppendBatch)
 	}
-	requests := make([]*appendRequest, len(events))
-	for index, event := range events {
-		prepared, err := s.prepareAppend(ctx, event)
+	reservation, err := s.ReserveAppend(ctx, len(events))
+	if err != nil {
+		return nil, err
+	}
+	defer reservation.Close()
+	requests := make([]*appendRequest, 0, len(events))
+	defer func() {
+		for index, request := range requests {
+			var saved Event
+			if index < len(written) {
+				saved = written[index]
+			}
+			request.ticket.finish(saved, resultErr)
+		}
+	}()
+	for _, event := range events {
+		ticket, err := reservation.take()
 		if err != nil {
 			return nil, err
 		}
-		requests[index] = &appendRequest{ctx: ctx, event: prepared}
+		prepared, err := s.prepareAppend(ctx, event)
+		if err != nil {
+			ticket.finish(Event{}, err)
+			return nil, err
+		}
+		requests = append(requests, &appendRequest{ctx: ctx, event: prepared, ticket: ticket, enqueued: time.Now()})
 	}
 	release, err := s.lock(ctx)
 	if err != nil {
@@ -185,10 +231,11 @@ func (s *Store) AppendBatch(ctx context.Context, events []Event) ([]Event, error
 		release()
 		return nil, err
 	}
+	started := time.Now()
 	results := s.appendBatchLocked(requests)
+	s.measureAppend(requests, started)
 	release()
 	appended := make([]Event, len(requests))
-	var resultErr error
 	for index, request := range requests {
 		result, ok := results[request]
 		if !ok {
@@ -201,13 +248,22 @@ func (s *Store) AppendBatch(ctx context.Context, events []Event) ([]Event, error
 }
 
 func (s *Store) prepareAppend(ctx context.Context, e Event) (Event, error) {
+	if err := ctx.Err(); err != nil {
+		return Event{}, err
+	}
 	if err := e.Binding.Validate(); err != nil {
 		return Event{}, err
 	}
 	if !validKind(e.Kind) {
 		return Event{}, errors.New("invalid activity kind")
 	}
+	if err := validateRawAppend(e); err != nil {
+		return Event{}, err
+	}
 	e = s.redactor.Event(e)
+	if err := validatePreparedAppend(e); err != nil {
+		return Event{}, err
+	}
 	if len(e.ToolName) > 160 || len(e.SessionID) > 80 || len(e.Runtime) > 32 || len(e.Status) > 32 {
 		return Event{}, errors.New("activity metadata is too long")
 	}
@@ -302,9 +358,11 @@ func (s *Store) appendBatch(batch []*appendRequest) {
 				stillActive = append(stillActive, request)
 			}
 			if len(stillActive) > 0 {
+				started := time.Now()
 				for request, result := range s.appendBatchLocked(stillActive) {
 					results[request] = result
 				}
+				s.measureAppend(stillActive, started)
 			}
 			release()
 		}
@@ -314,6 +372,7 @@ func (s *Store) appendBatch(batch []*appendRequest) {
 		if !ok {
 			result.err = errors.New("activity append batch did not produce a result")
 		}
+		request.ticket.finish(result.event, result.err)
 		request.done <- result
 	}
 }

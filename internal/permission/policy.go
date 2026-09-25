@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/uvwt/agentdock/internal/activity"
@@ -86,7 +85,6 @@ type Decision struct {
 type Store struct {
 	instance string
 	root     string
-	mu       sync.Mutex
 }
 
 func New(root string) (*Store, error) {
@@ -115,13 +113,14 @@ func New(root string) (*Store, error) {
 	return store, nil
 }
 func (s *Store) locked(ctx context.Context, fn func() error) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	release, err := filelock.Acquire(ctx, filepath.Join(s.root, ".permission.lock"))
 	if err != nil {
 		return err
 	}
 	defer release()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return fn()
 }
 func readJSON(path string, destination any) error {
@@ -141,13 +140,16 @@ func readJSON(path string, destination any) error {
 	}
 	return json.Unmarshal(data, destination)
 }
-func writeJSON(path string, value any) error {
+func writeJSON(ctx context.Context, path string, value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
 	if len(data) > 2<<20 {
 		return errors.New("permission record exceeds size limit")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return atomicfile.Write(path, append(data, '\n'), 0600)
 }
@@ -307,7 +309,7 @@ func (s *Store) Update(ctx context.Context, change Change) (Policy, error) {
 		if err = validatePolicy(p); err != nil {
 			return err
 		}
-		if err = writeJSON(filepath.Join(s.root, "policy.json"), p); err != nil {
+		if err = writeJSON(ctx, filepath.Join(s.root, "policy.json"), p); err != nil {
 			return err
 		}
 		result = p

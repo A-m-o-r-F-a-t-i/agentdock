@@ -134,15 +134,29 @@ func TestWindowsControlPanelCanSwitchCorePrivilegeMode(t *testing.T) {
 			"await RefreshAsync()",
 		},
 		filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.cs"): {
+			`"--launcher-path", trayBinary`,
+			"WritePrivilegeModeAsync",
+			"SetStandardCoreStartup",
+			"WaitForNativeExitAsync(process, cancellationToken)",
+		},
+		filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "RuntimeService.Privilege.cs"): {
 			"SetPrivilegeModeAsync",
 			"prepare-elevated",
 			"prepare-standard",
 			"RunTaskAdminTransitionAsync(\"restore\"",
-			`"--launcher-path", trayBinary`,
 			"WritePrivilegeModeAsync",
 			"SetStandardCoreStartup",
 			"snapshot.CoreStartupEnabled",
 			"snapshot.CoreRunning",
+			"PrivilegeTransition.RunAsync",
+			"VerifyPrivilegeStateAsync",
+			"NativeProcessStateUnknownException",
+		},
+		filepath.Join("..", "..", "desktop", "windows", "control-panel", "Services", "PrivilegeTransition.cs"): {
+			"actions.VerifyRestored(recovery.Token)",
+			"new CancellationTokenSource(TimeSpan.FromMinutes(3))",
+			"if (clean)",
+			"native_state_unknown",
 		},
 	}
 

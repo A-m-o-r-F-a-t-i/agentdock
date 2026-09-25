@@ -81,7 +81,7 @@ func (r *Runtime) prepareObservedExecution(ctx context.Context, name string, arg
 	}
 	if state.scoped && (name == "read_file" || name == "list_dir" || name == "search_text") {
 		logical := stringArg(args, "path")
-		if !strings.HasPrefix(logical, "skill://") && !strings.HasPrefix(logical, "~") {
+		if !strings.HasPrefix(logical, "skill://") && !strings.HasPrefix(logical, "activity://") && !strings.HasPrefix(logical, "~") {
 			if selected.Runtime == "wsl" {
 				if !path.IsAbs(logical) {
 					args["path"] = path.Join(selected.Root, logical)

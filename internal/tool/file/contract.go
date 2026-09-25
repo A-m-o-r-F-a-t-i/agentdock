@@ -39,6 +39,8 @@ func InputSchema(name string) (map[string]any, bool) {
 		props["start_line"] = intProp("1-based start line.")
 		props["end_line"] = intProp("Inclusive end line.")
 		props["max_bytes"] = boundedIntProp("Maximum output bytes. Defaults to 262144 and is capped at 4194304.", 1, MaxTextOutputBytes)
+		props["offset"] = map[string]any{"type": "integer", "minimum": 0, "maximum": 16777216, "description": "UTF-8 byte offset for a host-issued activity://call/.../source reference only. Not a character or line offset."}
+		props["limit_chars"] = boundedIntProp("Unicode scalar budget for an activity source page only. Mutually exclusive with line and max_bytes parameters; current device output policy may lower it.", 1, 100000)
 		required = []string{"path"}
 	case ToolListDir:
 		props["path"] = stringProp(PathDescription("Host directory path. Relative paths resolve from ~/AgentDock."))
@@ -150,6 +152,14 @@ func OutputSchema(name string) (map[string]any, bool) {
 		props["end_line"] = intProp("Returned end line.")
 		props["next_start_line"] = intProp("Next line to read when output was truncated.")
 		props["total_lines"] = intProp("Total line count.")
+		props["offset"] = intProp("Source page start byte offset, inclusive.")
+		props["next_offset"] = intProp("Actual next UTF-8 byte offset, exclusive.")
+		props["has_more"] = boolProp("More retained source bytes are available.")
+		props["unit"] = stringProp("Character counting unit for source pages: unicode_scalar.")
+		props["limit_chars"] = intProp("Effective scalar budget for this source page.")
+		props["returned_chars"] = intProp("Unicode scalars returned in content.")
+		props["source_state"] = stringProp("Retained source completeness; does not assert that upstream collection was complete.")
+		props["payload"] = map[string]any{"type": "object", "additionalProperties": true}
 	case ToolListDir:
 		props["path"] = stringProp("Listed Host directory path. Relative paths resolve from ~/AgentDock.")
 		props["entries"] = map[string]any{

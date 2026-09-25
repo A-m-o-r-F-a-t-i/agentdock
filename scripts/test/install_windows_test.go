@@ -571,7 +571,11 @@ func TestWindowsTaskAdminUsesNativeAgentDockHelper(t *testing.T) {
 		"fallback_version",
 		"--task-name",
 		"request.TaskName",
-		"state.WasEnabled && state.WasRunning",
+		"if (state.WasRunning)",
+		"task.Enabled = state.WasEnabled",
+		"ReadBackup(backupDirectory)",
+		"RecoveryFiles.WriteText",
+		"VerifyRestoredBackup",
 		"process.Kill(entireProcessTree: true)",
 	} {
 		if !strings.Contains(source, want) {

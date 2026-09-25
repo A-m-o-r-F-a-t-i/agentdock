@@ -20,7 +20,7 @@ public sealed partial class RuntimeService
     }
 }
 
-internal sealed partial class ActivityClient(RuntimeService runtime) : IDisposable
+internal sealed partial class ActivityClient : IDisposable
 {
     internal static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -29,13 +29,24 @@ internal sealed partial class ActivityClient(RuntimeService runtime) : IDisposab
         MaxDepth = 48
     };
 
-    private readonly HttpClient _http = new(new SocketsHttpHandler
+    private readonly Func<CancellationToken, Task<ActivityConnection>> _connection;
+    private readonly HttpClient _http;
+
+    internal ActivityClient(RuntimeService runtime) : this(runtime.GetActivityConnectionAsync, new SocketsHttpHandler
     {
         UseProxy = false,
         AllowAutoRedirect = false,
         ConnectTimeout = TimeSpan.FromSeconds(5),
         PooledConnectionLifetime = TimeSpan.FromMinutes(5)
-    }) { Timeout = Timeout.InfiniteTimeSpan };
+    }) { }
+
+    // Keep transport ownership explicit. Isolated contract tests inject an
+    // in-memory handler; production retains the loopback connection resolver.
+    internal ActivityClient(Func<CancellationToken, Task<ActivityConnection>> connection, HttpMessageHandler handler)
+    {
+        _connection = connection;
+        _http = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+    }
 
     [GeneratedRegex("^[A-Za-z0-9_-]{1,80}$", RegexOptions.CultureInvariant)]
     private static partial Regex Identifier();
@@ -70,7 +81,7 @@ internal sealed partial class ActivityClient(RuntimeService runtime) : IDisposab
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
         deadline.CancelAfter(TimeSpan.FromSeconds(12));
-        var connection = await runtime.GetActivityConnectionAsync(deadline.Token).ConfigureAwait(false);
+        var connection = await _connection(deadline.Token).ConfigureAwait(false);
         using var request = Request(method, new Uri(connection.Origin, path), connection.BearerToken);
         if (body is not null) request.Content = new StringContent(JsonSerializer.Serialize(body, JsonOptions), Encoding.UTF8, "application/json");
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token).ConfigureAwait(false);
@@ -128,7 +139,7 @@ internal sealed partial class ActivityClient(RuntimeService runtime) : IDisposab
             {
                 using var connectionDeadline = CancellationTokenSource.CreateLinkedTokenSource(token);
                 connectionDeadline.CancelAfter(TimeSpan.FromSeconds(10));
-                var connection = await runtime.GetActivityConnectionAsync(connectionDeadline.Token).ConfigureAwait(false);
+                var connection = await _connection(connectionDeadline.Token).ConfigureAwait(false);
                 using var request = Request(HttpMethod.Get, new Uri(connection.Origin, path), connection.BearerToken);
                 request.Headers.TryAddWithoutValidation("Last-Event-ID", cursor.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));

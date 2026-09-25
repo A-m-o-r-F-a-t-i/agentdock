@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/tool/command/session"
 )
@@ -58,6 +59,19 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 	if err != nil {
 		return nil, err
 	}
+	var journal *activity.AppendReservation
+	if svc.activity != nil {
+		journal, err = svc.activity.ReserveAppend(ctx, 2)
+		if err != nil {
+			return nil, toolErrorDetails("ACTIVITY_CAPACITY", "Command was not started because its activity lifecycle could not be reserved.", "resource_limit", map[string]any{"executed": false, "reason": err.Error()})
+		}
+	}
+	journalTransferred := false
+	defer func() {
+		if !journalTransferred {
+			journal.Close()
+		}
+	}()
 	prepareCtx, prepareCancel := context.WithTimeout(ctx, timeout)
 	invocation, err := svc.prepareCommandInvocation(prepareCtx, request)
 	prepareCancel()
@@ -113,7 +127,8 @@ func (svc *Service) Exec(ctx context.Context, request ExecRequest) (Result, erro
 	}
 	s.SetExecutionContext(invocation.execution)
 	s.SetActivityBinding(request.Binding)
-	activityDone := svc.trackCommandActivity(s, request)
+	activityDone := svc.trackCommandActivity(s, request, journal)
+	journalTransferred = true
 	svc.sessions.FinishStart()
 	if request.Stdin != "" {
 		if err := s.Write(request.Stdin); err != nil {

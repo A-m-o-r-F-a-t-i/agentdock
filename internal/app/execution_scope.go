@@ -120,7 +120,7 @@ func (r *Runtime) commitConversationState(ctx context.Context, p *preparedExecut
 			change = true
 		}
 	}
-	if (p.spec.Name == "agentdock_context" || p.spec.Name == "workspace_context") && stringArg(p.args, "workdir") != "" {
+	if p.spec.Name == "workspace_context" && stringArg(p.args, "workdir") != "" {
 		var selected struct {
 			ID string `json:"workspace_id"`
 		}

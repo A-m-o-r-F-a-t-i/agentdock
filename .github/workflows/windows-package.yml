@@ -40,25 +40,63 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  linux-contracts:
+  resolve-source:
     if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
-    name: Linux transaction and concurrency regression
+    name: Resolve requested ref once
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+      - id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse --verify 'HEAD^{commit}')"
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+  linux-contracts:
+    needs: resolve-source
+    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
+    name: Linux transaction and concurrency regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-source.outputs.commit }}
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
       - name: Linux backend and WSL helper contracts
         run: go test -p 2 ./... -count=1 -timeout=8m
-      - name: Race detection on snapshots, plugins and file transactions
-        run: go test -race -p 2 ./internal/snapshot ./internal/plugin ./internal/activity ./internal/wslfilehelper -count=1 -timeout=8m
+      - name: Race detection on critical concurrency contracts
+        run: go test -race -p 2 ./internal/activity ./internal/permission ./internal/insertion ./internal/fs/... ./internal/snapshot ./internal/acp ./internal/selfupdate ./internal/plugin ./internal/wslfilehelper -count=1 -timeout=8m
+      - name: Record tested source identity
+        id: identity
+        env:
+          EXPECTED_COMMIT: ${{ needs.resolve-source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse HEAD)"
+          test "$commit" = "$EXPECTED_COMMIT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          printf '{"commit":"%s","platform":"linux","backend":"passed","race":"passed","installation":"not_run"}\n' "$commit" > linux-verification.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-validation-${{ github.run_id }}
+          path: linux-verification.json
+          retention-days: 30
+          if-no-files-found: error
 
   build:
+    needs: [resolve-source, linux-contracts]
     if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
     name: Build verified unsigned Windows x64 package
     runs-on: windows-latest
@@ -82,7 +120,7 @@ jobs:
       - name: Checkout requested source
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+          ref: ${{ needs.resolve-source.outputs.commit }}
           fetch-depth: 0
 
       - name: Setup Go
@@ -104,6 +142,8 @@ jobs:
           MANUAL_PUBLISH: ${{ inputs.publish }}
           MANUAL_PRERELEASE: ${{ inputs.prerelease }}
           MANUAL_TAG: ${{ inputs.tag }}
+          EXPECTED_COMMIT: ${{ needs.resolve-source.outputs.commit }}
+          TESTED_COMMIT: ${{ needs.linux-contracts.outputs.commit }}
         run: |
           $ErrorActionPreference = 'Stop'
           $version = (& go run ./tools/release version).Trim()
@@ -113,6 +153,9 @@ jobs:
           $commit = (& git rev-parse HEAD).Trim().ToLowerInvariant()
           if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') {
             throw 'Could not resolve the source commit.'
+          }
+          if ($commit -ne $env:EXPECTED_COMMIT -or $commit -ne $env:TESTED_COMMIT) {
+            throw 'Source, Linux validation and Windows build commits differ.'
           }
           $changes = @(& git status --porcelain)
           if ($LASTEXITCODE -ne 0 -or $changes.Count -ne 0) {
@@ -243,7 +286,17 @@ jobs:
       - name: Record verification scope
         run: |
           $installed = '${{ github.event_name }}' -eq 'workflow_dispatch' -and '${{ inputs.installation_tests }}' -eq 'true'
-          $scope = @{ automated_regression = 'passed'; metadata_checksums = 'passed'; installation_tests = $(if ($installed) { 'passed' } else { 'not_run_user_requested' }); manual_desktop_tests = 'not_run'; commit = '${{ steps.metadata.outputs.commit }}' }
+          $scope = @{
+            automated_regression = 'passed'
+            metadata_checksums = 'passed'
+            installation_tests = $(if ($installed) { 'passed' } else { 'not_run_user_requested' })
+            manual_desktop_tests = 'not_run'
+            commit = '${{ steps.metadata.outputs.commit }}'
+            resolved_commit = '${{ needs.resolve-source.outputs.commit }}'
+            linux_tested_commit = '${{ needs.linux-contracts.outputs.commit }}'
+            linux_backend = 'passed'
+            linux_race = 'passed'
+          }
           $scope | ConvertTo-Json | Set-Content -Encoding utf8 .\dist\windows-package\verification-scope.json
 
       - name: Upload verified Windows package
@@ -274,7 +327,7 @@ jobs:
 
   publish:
     if: needs.build.outputs.publish == 'true'
-    needs: [build, linux-contracts]
+    needs: [resolve-source, build, linux-contracts]
     name: Publish verified Windows x64 Release
     runs-on: windows-latest
     timeout-minutes: 20
@@ -312,6 +365,11 @@ jobs:
             -ExpectedCommit '${{ needs.build.outputs.commit }}' `
             -ExpectedChannel release `
             -ExpectedAuthenticode unsigned | Out-Null
+          $scope = Get-Content '.\dist\windows-package\verification-scope.json' -Raw | ConvertFrom-Json
+          $commit = '${{ needs.resolve-source.outputs.commit }}'
+          if ($scope.commit -ne $commit -or $scope.resolved_commit -ne $commit -or $scope.linux_tested_commit -ne $commit -or '${{ needs.build.outputs.commit }}' -ne $commit -or '${{ needs.linux-contracts.outputs.commit }}' -ne $commit) {
+            throw 'Refusing publication: resolved, tested, built and packaged source identities differ.'
+          }
 
       - name: Create or update GitHub Release after verification
         env:
@@ -330,6 +388,11 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $tagCommit -ne $env:RELEASE_COMMIT) {
             throw "Tag $tag no longer points to the verified commit."
           }
+          $remoteTag = @(& git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}")
+          if ($LASTEXITCODE -ne 0 -or $remoteTag.Count -eq 0) { throw 'Could not verify the current remote release tag.' }
+          $peeled = @($remoteTag | Where-Object { $_ -match '\^\{\}$' })
+          $remoteCommit = (($peeled + $remoteTag)[0] -split '\s+')[0].ToLowerInvariant()
+          if ($remoteCommit -ne $env:RELEASE_COMMIT) { throw 'Remote release tag moved after source resolution.' }
 
           $exactNotes = Join-Path $PWD "docs\releases\$tag.md"
           if (Test-Path -LiteralPath $exactNotes -PathType Leaf) {

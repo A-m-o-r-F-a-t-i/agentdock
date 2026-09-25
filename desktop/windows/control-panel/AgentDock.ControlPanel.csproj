@@ -9,7 +9,7 @@
     <AssemblyName>agentdock-tray</AssemblyName>
     <AssemblyTitle>AgentDock</AssemblyTitle>
     <Product>AgentDock</Product>
-    <Version>1.1.6</Version>
+    <Version>1.1.7</Version>
     <Description>AgentDock Control Panel</Description>
     <RootNamespace>AgentDock.ControlPanel</RootNamespace>
     <ApplicationIcon>..\..\..\packaging\windows\assets\agentdock.ico</ApplicationIcon>
@@ -21,6 +21,7 @@
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="AgentDock.ControlPanel.LayoutTests" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 </Project>

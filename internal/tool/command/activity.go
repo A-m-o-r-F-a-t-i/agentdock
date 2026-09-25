@@ -46,7 +46,7 @@ func (svc *Service) ActivitySessionRunning(id string) bool {
 	}
 }
 
-func (svc *Service) trackCommandActivity(s *session.Session, request ExecRequest) <-chan struct{} {
+func (svc *Service) trackCommandActivity(s *session.Session, request ExecRequest, journal *activity.AppendReservation) <-chan struct{} {
 	done := make(chan struct{})
 	if svc.activity == nil {
 		close(done)
@@ -77,7 +77,13 @@ func (svc *Service) trackCommandActivity(s *session.Session, request ExecRequest
 	appendEvent := func(event activity.Event) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if _, err := svc.activity.Append(ctx, redactor.Event(event)); err != nil {
+		var err error
+		if journal != nil && (event.Kind == "command.started" || event.Kind == "command.completed") {
+			_, err = journal.Append(ctx, redactor.Event(event))
+		} else {
+			_, err = svc.activity.Append(ctx, redactor.Event(event))
+		}
+		if err != nil {
 			s.SetActivityWarning("Command execution continues; its activity journal is incomplete. Inspect the local activity store.")
 			slog.Warn("record command activity", "session_id", s.ID, "kind", event.Kind, "error", err)
 		}
@@ -90,6 +96,7 @@ func (svc *Service) trackCommandActivity(s *session.Session, request ExecRequest
 	svc.activityMu.Unlock()
 	svc.activityWG.Add(1)
 	go func() {
+		defer journal.Close()
 		defer func() { svc.activityMu.Lock(); delete(svc.activeCommands, s.ID); svc.activityMu.Unlock() }()
 		defer svc.activityWG.Done()
 		defer close(done)

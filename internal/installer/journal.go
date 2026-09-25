@@ -7,19 +7,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
+	"slices"
 	"strings"
+
+	"github.com/uvwt/agentdock/internal/fs/atomicfile"
+	"github.com/uvwt/agentdock/internal/fs/securepath"
 )
 
 // rollbackJournal 同时记录文件快照和服务运行态。
 // 回滚顺序必须是：停掉新进程 → 还原文件 → 重载 unit → 按安装前状态拉起旧服务。
 // 只有 Restore 成功才允许把事务写成 rolled_back；还原失败必须是 failed/rollback_failed。
 type rollbackJournal struct {
-	Dir           string           `json:"dir"`
-	TransactionID string           `json:"transaction_id,omitempty"`
-	Backups       []journalBackup  `json:"backups"`
-	Created       []string         `json:"created"`
-	Services      []journalService `json:"services,omitempty"`
+	Dir            string                `json:"dir"`
+	TransactionID  string                `json:"transaction_id,omitempty"`
+	Backups        []journalBackup       `json:"backups"`
+	Created        []string              `json:"created"`
+	Services       []journalService      `json:"services,omitempty"`
+	RestoreEntries []journalRestoreEntry `json:"restore_entries,omitempty"`
+	RestoreStatus  string                `json:"restore_status,omitempty"`
 }
 
 // journalService 记住安装前服务是否在跑，以及本次事务有没有动过它。
@@ -41,6 +46,7 @@ type journalBackup struct {
 	Original string `json:"original"`
 	Backup   string `json:"backup,omitempty"`
 	Existed  bool   `json:"existed"`
+	Digest   string `json:"digest,omitempty"`
 }
 
 func newJournal(stateRoot, transactionID string) *rollbackJournal {
@@ -87,42 +93,70 @@ func (journal *rollbackJournal) Snapshot(path string) error {
 	if path == "" {
 		return nil
 	}
-	info, err := os.Lstat(path)
+	if journal.RestoreStatus != "" {
+		return errors.New("cannot add snapshots after restoration has started")
+	}
+	path = filepath.Clean(path)
+	for _, existing := range journal.Backups {
+		if restorePathKey(existing.Original) == restorePathKey(path) {
+			return nil
+		}
+	}
+	if err := validateRestorePath(path); err != nil {
+		return err
+	}
+	if restoreWithin(journal.Dir, path) || restoreWithin(path, journal.Dir) {
+		return errors.New("snapshot overlaps its journal")
+	}
+	_, err := os.Lstat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			journal.Backups = append(journal.Backups, journalBackup{Original: path, Existed: false})
-			return journal.persist()
+			next := journal.nextState()
+			next.Backups = append(next.Backups, journalBackup{Original: path, Existed: false})
+			return journal.commit(next)
 		}
 		return err
 	}
 	if err := os.MkdirAll(journal.Dir, 0o700); err != nil {
 		return err
 	}
-	backup := filepath.Join(journal.Dir, strconv.Itoa(len(journal.Backups))+filepath.Ext(path))
-	if info.IsDir() {
-		backup = filepath.Join(journal.Dir, strconv.Itoa(len(journal.Backups)))
+	container, err := os.MkdirTemp(journal.Dir, "snapshot-")
+	if err != nil {
+		return err
 	}
-	if err := copyTree(path, backup, info.Mode()); err != nil {
+	if err := securepath.EnsurePrivate(container); err != nil {
+		return err
+	}
+	backup := filepath.Join(container, "payload")
+	digest, err := copyBackupTree(context.Background(), path, backup)
+	if err != nil {
 		return fmt.Errorf("snapshot %s: %w", path, err)
 	}
-	journal.Backups = append(journal.Backups, journalBackup{Original: path, Backup: backup, Existed: true})
-	return journal.persist()
+	verified, err := copyBackupTree(context.Background(), backup, "")
+	if err != nil || digest != verified {
+		return fmt.Errorf("snapshot verification failed: %s: %w", path, errors.Join(err, errors.New("digest mismatch")))
+	}
+	next := journal.nextState()
+	next.Backups = append(next.Backups, journalBackup{Original: path, Backup: backup, Existed: true, Digest: digest})
+	return journal.commit(next)
 }
 
 func (journal *rollbackJournal) NoteCreated(path string) error {
 	if path == "" {
 		return nil
 	}
-	journal.Created = append(journal.Created, path)
-	return journal.persist()
+	next := journal.nextState()
+	next.Created = append(next.Created, path)
+	return journal.commit(next)
 }
 
 func (journal *rollbackJournal) NoteService(service journalService) error {
 	if journal == nil {
 		return errors.New("rollback journal is required")
 	}
-	journal.Services = append(journal.Services, service)
-	return journal.persist()
+	next := journal.nextState()
+	next.Services = append(next.Services, service)
+	return journal.commit(next)
 }
 
 func (journal *rollbackJournal) hasService(name string) bool {
@@ -140,8 +174,9 @@ func (journal *rollbackJournal) hasService(name string) bool {
 func (journal *rollbackJournal) updateService(name string, mutate func(*journalService)) error {
 	for i := range journal.Services {
 		if journal.Services[i].Name == name {
-			mutate(&journal.Services[i])
-			return journal.persist()
+			next := journal.nextState()
+			mutate(&next.Services[i])
+			return journal.commit(next)
 		}
 	}
 	return fmt.Errorf("journal missing service %s", name)
@@ -152,7 +187,29 @@ func (journal *rollbackJournal) Restore(ctx context.Context, request Request) er
 }
 
 func (journal *rollbackJournal) restore(ctx context.Context, request Request, resumeServices bool) error {
+	if journal == nil {
+		return errors.New("rollback journal is required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	var failures []error
+	if journal.RestoreStatus == "complete" {
+		if resumeServices {
+			for _, service := range journal.Services {
+				if err := restoreJournalService(ctx, request, service); err != nil {
+					failures = append(failures, err)
+				}
+			}
+		}
+		if len(failures) > 0 {
+			return errors.Join(failures...)
+		}
+		return journal.finishRestore()
+	}
+	if err := journal.prepareRestore(ctx); err != nil {
+		return fmt.Errorf("prepare recovery; original targets retained: %w", err)
+	}
 	for i := len(journal.Services) - 1; i >= 0; i-- {
 		service := journal.Services[i]
 		// 只要记进 journal 就停：enable --now 之后、StartedByUs 落盘之前崩溃，
@@ -161,25 +218,12 @@ func (journal *rollbackJournal) restore(ctx context.Context, request Request, re
 			failures = append(failures, fmt.Errorf("stop %s: %w", service.Name, err))
 		}
 	}
-	for i := len(journal.Created) - 1; i >= 0; i-- {
-		if err := os.RemoveAll(journal.Created[i]); err != nil && !os.IsNotExist(err) {
-			failures = append(failures, fmt.Errorf("remove %s: %w", journal.Created[i], err))
-		}
+	if len(failures) > 0 {
+		return errors.Join(failures...)
 	}
-	for i := len(journal.Backups) - 1; i >= 0; i-- {
-		item := journal.Backups[i]
-		if !item.Existed {
-			if err := os.RemoveAll(item.Original); err != nil && !os.IsNotExist(err) {
-				failures = append(failures, fmt.Errorf("remove new %s: %w", item.Original, err))
-			}
-			continue
-		}
-		if err := os.RemoveAll(item.Original); err != nil && !os.IsNotExist(err) {
-			failures = append(failures, fmt.Errorf("clear %s: %w", item.Original, err))
-			continue
-		}
-		if err := copyTree(item.Backup, item.Original, 0); err != nil {
-			failures = append(failures, fmt.Errorf("restore %s: %w", item.Original, err))
+	for i := range journal.RestoreEntries {
+		if err := journal.advanceRestore(ctx, i, os.Rename); err != nil {
+			return fmt.Errorf("restore interrupted; recovery journal retained at %s: %w", journal.Dir, err)
 		}
 	}
 	if err := reloadJournalServices(ctx, request, journal.Services); err != nil {
@@ -198,6 +242,25 @@ func (journal *rollbackJournal) restore(ctx context.Context, request Request, re
 	if len(failures) > 0 {
 		return errors.Join(failures...)
 	}
+	return journal.finishRestore()
+}
+
+// Mutations are published to memory only after the complete journal is durable.
+// Slices must be detached: copying the struct alone can alter committed entries.
+func (journal *rollbackJournal) nextState() rollbackJournal {
+	next := *journal
+	next.Backups = slices.Clone(journal.Backups)
+	next.Created = slices.Clone(journal.Created)
+	next.Services = slices.Clone(journal.Services)
+	next.RestoreEntries = slices.Clone(journal.RestoreEntries)
+	return next
+}
+
+func (journal *rollbackJournal) commit(next rollbackJournal) error {
+	if err := next.persist(); err != nil {
+		return err
+	}
+	*journal = next
 	return nil
 }
 
@@ -213,5 +276,5 @@ func (journal *rollbackJournal) persist() error {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(filepath.Join(journal.Dir, "journal.json"), data, 0o600)
+	return atomicfile.Write(filepath.Join(journal.Dir, "journal.json"), data, 0o600)
 }

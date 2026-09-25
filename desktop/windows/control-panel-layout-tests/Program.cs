@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Markup;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Xml.Linq;
@@ -58,6 +59,10 @@ internal static class Program
         app.Resources = (ResourceDictionary)XamlReader.Parse(dictionary.ToString(), context);
         try
         {
+            var invalidEventThrew = false;
+            try { new RoutedEventArgs().Handled = true; }
+            catch (InvalidOperationException) { invalidEventThrew = true; }
+            Check(invalidEventThrew, "Original parameterless RoutedEventArgs failure contract changed.");
             foreach (var theme in new[] {"light","dark","system"})
             {
                 var root = Path.Combine(Path.GetTempPath(),"agentdock-layout-"+Guid.NewGuid().ToString("N"));
@@ -74,7 +79,8 @@ internal static class Program
                     Named<Button>(window,"CallPresentationButton").Content = mode=="compact" ? "简洁" : "详细";
                     var header = window.FindName("DetailedCallsHeader") as FrameworkElement;
                     if (header is not null) header.Visibility = mode=="detailed" ? Visibility.Visible : Visibility.Collapsed;
-                    foreach (var scale in new[] {1.0,1.25,1.5,2.0}) Render(window,output,$"execution-{theme}-{mode}",scale);
+                    foreach (var width in new[] {800.0,1280.0})
+                        foreach (var scale in new[] {1.0,1.25,1.5,2.0}) Render(window,output,$"execution-{theme}-{mode}-{(int)width}",scale,width);
                 }
                 // Expanding/collapsing is driven through the production bound
                 // key. No backend request is permitted in this unstarted view.
@@ -91,6 +97,16 @@ internal static class Program
                 var more = Descendants((FrameworkElement)window.Content).OfType<ListBoxItem>().FirstOrDefault(item => item.DataContext is ExecutionObject { IsGroupFooter:true,HasMore:true });
                 Check(normal is not null && more is not null,"Navigation row containers were not generated.");
                 Check(Math.Abs(normal!.ActualHeight-2*more!.ActualHeight)<0.1,"Actual ellipsis layout is not half a conversation row.");
+                // Real handlers, but an unstarted view: no transport or runtime.
+                var moreButton = Descendants(more!).OfType<Button>().Single(button => button.Name == "ProjectMore");
+                var preview = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left)
+                    { RoutedEvent = UIElement.PreviewMouseLeftButtonDownEvent, Source = moreButton };
+                more!.RaiseEvent(preview);
+                Check(preview.Handled, "Footer preview did not consume selection.");
+                var click = new RoutedEventArgs(Button.ClickEvent, moreButton);
+                moreButton.RaiseEvent(click);
+                Check(click.Handled, "Click did not reach the shared pagination handler.");
+                Check(!((ExecutionObject)more.DataContext).IsPaging, "Unstarted view leaked a pagination marker.");
                 Check(Named<TextBox>(window,"RequestPayloadText").Text.Contains("workdir"),"Real request was not rendered.");
                 Check(Named<TextBox>(window,"ResponsePayloadText").Text.Contains("structured_content"),"Real structured output was not rendered.");
                 Check(window.FindName("ConnectionButton") is null && window.FindName("OlderCallsButton") is null && window.FindName("CompactCallsChoice") is null,"Removed toolbar controls still exist.");
@@ -113,7 +129,8 @@ internal static class Program
                 typeof(MainWindow).GetMethod("CloseForReplacement", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(panel,null);
                 Directory.Delete(root,true);
             }
-            File.WriteAllText(Path.Combine(output,"layout-validation.json"),JsonSerializer.Serialize(new { assertions=_assertions, samples=Samples, mode="offscreen-wpf", runtime_started=false, installer_started=false, physical_monitor_dpi_test=false },new JsonSerializerOptions{WriteIndented=true}));
+            SidebarInteractionTests.Run(Check);
+            File.WriteAllText(Path.Combine(output,"layout-validation.json"),JsonSerializer.Serialize(new { assertions=_assertions, samples=Samples, mode="offscreen-wpf", sidebar_transport="in_memory", sidebar_cycles=100, runtime_started=false, installer_started=false, physical_monitor_dpi_test=false, physical_keyboard_test=false },new JsonSerializerOptions{WriteIndented=true}));
             Console.WriteLine($"Offscreen WPF regression passed: {_assertions} assertions, {Samples.Count} rendered samples; no runtime, tray, installer, or visible window started.");
             return 0;
         }
@@ -143,18 +160,18 @@ internal static class Program
         Named<FrameworkElement>(window,"InsertionPanel").Visibility=Visibility.Collapsed;
         var tabs=Named<TabControl>(window,"CallDetailsTabs");tabs.DataContext=row;tabs.Visibility=Visibility.Visible;
     }
-    private static FrameworkElement Layout(Window window)
+    private static FrameworkElement Layout(Window window, double width = 1180)
     {
         var root=(FrameworkElement)window.Content;
-        root.Measure(new Size(1180,780));root.Arrange(new Rect(0,0,1180,780));root.UpdateLayout();
+        root.Measure(new Size(width,780));root.Arrange(new Rect(0,0,width,780));root.UpdateLayout();
         return root;
     }
-    private static void Render(Window window,string output,string name,double scale)
+    private static void Render(Window window,string output,string name,double scale,double width = 1180)
     {
-        var root=Layout(window);
+        var root=Layout(window,width);
         Check(root.ActualWidth>0 && root.ActualHeight>0,"Empty layout surface.");
         foreach(var element in Descendants(root).OfType<FrameworkElement>()) Check(double.IsFinite(element.ActualWidth) && double.IsFinite(element.ActualHeight),"Non-finite layout size.");
-        var image=new RenderTargetBitmap((int)(1180*scale),(int)(780*scale),96*scale,96*scale,PixelFormats.Pbgra32);
+        var image=new RenderTargetBitmap((int)(width*scale),(int)(780*scale),96*scale,96*scale,PixelFormats.Pbgra32);
         image.Render(root);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(image));
         var path=Path.Combine(output,name+"-"+(int)(scale*100)+".png");using(var stream=File.Create(path))encoder.Save(stream);
         Samples.Add(new{name,render_scale=scale,width=image.PixelWidth,height=image.PixelHeight,bytes=new FileInfo(path).Length});

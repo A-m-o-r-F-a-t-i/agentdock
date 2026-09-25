@@ -14,6 +14,7 @@ public partial class ExecutionWindow
     private readonly Dictionary<string, WorkspaceGroupKey> _sidebarGroups = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SidebarNavigationState> _sidebarViews = new(StringComparer.Ordinal);
     private readonly HashSet<string> _sidebarPaging = new(StringComparer.Ordinal);
+    private readonly SemaphoreSlim _sidebarPageGate = new(1, 1);
     private SidebarNavigationState? _searchNavigation;
     private string _searchNavigationScope = "", _sidebarScope = "";
     private bool _allProjectsCollapsed, _initializingGroup, _sidebarLoading, _sidebarDirty;
@@ -42,13 +43,18 @@ public partial class ExecutionWindow
         if (_selected is { IsGroupFooter: false } selected && !Objects.Contains(selected)) yield return selected;
     }
 
-    private async Task LoadSidebarAsync()
+    private Task LoadSidebarAsync() => LoadSidebarAsync(null);
+    private async Task LoadSidebarAsync(SidebarNavigationState? candidate)
     {
+        var target = CurrentNavigation();
+        var revision = target.Revision;
+        candidate ??= target.Copy();
+        var selectionGeneration = _generation;
         var epoch = ++_objectEpoch;
         _sidebarRequest?.Cancel(); _sidebarRequest?.Dispose();
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         _sidebarRequest = cancellation; _sidebarLoading = true; _sidebarDirty = false;
-        try { await LoadSidebarCoreAsync(epoch, cancellation.Token); }
+        try { await LoadSidebarCoreAsync(epoch, cancellation.Token, candidate, target, revision, selectionGeneration); }
         finally
         {
             if (ReferenceEquals(_sidebarRequest, cancellation)) { _sidebarRequest = null; _sidebarLoading = false; }
@@ -57,11 +63,10 @@ public partial class ExecutionWindow
         }
     }
 
-    private async Task LoadSidebarCoreAsync(int epoch, CancellationToken token)
+    private async Task LoadSidebarCoreAsync(int epoch, CancellationToken token, SidebarNavigationState navigation, SidebarNavigationState target, long revision, int selectionGeneration)
     {
         var search = SearchBox.Text.Trim();
         var scope = _conversationView + "\n" + search;
-        var navigation = CurrentNavigation();
         var selection = _selected?.SelectionKey ?? _preferences.LastConversation;
         var page = await _client.ExecutionPostAsync("/internal/runtime/execution/sidebar", new
         {
@@ -69,7 +74,13 @@ public partial class ExecutionWindow
             cursors = navigation.Cursors, default_mode = navigation.DefaultCollapsed ? "collapsed" : "auto",
             selected_id = selection == "unattributed" ? "" : selection
         }, token);
-        if (_closed || epoch != _objectEpoch || scope != _conversationView + "\n" + SearchBox.Text.Trim()) return;
+        token.ThrowIfCancellationRequested();
+        if (_closed || epoch != _objectEpoch || selectionGeneration != _generation ||
+            scope != _conversationView + "\n" + SearchBox.Text.Trim() || !ReferenceEquals(target, CurrentNavigation())) return;
+        var parsedRows = ParseSidebarRows(page);
+        foreach (var group in page.Array("groups"))
+            if (group.Text("mode") == "history") navigation.For(group.Text("workspace_id")).AcceptHistory(group.Text("history_cursor"), (int)group.Number("history_limit"));
+        if (!target.TryCommit(navigation, revision)) return;
         StartSidebarStream((ulong)page.Number("latest_seq"));
         var freshScope = scope != _sidebarScope; _sidebarScope = scope;
         var selectedKeys = ObjectsList.SelectedItems.Cast<ExecutionObject>().Where(item => !item.IsGroupFooter).Select(item => item.SelectionKey).ToHashSet();
@@ -86,21 +97,20 @@ public partial class ExecutionWindow
                 var id = group.Text("workspace_id");
                 if (!_sidebarGroups.TryGetValue(id, out var key)) _sidebarGroups[id] = key = new(id, group.Text("title"));
                 key.Apply(group); incomingGroups.Add(key);
-                var state = navigation.For(id);
-                if (group.Text("mode") == "history") state.AcceptHistory(group.Text("history_cursor"), (int)group.Number("history_limit"));
+                var state = target.For(id);
                 key.IsExpanded = group.Text("mode") == "history" || state.Expanded(key.RecentCount);
-                var rows = new List<ExecutionObject>();
-                foreach (var value in group.Array("conversations"))
+                var rows = parsedRows[id];
+                foreach (var incoming in rows)
                 {
-                    var incoming = ExecutionObject.From(value, "conversation"); incoming.WorkspaceKey = key;
-                    PreserveProvisionalTitle(incoming, value.Text("title")); rows.Add(incoming);
+                    incoming.WorkspaceKey = key;
+                    PreserveProvisionalTitle(incoming, incoming.Snapshot.Text("title"));
                 }
                 // The server supplies the immutable history order. Client-side
                 // recency promotion must not invalidate its pagination boundary.
-                rows.Add(new ExecutionObject { Id = "footer:" + id, IsGroupFooter = true, HasMore = group.Flag("has_more"), WorkspaceKey = key, WorkspaceId = id });
+                rows.Add(new ExecutionObject { Id = "footer:" + id, IsGroupFooter = true, HasMore = group.Flag("has_more"), IsPaging = _sidebarPaging.Contains(id), WorkspaceKey = key, WorkspaceId = id });
                 groupRows[id] = rows;
             }
-            MergeUnacknowledgedSidebarCalls(page.Number("latest_seq"), navigation, incomingGroups, groupRows);
+            MergeUnacknowledgedSidebarCalls(page.Number("latest_seq"), target, incomingGroups, groupRows);
         }
         finally { _initializingGroup = false; }
         var orderedGroups = SidebarOrdering.Stable(freshScope ? [] : previousOrder, incomingGroups, key => key.Id, key => key.LastActivityAt);
@@ -168,20 +178,79 @@ public partial class ExecutionWindow
             await Dispatcher.InvokeAsync(() => scroll.ScrollToVerticalOffset(offset), DispatcherPriority.Loaded);
     }
 
-    private void SidebarFooter_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    private static Dictionary<string, List<ExecutionObject>> ParseSidebarRows(JsonElement page)
     {
-        if (sender is not ListBoxItem { DataContext: ExecutionObject { IsGroupFooter: true } }) return;
-        e.Handled = true;
-        if (Ancestor<System.Windows.Controls.Button>(e.OriginalSource as DependencyObject) is { } button) SidebarMore_Click(button, new RoutedEventArgs());
+        if (page.ValueKind != JsonValueKind.Object || page.Field("groups").ValueKind != JsonValueKind.Array)
+            throw new JsonException("项目列表响应缺少 groups。");
+        var parsed = new Dictionary<string, List<ExecutionObject>>(StringComparer.Ordinal);
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var group in page.Array("groups"))
+        {
+            var id = group.Text("workspace_id");
+            if (id.Length == 0 || parsed.ContainsKey(id) || group.Field("conversations").ValueKind != JsonValueKind.Array ||
+                group.Number("history_limit") is < 0 or > int.MaxValue)
+                throw new JsonException("项目分页响应无效，原列表已保留。");
+            var rows = new List<ExecutionObject>();
+            foreach (var raw in group.Array("conversations"))
+            {
+                var row = ExecutionObject.From(raw, "conversation");
+                if (row.Id.Length == 0 || row.Id.StartsWith("footer:", StringComparison.Ordinal) || !ids.Add(row.Id))
+                    throw new JsonException("对话标识缺失或重复，原列表已保留。");
+                rows.Add(row);
+            }
+            parsed.Add(id, rows);
+        }
+        return parsed;
+    }
+
+    private async void SidebarFooter_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        await GuardAsync(async () =>
+        {
+            if (sender is not ListBoxItem { DataContext: ExecutionObject { IsGroupFooter: true } footer }) return;
+            e.Handled = true;
+            await LoadMoreProjectConversationsAsync(footer);
+        });
     }
     private async void SidebarMore_Click(object sender, RoutedEventArgs e)
     {
-        e.Handled = true;
-        if ((sender as FrameworkElement)?.DataContext is not ExecutionObject { IsGroupFooter: true, HasMore: true } footer) return;
+        await GuardAsync(async () =>
+        {
+            e.Handled = true;
+            if ((sender as FrameworkElement)?.DataContext is ExecutionObject { IsGroupFooter: true } footer)
+                await LoadMoreProjectConversationsAsync(footer);
+        });
+    }
+    private async Task LoadMoreProjectConversationsAsync(ExecutionObject footer)
+    {
+        if (!_initialized || _closed || !footer.CanLoadMore) return;
         var id = footer.WorkspaceKey.Id;
         if (!_sidebarPaging.Add(id)) return;
-        try { CurrentNavigation().For(id).More(); await GuardAsync(LoadSidebarAsync); }
-        finally { _sidebarPaging.Remove(id); }
+        footer.IsPaging = true;
+        var target = CurrentNavigation();
+        var intent = target.For(id).IntentRevision;
+        var scope = _conversationView + "\n" + SearchBox.Text.Trim();
+        var selection = _generation;
+        var acquired = false;
+        try
+        {
+            // Serialize different projects without losing an accepted click.
+            // Duplicate clicks for the same project never enter this queue.
+            await _sidebarPageGate.WaitAsync(_lifetime.Token);
+            acquired = true;
+            if (_closed || selection != _generation || scope != _conversationView + "\n" + SearchBox.Text.Trim() ||
+                !ReferenceEquals(target, CurrentNavigation()) || target.For(id).IntentRevision != intent) return;
+            var candidate = target.Copy();
+            candidate.For(id).More();
+            await LoadSidebarAsync(candidate);
+        }
+        finally
+        {
+            if (acquired) _sidebarPageGate.Release();
+            _sidebarPaging.Remove(id);
+            footer.IsPaging = false;
+            foreach (var row in Objects.Where(row => row.IsGroupFooter && row.WorkspaceKey.Id == id)) row.IsPaging = false;
+        }
     }
 
     private void WorkspaceGroup_Loaded(object sender, RoutedEventArgs e)

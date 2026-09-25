@@ -55,6 +55,7 @@ type Runtime struct {
 	activeCalls              map[string]*liveExecution
 	pendingCalls             map[string]*preparedExecution
 	executionWG              sync.WaitGroup
+	localCompletions         sync.Map // call ID -> bounded journal completion reservation
 
 	workspaceRegistry *workspace.Registry
 	workspaceTools    *toolworkspace.Service

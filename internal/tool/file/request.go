@@ -11,10 +11,12 @@ type RuntimeOptions struct {
 // ReadRequest 是 read_file 进入文件核心后的稳定输入契约。
 type ReadRequest struct {
 	RuntimeOptions
-	Path      string `json:"path"`
-	StartLine *int   `json:"start_line,omitempty"`
-	EndLine   *int   `json:"end_line,omitempty"`
-	MaxBytes  *int   `json:"max_bytes,omitempty"`
+	Path       string `json:"path"`
+	StartLine  *int   `json:"start_line,omitempty"`
+	EndLine    *int   `json:"end_line,omitempty"`
+	MaxBytes   *int   `json:"max_bytes,omitempty"`
+	Offset     *int64 `json:"offset,omitempty"`
+	LimitChars *int   `json:"limit_chars,omitempty"`
 }
 
 // ListRequest 是 list_dir 进入文件核心后的稳定输入契约。

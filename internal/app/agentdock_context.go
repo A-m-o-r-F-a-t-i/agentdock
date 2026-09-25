@@ -32,6 +32,14 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 	defer cancel()
 	started := time.Now()
 	ruleStarted := time.Now()
+	var selectedWorkspace *workspace.Record
+	if !nexusLocalOnly {
+		selected, selectedWorkdir, err := r.selectContextWorkspace(ctx, workdir)
+		if err != nil {
+			return nil, err
+		}
+		selectedWorkspace, workdir = &selected, selectedWorkdir
+	}
 
 	instructions, err := r.InstructionFiles(ctx, workdir)
 	if err != nil {
@@ -60,6 +68,7 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 	commonElapsed := time.Since(commonStarted)
 	var taskElapsed time.Duration
 	contextResult := capabilityContext{
+		Workspace:         selectedWorkspace,
 		Skills:            skills,
 		CommonSkills:      commonSkills,
 		Plugins:           plugins,
@@ -88,7 +97,7 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 		contextResult.Rules = append(contextResult.Rules, InsertionInstructions, "托管 MCP 简介可用 mcp_manage inspect → update/reset_override 修改宿主覆盖，携带 expected_revision 与 scope。版本和工具数量以当前发现事实为准；能力更新提示后重读目标工具 schema，不展开无关 Heavy 插件。")
 		contextResult.Rules = append(contextResult.Rules,
 			"plugins 仅列出 Heavy 插件摘要。命中后调用 plugin_load(name) 展开成员；普通插件的已启用 Skill/MCP 直接显示在顶层 skills/dynamic_mcp。",
-			"instruction_files.files 已自动载入规则正文；只应用 status=loaded 的条目，按全局、项目根目录、子目录顺序处理。项目规则不得削弱全局安全要求。操作其他工作区或规则文件已改变时，先调用 agentdock_context 并传入对应 workdir 刷新；该参数不会修改命令的默认工作目录。",
+			"instruction_files.files 已自动载入规则正文；只应用 status=loaded 的条目，按全局、项目根目录、子目录顺序处理。项目规则不得削弱全局安全要求。操作其他工作区或规则文件已改变时，传入对应 workdir 定向刷新；成功后续调用继承本对话工作区，已运行会话与设备全局默认目录不变。",
 		)
 	}
 	if !nexusLocalOnly {
@@ -105,20 +114,6 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 		cancel()
 		taskElapsed = time.Since(taskStarted)
 		contextResult.Tasks = &index
-		selectedWorkspace, workspaceErr := r.workspaceRegistry.Select(ctx, "", "")
-		if strings.TrimSpace(workdir) != "" {
-			resolved, resolveErr := r.ws.ResolveExisting(workdir)
-			if resolveErr != nil {
-				workspaceErr = resolveErr
-			} else {
-				selectedWorkspace, workspaceErr = r.workspaceRegistry.EnsureRoot(ctx, resolved.Abs)
-			}
-		}
-		if workspaceErr == nil {
-			contextResult.Workspace = &selectedWorkspace
-		} else {
-			contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "workspace", Message: "工作区注册信息暂不可用。写入前调用 workspace_manage 明确选择项目，不能回退到未知当前目录。"})
-		}
 		if indexErr != nil {
 			contextResult.Warnings = append(contextResult.Warnings, capabilityWarning{Source: "tasks", Message: "任务索引暂不可用；现有能力仍可使用，请检查任务存储。"})
 		}
@@ -184,8 +179,9 @@ func (r *Runtime) agentDockContext(ctx context.Context, nexusLocalOnly bool, wor
 	}
 	if !nexusLocalOnly {
 		result["context_diagnostics"] = map[string]any{
-			"complete": instructionSnapshotComplete(instructions) && skillErr == nil && dynamicMCPErr == nil,
-			"rules_ms": float64(ruleElapsed) / float64(time.Millisecond), "plugins_ms": float64(pluginElapsed) / float64(time.Millisecond),
+			"complete": false, "binding_status": "pending",
+			"components_complete": instructionSnapshotComplete(instructions) && skillErr == nil && dynamicMCPErr == nil,
+			"rules_ms":            float64(ruleElapsed) / float64(time.Millisecond), "plugins_ms": float64(pluginElapsed) / float64(time.Millisecond),
 			"skills_ms": float64(skillElapsed) / float64(time.Millisecond), "mcp_catalog_ms": float64(mcpElapsed) / float64(time.Millisecond),
 			"serialization_ms": float64(time.Since(serializeStarted)) / float64(time.Millisecond), "context_ms": float64(time.Since(started)) / float64(time.Millisecond),
 			"plugin_snapshot": pluginInfo, "skill_snapshot": skillInfo, "plugin_build": directory.Metrics,

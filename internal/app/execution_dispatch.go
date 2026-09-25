@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/uvwt/agentdock/internal/activity"
+	"github.com/uvwt/agentdock/internal/config"
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 	"github.com/uvwt/agentdock/internal/permission"
 	"github.com/uvwt/agentdock/internal/workspace"
@@ -32,9 +33,12 @@ type preparedExecution struct {
 	executionStartedAt  time.Time
 	sessionIDs          []string
 	mcpTarget           string
+	outputPolicy        config.ToolOutputSettings
+	completion          *activity.AppendReservation
 }
 
 func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[string]any) (result Result, returnErr error) {
+	outputPolicy := r.MCPPresentationSettings().ToolOutput
 	received := time.Now()
 	callID, err := activity.NewExecutionID("call_")
 	if err != nil {
@@ -65,6 +69,9 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 		payloadCancel()
 	}
 	if err = r.appendExecutions(initialEvents...); err != nil {
+		if errors.Is(err, activity.ErrAppendCapacity) {
+			return nil, r.executionError(err, state)
+		}
 		return nil, toolError("AUDIT_UNAVAILABLE", "The execution journal is unavailable; the tool was not dispatched.", "runtime")
 	}
 	defer func() {
@@ -204,7 +211,7 @@ func (r *Runtime) callObserved(ctx context.Context, spec ToolSpec, original map[
 	if local, _ := ctx.Value(localUserActionKey{}).(bool); local && decision.Effect == permission.Ask {
 		decision.Effect, decision.RuleID, decision.Reason = permission.Allow, "local-user-action", "已认证本地控制面板明确发起的固定管理操作。"
 	}
-	prepared := &preparedExecution{spec: spec, args: args, state: state, source: activity.SourceFromContext(ctx), decision: decision}
+	prepared := &preparedExecution{spec: spec, args: args, state: state, source: activity.SourceFromContext(ctx), decision: decision, outputPolicy: outputPolicy}
 	if decision.Effect == permission.Deny {
 		r.executionMu.Unlock()
 		return fail(toolErrorDetails("PERMISSION_DENIED", decision.Reason, "permission", map[string]any{"rule_id": decision.RuleID, "mode": decision.Mode, "executed": false}))
@@ -290,7 +297,14 @@ func (r *Runtime) appendExecutions(events ...activity.Event) error {
 }
 func (r *Runtime) executionError(err error, state executionObservation) error {
 	var toolErr *ToolError
-	if !errors.As(err, &toolErr) {
+	if errors.Is(err, activity.ErrAppendCapacity) {
+		message := "The activity journal has no admission capacity. No tool handler was dispatched."
+		if state.executed {
+			message = "Activity capacity was exhausted after dispatch. Inspect the recorded outcome before retrying."
+		}
+		toolErr = &ToolError{Code: "ACTIVITY_CAPACITY", Message: message, Category: "resource_limit", Details: map[string]any{"executed": state.executed}}
+	}
+	if toolErr == nil && !errors.As(err, &toolErr) {
 		toolErr = &ToolError{Code: "EXECUTION_FAILED", Message: err.Error(), Category: "runtime"}
 	}
 	copy := *toolErr
@@ -514,8 +528,21 @@ func (r *Runtime) executePrepared(ctx context.Context, p *preparedExecution) (re
 		r.executionMu.Unlock()
 	}()
 	state := p.state
+	completion, reserveErr := r.activity.ReserveAppend(ctx, 1)
+	if reserveErr != nil {
+		return r.finishPrepared(p, Result{"executed": false}, reserveErr, "failed")
+	}
+	p.completion = completion
+	defer completion.Close()
+	defer func() {
+		if recover() != nil {
+			failure := toolError("TOOL_PANIC", "The tool terminated unexpectedly. Inspect its side-effect state before retrying.", "runtime")
+			result, returnErr = r.finishPrepared(p, nil, failure, "unknown")
+		}
+	}()
 	ctx = activity.WithSource(ctx, p.source)
 	ctx = activity.WithBinding(ctx, state.binding)
+	ctx = context.WithValue(ctx, outputPolicyContextKey{}, p.outputPolicy)
 	if p.mcpTarget != "" {
 		ctx = mcpclient.WithApprovedToolTarget(ctx, p.mcpTarget)
 	}
@@ -560,8 +587,14 @@ func (r *Runtime) executePrepared(ctx context.Context, p *preparedExecution) (re
 		r.recordFileChanges(p.args, result, state)
 	}
 	if err == nil && !resultReportsFailure(result) {
-		r.commitConversationState(ctx, p, result)
-		r.updateConversationName(ctx, state.binding.ConversationID, p.spec.Name, p.args)
+		if p.spec.Name == "agentdock_context" {
+			err = r.finalizeContextBinding(ctx, p, result)
+		} else {
+			r.commitConversationState(ctx, p, result)
+		}
+		if err == nil {
+			r.updateConversationName(ctx, state.binding.ConversationID, p.spec.Name, p.args)
+		}
 	}
 	if p.spec.Name == "session_observe" && (stringArg(p.args, "action") == "list" || stringArg(p.args, "action") == "") {
 		result = r.filterSessionList(ctx, result, p.state.binding)
@@ -622,7 +655,7 @@ func (r *Runtime) finishPrepared(p *preparedExecution, result Result, err error,
 		event.Workdir = p.state.target.ResolvedPath
 		event.Runtime = p.state.target.Runtime
 	}
-	if persistErr := r.appendExecution(event); persistErr != nil {
+	if persistErr := r.appendReservedExecution(p.completion, event); persistErr != nil {
 		if result == nil {
 			result = Result{}
 		}
@@ -651,6 +684,11 @@ func (r *Runtime) decorateExecution(result Result, p *preparedExecution) Result 
 	}
 	for key, value := range bindingArguments(p.state.binding) {
 		if value != "" {
+			// Context reports its selected scope; the immutable root retains the
+			// entry scope in the journal, even when this call changes continuation.
+			if key == "workspace_id" && p.spec.Name == "agentdock_context" && stringArg(result, key) != "" {
+				continue
+			}
 			decorated[key] = value
 		}
 	}
@@ -660,7 +698,7 @@ func (r *Runtime) decorateExecution(result Result, p *preparedExecution) Result 
 	decorated["permission"] = p.decision
 	decorated["agentdock_guidance"] = r.executionGuidance(p.spec.Name, p.state, result, false)
 	decorated["binding_quality"] = p.state.binding.BindingQuality
-	return decorated
+	return r.applyToolOutputPolicy(p, decorated)
 }
 func (r *Runtime) watchApprovalCommand(approvalID, callID, sessionID string) {
 	go func() {

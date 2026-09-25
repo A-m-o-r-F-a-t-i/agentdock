@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -71,7 +72,7 @@ func (r *Runtime) RuntimeExecutionOverview(ctx context.Context) (Result, error) 
 	if err != nil {
 		return nil, err
 	}
-	return Result{"statistics": stats, "conversation_activity": conversations, "in_flight": r.confirmedConversationActivity(), "server_now": time.Now().UTC(), "permission_mode": policy.GlobalMode, "policy_revision": policy.Revision, "schema_version": 2}, nil
+	return Result{"statistics": stats, "append_queue": r.activity.AppendStatistics(), "conversation_activity": conversations, "in_flight": r.confirmedConversationActivity(), "server_now": time.Now().UTC(), "permission_mode": policy.GlobalMode, "policy_revision": policy.Revision, "schema_version": 2}, nil
 }
 func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQuery) (ConversationPage, error) {
 	page := ConversationPage{Conversations: []ConversationItem{}, ServerNow: time.Now().UTC()}
@@ -419,15 +420,36 @@ func (r *Runtime) localManagementStart(ctx context.Context, tool string, binding
 	if err = binding.Validate(); err != nil {
 		return binding, err
 	}
-	err = r.appendExecution(activity.Event{Binding: binding, Kind: "call.created", ToolName: tool, Title: title, Status: "created"})
+	reservation, err := r.activity.ReserveAppend(ctx, 3)
 	if err != nil {
 		return binding, err
 	}
-	err = r.appendExecution(activity.Event{Binding: binding, Kind: "call.started", ToolName: tool, Title: title, Status: "running"})
+	retained := false
+	defer func() {
+		if !retained {
+			reservation.Close()
+		}
+	}()
+	err = r.appendReservedExecution(reservation, activity.Event{Binding: binding, Kind: "call.created", ToolName: tool, Title: title, Status: "created"})
+	if err != nil {
+		return binding, err
+	}
+	err = r.appendReservedExecution(reservation, activity.Event{Binding: binding, Kind: "call.started", ToolName: tool, Title: title, Status: "running"})
+	if err == nil {
+		r.localCompletions.Store(binding.CallID, reservation)
+		retained = true
+	}
 	return binding, err
 }
 func (r *Runtime) localManagementFinish(binding activity.Binding, tool, status, summary string) {
-	_ = r.appendExecution(activity.Event{Binding: binding, Kind: "call.completed", ToolName: tool, Status: status, Summary: r.executionRedactor(nil).Text(summary, 4096)})
+	var reservation *activity.AppendReservation
+	if value, found := r.localCompletions.LoadAndDelete(binding.CallID); found {
+		reservation = value.(*activity.AppendReservation)
+		defer reservation.Close()
+	}
+	if err := r.appendReservedExecution(reservation, activity.Event{Binding: binding, Kind: "call.completed", ToolName: tool, Status: status, Summary: r.executionRedactor(nil).Text(summary, 4096)}); err != nil {
+		slog.Error("local management outcome was not journaled", "call_id", binding.CallID, "tool", tool, "status", status, "error", err)
+	}
 }
 func (r *Runtime) RuntimePermissions(ctx context.Context, binding activity.Binding) (Result, error) {
 	if binding.ConversationID != "" && binding.WorkspaceID == "" {

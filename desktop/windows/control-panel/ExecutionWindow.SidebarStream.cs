@@ -71,6 +71,8 @@ public partial class ExecutionWindow
             if (existing is not null) ApplySidebarActivity(existing, call);
             else
             {
+                var workspace = call.Text("workspace_id"); if (workspace.Length == 0) workspace = "unassigned";
+                if (CurrentNavigation().For(workspace).Mode == ProjectNavigationMode.History) return;
                 var item = SidebarLiveObject(call, CurrentNavigation());
                 var insertion = Objects.ToList().FindIndex(row => row.WorkspaceKey.Id == item.WorkspaceKey.Id);
                 if (insertion < 0)
@@ -135,6 +137,8 @@ public partial class ExecutionWindow
         {
             var existing = rows.Values.SelectMany(value => value).FirstOrDefault(item => !item.IsGroupFooter && item.Id == call.Text("conversation_id"));
             if (existing is not null) { ApplySidebarActivity(existing, call); continue; }
+            var workspace = call.Text("workspace_id"); if (workspace.Length == 0) workspace = "unassigned";
+            if (navigation.For(workspace).Mode == ProjectNavigationMode.History) continue;
             var item = SidebarLiveObject(call, navigation); var key = item.WorkspaceKey;
             if (!rows.TryGetValue(key.Id, out var group))
             {

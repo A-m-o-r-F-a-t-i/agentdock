@@ -54,9 +54,10 @@ public partial class ExecutionWindow : Window
     public bool ShowTimestamps { get => (bool)GetValue(ShowTimestampsProperty); set => SetValue(ShowTimestampsProperty, value); }
     private CancellationToken SelectionToken => _selectionCancellation?.Token ?? _lifetime.Token;
 
-    public ExecutionWindow(RuntimeService runtime)
+    public ExecutionWindow(RuntimeService runtime) : this(runtime, new ActivityClient(runtime)) { }
+    internal ExecutionWindow(RuntimeService runtime, ActivityClient client)
     {
-        _runtime = runtime; _client = new ActivityClient(runtime);
+        _runtime = runtime; _client = client;
         _activityClock = new ConversationActivityClock(ActivityItems);
         DesktopTheme.Initialize(runtime.RuntimeRoot);
         InitializeComponent(); DataContext = this;
@@ -397,23 +398,23 @@ public partial class ExecutionWindow : Window
         _detailCall = row; CallDetailsTabs.DataContext = row; CallDetailsTabs.SelectedIndex = 0;
         OpenDetails(row.Title, CallDetailsTabs); await GuardAsync(() => LoadCallDetailAsync(row));
     }
-    private async void ChildCall_Changed(object sender, SelectionChangedEventArgs e) { if (ChildrenList.SelectedItem is ExecutionCallRow row) { _detailCall = row; CallDetailsTabs.DataContext = row; CallDetailsTabs.SelectedIndex = 0; DetailsTitle.Text = row.Title; await GuardAsync(() => LoadCallDetailAsync(row)); } }
     private async void DetailTab_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (e.Source != CallDetailsTabs || _detailCall is not { } row) return;
-        if (CallDetailsTabs.SelectedIndex == 1) await GuardAsync(() => LoadSourceAsync(row));
-        if (CallDetailsTabs.SelectedIndex == 2) await GuardAsync(async () =>
-        {
-            var value = await _client.ExecutionGetAsync("/internal/runtime/calls?parent_call_id=" + Escape(row.Id) + "&view=all&limit=200", SelectionToken);
-            if (_detailCall?.Id != row.Id) return;
-            row.Children.Clear(); foreach (var child in value.Array("calls").Reverse()) row.Children.Add(new(child));
-        });
+        if ((CallDetailsTabs.SelectedItem as TabItem)?.Tag?.ToString() == "source")
+            await GuardAsync(() => LoadSourceAsync(row));
     }
     private async void TaskChoice_Changed(object sender, SelectionChangedEventArgs e) { if (_updating || !_initialized || TaskChoiceCombo.SelectedItem is not ExecutionChoice choice) return; _selectedTaskId = choice.Id; await GuardAsync(() => LoadTaskAsync(choice.Id, "", false)); }
     private async void Branch_Changed(object sender, SelectionChangedEventArgs e) { if (!_updating && _initialized && BranchCombo.SelectedItem is ExecutionChoice branch && _selectedTaskId.Length > 0) await GuardAsync(() => LoadTaskAsync(_selectedTaskId, branch.Id, true)); }
     private async void TaskDetails_Click(object sender, RoutedEventArgs e) { if (_selectedTaskId.Length == 0) return; OpenDetails((TaskChoiceCombo.SelectedItem as ExecutionChoice)?.Title ?? "任务详情", TaskDetailsPanel); await GuardAsync(() => LoadTaskAsync(_selectedTaskId, "", true)); }
     private async void FilterTask_Click(object sender, RoutedEventArgs e) { _taskFilter = _taskFilter == _selectedTaskId ? "" : _selectedTaskId; FilterTaskButton.Content = _taskFilter.Length == 0 ? "筛选此任务" : "显示全部"; await GuardAsync(() => LoadCallsAsync(false)); }
-    private void Search_Changed(object sender, TextChangedEventArgs e) { if (!_initialized) return; _filterTimer.Stop(); _filterTimer.Start(); }
+    private void Search_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (!_initialized) return;
+        // Invalidate immediately, even for A -> B -> A inside the debounce.
+        _objectEpoch++; _sidebarRequest?.Cancel();
+        _filterTimer.Stop(); _filterTimer.Start();
+    }
     private void CallSearch_Changed(object sender, TextChangedEventArgs e) { if (!_initialized) return; _callSearchTimer.Stop(); _callSearchTimer.Start(); }
     private async void CallFilter_Changed(object sender, SelectionChangedEventArgs e) { if (_initialized) await GuardAsync(() => LoadCallsAsync(false)); }
     private async void MoreObjects_Click(object sender, RoutedEventArgs e) => await GuardAsync(() => LoadObjectsAsync(true));

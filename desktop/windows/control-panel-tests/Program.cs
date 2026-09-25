@@ -54,6 +54,30 @@ Check(!navigation.For("A").Expanded(10), "temporary search does not modify prior
 Check(new SidebarNavigationState().For("A").Expanded(1), "new window restores automatic mode");
 Check(ExecutionLayout.MoreRowHeight * 2 == ExecutionLayout.ConversationRowHeight, "ellipsis always half conversation row height");
 
+var transactional = new SidebarNavigationState();
+transactional.For("A").Expand(); transactional.For("A").AcceptHistory("old", 5);
+var revision = transactional.Revision;
+var candidate = transactional.Copy(); candidate.For("A").More();
+Check(transactional.For("A").HistoryLimit == 5 && transactional.For("A").Cursor == "old", "candidate cannot change successful state");
+candidate.For("A").AcceptHistory("new", 20);
+Check(transactional.TryCommit(candidate, revision), "successful candidate commits");
+Check(transactional.For("A").HistoryLimit == 20 && transactional.For("A").Cursor == "new", "cursor and limit commit together");
+Check(!transactional.TryCommit(candidate, revision), "duplicate response rejected");
+revision = transactional.Revision; candidate = transactional.Copy(); candidate.For("A").More();
+transactional.For("A").Collapse();
+Check(!transactional.TryCommit(candidate, revision) && transactional.For("A").HistoryLimit == 0, "collapse wins over in-flight response");
+for (var cycle = 0; cycle < 100; cycle++)
+{
+    transactional.For("A").Expand();
+    revision = transactional.Revision; candidate = transactional.Copy(); candidate.For("A").More();
+    Check(transactional.TryCommit(candidate, revision) && transactional.For("A").HistoryLimit == 20, "pagination cycle " + cycle);
+    transactional.For("A").Collapse();
+}
+var footer = new ExecutionObject { IsGroupFooter = true, HasMore = true };
+Check(footer.CanLoadMore, "footer enabled"); footer.IsPaging = true;
+Check(!footer.CanLoadMore, "in-flight footer disabled"); footer.IsPaging = false;
+Check(footer.CanLoadMore, "failure releases footer");
+
 System.Text.Json.JsonElement Json(string text) { using var parsed = System.Text.Json.JsonDocument.Parse(text); return parsed.RootElement.Clone(); }
 var missingOutput = new ExecutionCallRow(Json("{\"tool_name\":\"agentdock_context\",\"display_title\":\"加载上下文\",\"summary\":\"pretend output\"}"));
 missingOutput.ApplyDetail(Json("{\"tool_name\":\"agentdock_context\",\"display_title\":\"加载上下文\",\"summary\":\"pretend output\"}"));
@@ -86,8 +110,19 @@ foreach (var scenario in new[] {
     Check(!row.Title.Contains("EDIT_FILE") && row.Title.Contains("file_edit"), "correct only confirmed historical label");
 }
 var thirdParty = new ExecutionCallRow(Json("{\"tool_name\":\"third:edit_file\",\"file_edit\":{\"stats_state\":\"known\",\"insertions\":2,\"deletions\":1}}"));
-Check(thirdParty.Title == "third:edit_file", "preserve actual third-party registered name");
+Check(thirdParty.Title == "third:edit_file · 调用扩展工具", "preserve actual third-party registered name");
+foreach (var titleCase in new[] {
+    ("read_file", "Read file", "", "read_file · 读取文件"),
+    ("task_manage", "Manage recoverable tasks", "resume", "task_manage · 恢复任务"),
+    ("agentdock_context", "AgentDock context", "", "agentdock_context · 加载上下文"),
+    ("read_file", "read_file · read_file · 读取配置", "", "read_file · 读取配置"),
+    ("exec_command", "检查 Debian 最小状态\r\n", "", "exec_command · 检查 Debian 最小状态"),
+    ("exec_command", "Check server", "", "exec_command · 执行命令"),
+    ("unknown", "", "", "unknown · 执行工具") })
+    Check(ExecutionTitleFormatter.Format(titleCase.Item1, titleCase.Item2, titleCase.Item3) == titleCase.Item4, "Chinese action " + titleCase.Item1);
 var childStats = new ExecutionCallRow(Json("{\"parent_call_id\":\"root\",\"file_edit\":{\"insertions\":2,\"deletions\":1}}"));
 Check(!childStats.HasEditStatistics && childStats.AddedLinesText == "", "child span does not duplicate root totals");
+await PrivilegeTransitionTests.Run(Check);
+OutputPolicyTests.Run(Check);
 Console.WriteLine($"Desktop pure-policy regression passed: {assertions} assertions. No UI or installer was launched.");
 internal sealed record Row(string Id, DateTimeOffset At, bool Pinned = false);

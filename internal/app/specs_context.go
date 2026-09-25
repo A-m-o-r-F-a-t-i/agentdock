@@ -35,7 +35,7 @@ func contextToolContract(name string, cfg config.Config) (ToolContract, bool) {
 	input := maps.Clone(contract.InputSchema["properties"].(map[string]any))
 	input["workdir"] = map[string]any{
 		"type": "string", "maxLength": 4096,
-		"description": "Existing host workspace directory. Omit or use an empty string for the current default; relative and ~/ paths use Host resolution. Does not change any session or command working directory.",
+		"description": "Existing host workspace directory. Omit or use an empty string to inherit this conversation's workspace, falling back to the device default only when unbound. A complete response coordinates subsequent conversation binding in this call; running sessions and device defaults remain unchanged.",
 	}
 	contract.InputSchema["properties"] = input
 	contract.OutputSchema = maps.Clone(contract.OutputSchema)

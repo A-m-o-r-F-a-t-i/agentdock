@@ -15,9 +15,11 @@ func contextDiagnosticsSchema() map[string]any {
 			}}
 	}
 	properties := map[string]any{
-		"complete":        map[string]any{"type": "boolean"},
-		"plugin_revision": map[string]any{"type": "string"},
-		"plugin_snapshot": snapshot(), "skill_snapshot": snapshot(),
+		"complete":            map[string]any{"type": "boolean"},
+		"components_complete": map[string]any{"type": "boolean"},
+		"binding_status":      map[string]any{"type": "string", "enum": []string{"pending", "updated", "unchanged", "unattributed", "context_incomplete", "conflict", "failed"}},
+		"plugin_revision":     map[string]any{"type": "string"},
+		"plugin_snapshot":     snapshot(), "skill_snapshot": snapshot(),
 		"common_snapshot": snapshot(),
 		"plugin_build": map[string]any{"type": "object", "additionalProperties": false,
 			"required":   []string{"plugin_scans", "skill_documents", "lock_wait_ms", "build_elapsed_ms"},

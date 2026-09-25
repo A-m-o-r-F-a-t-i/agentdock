@@ -173,12 +173,12 @@ public partial class ExecutionWindow
     private void SettingsMenu_Click(object sender, RoutedEventArgs e)
     {
         var menu = Menu(Anchor(sender, ConversationHeader));
-        ActionMenu(menu, "显示、保留与通知", () => { if (ExecutionDialogs.Preferences(this, _preferences)) { FontSize = _preferences.FontSize; SavePreferences(); } return Task.CompletedTask; });
+        ActionMenu(menu, "显示、保留与通知", OpenDisplayPreferencesAsync);
         ActionMenu(menu, "历史任务与记录管理", () => OpenDataManagerAsync(false));
         ActionMenu(menu, "保存当前筛选", () => { var name = ExecutionDialogs.Prompt(this, "保存筛选", "筛选名称", ""); if (!string.IsNullOrWhiteSpace(name)) { _preferences.SavedFilters[name] = [_conversationView, SearchBox.Text, CallSearchBox.Text, ComboValue(CallStatusCombo)]; SavePreferences(); } return Task.CompletedTask; });
         foreach (var pair in _preferences.SavedFilters.ToArray())
             ActionMenu(menu, "筛选：" + pair.Key, async () => { var values = pair.Value; if (values.Length != 4) return; _conversationView = values[0]; SearchBox.Text = values[1]; CallSearchBox.Text = values[2]; CallStatusCombo.SelectedItem = CallStatusCombo.Items.Cast<ComboBoxItem>().FirstOrDefault(item => item.Tag?.ToString() == values[3]); await LoadObjectsAsync(); });
-        ActionMenu(menu, "结构与使用说明", () => { ShowInfo("结构与使用说明", "左侧按工作区组织对话。任务位于当前对话内，任务选择和分支浏览不会改变正在执行的上下文。\n\n单条执行记录显示状态、动作、耗时和时间；点击记录后在下方查看命令、输出、来源和子调用。右键或使用菜单可批量管理记录。\n\n终止对话会先写入服务端门禁，再取消待审批和运行调用。关闭本窗口只退出观察，不会停止执行。\n\n旧任务缺少步骤时显示“进度未记录”。未归属调用保留原始调用 ID，可以导出、隔离、归档和移入回收站。永久删除不会删除项目源码。\n\n快捷键：Ctrl+F 搜索对话，F5 刷新，Esc 关闭详情，Shift+F10 打开所选条目菜单。"); return Task.CompletedTask; });
+        ActionMenu(menu, "结构与使用说明", () => { ShowInfo("结构与使用说明", "左侧按工作区组织对话。任务位于当前对话内，任务选择和分支浏览不会改变正在执行的上下文。\n\n单条执行记录显示状态、动作、耗时和时间；点击记录后在下方查看命令、输出、来源和技术信息。右键或使用菜单可批量管理记录。\n\n终止对话会先写入服务端门禁，再取消待审批和运行调用。关闭本窗口只退出观察，不会停止执行。\n\n旧任务缺少步骤时显示“进度未记录”。未归属调用保留原始调用 ID，可以导出、隔离、归档和移入回收站。永久删除不会删除项目源码。\n\n快捷键：Ctrl+F 搜索对话，F5 刷新，Esc 关闭详情，Shift+F10 打开所选条目菜单。"); return Task.CompletedTask; });
         OpenMenu(menu);
     }
     private string[] SelectedCallIds() => CallsList.SelectedItems.Cast<ExecutionCallRow>().Select(row => row.Id).Distinct().ToArray();

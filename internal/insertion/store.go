@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -68,7 +67,6 @@ type Store struct {
 	root string
 	run  string
 	now  func() time.Time
-	mu   sync.Mutex
 }
 
 func New(root, run string, now func() time.Time) (*Store, error) {
@@ -95,16 +93,14 @@ func (s *Store) change(ctx context.Context, fn func(*diskState, time.Time) (bool
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := os.MkdirAll(s.root, 0700); err != nil {
-		return err
-	}
 	release, err := filelock.Acquire(ctx, filepath.Join(s.root, ".queue.lock"))
 	if err != nil {
 		return err
 	}
 	defer release()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	path := filepath.Join(s.root, "queue.json")
 	state := diskState{SchemaVersion: 1, Items: []Item{}}
 	if info, err := os.Lstat(path); err == nil {
@@ -131,6 +127,9 @@ func (s *Store) change(ctx context.Context, fn func(*diskState, time.Time) (bool
 	} else if !os.IsNotExist(err) {
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	dirty, err := fn(&state, s.now().UTC())
 	if err != nil || !dirty {
 		return err
@@ -141,6 +140,9 @@ func (s *Store) change(ctx context.Context, fn func(*diskState, time.Time) (bool
 	}
 	if len(data) > MaxStoreBytes {
 		return ErrLimit
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	return atomicfile.Write(path, append(data, '\n'), 0600)
 }

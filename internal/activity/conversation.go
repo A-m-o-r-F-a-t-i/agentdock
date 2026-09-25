@@ -7,14 +7,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -109,7 +107,10 @@ type conversationState struct {
 }
 type ConversationRegistry struct {
 	root string
-	mu   sync.Mutex
+	// Cache access uses the same cancellable file lock as disk access.
+	cached      *conversationSnapshot
+	readBuffer  []byte
+	decodeCount atomic.Uint64
 }
 
 func NewConversationRegistry(root string) (*ConversationRegistry, error) {
@@ -136,64 +137,37 @@ func (r *ConversationRegistry) state(ctx context.Context, change func(*conversat
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	release, err := filelock.Acquire(ctx, filepath.Join(r.root, ".conversations.lock"))
 	if err != nil {
 		return err
 	}
 	defer release()
 	path := filepath.Join(r.root, "conversations.json")
-	state := conversationState{SchemaVersion: 1, Items: map[string]conversationRecord{}}
-	if info, statErr := os.Lstat(path); statErr == nil {
-		if !info.Mode().IsRegular() || info.Size() > 16<<20 {
-			return errors.New("invalid conversation registry file")
-		}
-		f, openErr := os.Open(path)
-		if openErr != nil {
-			return openErr
-		}
-		data, readErr := io.ReadAll(io.LimitReader(f, (16<<20)+1))
-		closeErr := f.Close()
-		if readErr != nil {
-			return readErr
-		}
-		if closeErr != nil {
-			return closeErr
-		}
-		if len(data) > 16<<20 {
-			return errors.New("conversation registry is too large")
-		}
-		if err = json.Unmarshal(data, &state); err != nil {
-			return fmt.Errorf("read conversation registry: %w", err)
-		}
-		if state.SchemaVersion != 1 || state.Items == nil {
-			return errors.New("unsupported conversation registry schema")
-		}
-	} else if !os.IsNotExist(statErr) {
-		return statErr
-	}
-	state.sources = map[string]string{}
-	for id, item := range state.Items {
-		if !conversationIdentifier.MatchString(id) || id != item.ID {
-			return errors.New("invalid conversation registry identity")
-		}
-		if item.SourceKey != "" {
-			if previous, exists := state.sources[item.SourceKey]; exists && previous != id {
-				return errors.New("duplicate conversation source mapping")
-			}
-			state.sources[item.SourceKey] = id
-		}
-	}
-	dirty, err := change(&state)
-	if err != nil || !dirty {
+	snapshot, err := r.readSnapshot(ctx, path)
+	if err != nil {
+		r.cached = nil
 		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// The callback exclusively owns this state while locked. Any error,
+	// partial mutation or failed persistence invalidates the cached view.
+	r.cached = nil
+	state := snapshot.state
+	dirty, err := change(state)
+	if err != nil {
+		return err
+	}
+	if !dirty {
+		r.cached = snapshot
+		return nil
 	}
 	if len(state.Items) > 20000 {
 		return errors.New("conversation registry capacity reached; clean archived metadata")
+	}
+	if err = indexConversationState(state); err != nil {
+		return err
 	}
 	data, err := json.Marshal(state)
 	if err != nil {
@@ -205,7 +179,12 @@ func (r *ConversationRegistry) state(ctx context.Context, change func(*conversat
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return atomicfile.Write(path, append(data, '\n'), 0600)
+	data = append(data, '\n')
+	if err = atomicfile.Write(path, data, 0600); err != nil {
+		return err
+	}
+	r.cached = &conversationSnapshot{state: state, digest: sha256.Sum256(data), exists: true}
+	return nil
 }
 
 // ConversationResolver consumes adapter-owned metadata, never tool arguments.
@@ -289,6 +268,18 @@ func cloneConversation(item Conversation) Conversation {
 	item.Tags = append([]string(nil), item.Tags...)
 	item.TaskIDs = append([]string(nil), item.TaskIDs...)
 	item.WorkspaceIDs = append([]string(nil), item.WorkspaceIDs...)
+	copyTime := func(value *time.Time) *time.Time {
+		if value == nil {
+			return nil
+		}
+		copy := *value
+		return &copy
+	}
+	item.ArchivedAt = copyTime(item.ArchivedAt)
+	item.TrashedAt = copyTime(item.TrashedAt)
+	item.PurgeAfter = copyTime(item.PurgeAfter)
+	item.TerminatedAt = copyTime(item.TerminatedAt)
+	item.DeletedAt = copyTime(item.DeletedAt)
 	return item
 }
 func (r *ConversationRegistry) Get(ctx context.Context, id string) (Conversation, error) {

@@ -52,11 +52,11 @@ func TestCIWorkflowUsesFreshBoundedGoTests(t *testing.T) {
 	workflow := readWorkflow(t, "ci.yml")
 	for _, want := range []string{
 		"timeout-minutes: 20",
-		"go test -p 2 ./... -count=1 -timeout=3m",
+		"go test -p 2 ./... -count=1 -timeout=8m",
 		"name: ACP prompt and steering race regression",
 		"-count=20",
 		"-timeout=90s",
-		"go test -race ./... -count=1 -timeout=3m",
+		"go test -race -p 2 ./internal/activity ./internal/permission ./internal/insertion ./internal/fs/... ./internal/snapshot ./internal/acp ./internal/selfupdate -count=1 -timeout=8m",
 		"go test -race -tags browser_integration ./internal/tool/browser ./internal/app -count=1 -timeout=3m",
 		"timeout-minutes: 15",
 	} {

@@ -19,7 +19,7 @@ internal sealed partial class ActivityClient
             try
             {
                 using var connect = CancellationTokenSource.CreateLinkedTokenSource(token); connect.CancelAfter(TimeSpan.FromSeconds(10));
-                var connection = await runtime.GetActivityConnectionAsync(connect.Token).ConfigureAwait(false);
+                var connection = await _connection(connect.Token).ConfigureAwait(false);
                 using var request = Request(HttpMethod.Get, new Uri(connection.Origin, "/internal/runtime/calls/stream?" + query + "&after=" + after), connection.BearerToken);
                 request.Headers.TryAddWithoutValidation("Last-Event-ID", after.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));

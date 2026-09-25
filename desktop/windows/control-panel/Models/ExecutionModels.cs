@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text.Json;
 
@@ -56,6 +55,13 @@ public sealed class ExecutionObject : INotifyPropertyChanged
     public DateTimeOffset? SortActivityAt { get; set; }
     public bool IsGroupFooter { get; set; }
     public bool HasMore { get; set; }
+    private bool _isPaging;
+    public bool IsPaging
+    {
+        get => _isPaging;
+        set { if (_isPaging == value) return; _isPaging = value; PropertyChanged?.Invoke(this, new(nameof(CanLoadMore))); }
+    }
+    public bool CanLoadMore => IsGroupFooter && HasMore && !IsPaging;
     public bool AutoLoadMore { get; set; }
     public bool InsertionEligible { get; set; }
 	public bool InFlight { get; set; }
@@ -68,7 +74,7 @@ public sealed class ExecutionObject : INotifyPropertyChanged
         PendingCount = item.PendingCount; RunningCount = item.RunningCount; Snapshot = item.Snapshot;
 		InFlight = item.InFlight;
         LastToolCallAt = item.LastToolCallAt; LastActivityAt = item.LastActivityAt; SortActivityAt = item.SortActivityAt;
-        IsGroupFooter = item.IsGroupFooter; HasMore = item.HasMore; AutoLoadMore = item.AutoLoadMore;
+        IsGroupFooter = item.IsGroupFooter; HasMore = item.HasMore; IsPaging = item.IsPaging; AutoLoadMore = item.AutoLoadMore;
         PropertyChanged?.Invoke(this, new(null));
     }
     public bool RecentlyActive
@@ -122,13 +128,14 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
 	public ExecutionPayloadView RequestPayload { get; } = new("调用");
 	public ExecutionPayloadView ResponsePayload { get; } = new("输出");
 	public string RequestText => RequestPayload.Text;
+	public string ResponsePayloadKind => _value.Field("output_source").Text("ref").Length > 0 ? "source" : "response";
+	private static JsonElement ResponseDescriptor(JsonElement value) => value.Field("output_source").Text("ref").Length > 0 ? value.Field("output_source") : value.Field("response");
     private JsonElement _value;
     private string _output = "";
     private bool _expanded;
     private string _sourceTitle = "";
     private string _sourceState = "unavailable";
     public event PropertyChangedEventHandler? PropertyChanged;
-    public ObservableCollection<ExecutionCallRow> Children { get; } = [];
     public string Id => _value.Text("call_id");
     public long CreatedSeq => _value.Number("created_seq");
     public long UpdatedSeq => _value.Number("updated_seq");
@@ -144,15 +151,9 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
     public string Parameters => _value.Text("parameter_summary");
     public bool ReadOnlyLegacy => _value.Flag("read_only_legacy");
     public string Summary => _value.Text("summary");
-	public string Title
-	{
-		get
-		{
-			var label = _value.Text("activity_label", _value.Text("display_title", _value.Text("title", Tool))).Replace('\r',' ').Replace('\n',' ');
-			if (Tool == "file_edit" && label.StartsWith("EDIT_FILE", StringComparison.Ordinal)) label = label[9..].TrimStart(' ', '·', ':');
-			return Tool.Length == 0 || label == Tool ? label : label.Length == 0 ? Tool : Tool + " · " + label;
-		}
-	}
+    public string OriginalLabel => _value.Text("activity_label", _value.Text("display_title", _value.Text("title", Tool)));
+    public string Title => ExecutionTitleFormatter.Format(Tool, OriginalLabel, _value.Text("action"));
+    public string TitleTooltip => Title + (OriginalLabel.Length > 0 && OriginalLabel != Title ? "\n原始说明：" + OriginalLabel : "");
     public DateTimeOffset? RequestReceivedAt => _value.Date("request_received_at");
     public DateTimeOffset? LastActivityAt => _value.Date("last_activity_at");
     public long? RpcElapsedMs => _value.OptionalNumber("rpc_elapsed_ms");
@@ -231,7 +232,7 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
 	{
 		_value = value.Clone();
 		RequestPayload.PropertyChanged += (_, _) => Notify(); ResponsePayload.PropertyChanged += (_, _) => Notify();
-		RequestPayload.Describe(value.Field("request"), value.Text("parent_call_id")); ResponsePayload.Describe(value.Field("response"), value.Text("parent_call_id"));
+		RequestPayload.Describe(value.Field("request"), value.Text("parent_call_id")); ResponsePayload.Describe(ResponseDescriptor(value), value.Text("parent_call_id"));
 	}
     public bool VisibleIn(string view)
     {
@@ -250,7 +251,7 @@ public sealed class ExecutionCallRow : INotifyPropertyChanged
 		if (value.Number("updated_seq") < UpdatedSeq) return;
 		if (value.Number("updated_seq") > UpdatedSeq) DetailLoaded = false;
 		_value = value.Clone();
-		RequestPayload.Describe(value.Field("request"), value.Text("parent_call_id")); ResponsePayload.Describe(value.Field("response"), value.Text("parent_call_id"));
+		RequestPayload.Describe(value.Field("request"), value.Text("parent_call_id")); ResponsePayload.Describe(ResponseDescriptor(value), value.Text("parent_call_id"));
 		Notify();
 	}
     public void ApplyDetail(JsonElement value)

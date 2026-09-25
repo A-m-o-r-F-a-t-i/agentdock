@@ -73,6 +73,8 @@ type OAuthClientRegistration struct {
 	GrantTypes   []string `json:"grant_types"`
 	IssuedAt     int64    `json:"issued_at"`
 	LastUsedAt   int64    `json:"last_used_at,omitempty"`
+	Lifecycle    string   `json:"lifecycle,omitempty"`
+	PendingUntil int64    `json:"pending_until,omitempty"`
 }
 
 type oauthState struct {
@@ -164,6 +166,18 @@ func NewPersistentOAuthStore(path, signingKey string) (*OAuthStore, error) {
 	}
 	expiredClientIDs := map[string]struct{}{}
 	for clientID, registration := range state.Clients {
+		if registration.Lifecycle == "" {
+			registration.Lifecycle = oauthClientPending
+			registration.PendingUntil = now + int64(oauthPendingClientTTL/time.Second)
+			for _, grant := range state.Grants {
+				if grant.ClientID == clientID {
+					registration.Lifecycle, registration.PendingUntil = oauthClientAuthorized, 0
+					break
+				}
+			}
+			state.Clients[clientID] = registration
+			pruned = true
+		}
 		if registration.LastUsedAt == 0 {
 			// v1 早期状态没有 last_used_at；升级时给予完整空闲窗口，避免立即踢掉仍在使用的客户端。
 			registration.LastUsedAt = now
@@ -186,8 +200,8 @@ func NewPersistentOAuthStore(path, signingKey string) (*OAuthStore, error) {
 	if len(state.Grants) > maxOAuthGrants {
 		return nil, fmt.Errorf("OAuth grant state contains %d entries, maximum is %d", len(state.Grants), maxOAuthGrants)
 	}
-	if len(state.Clients) > maxOAuthClients {
-		return nil, fmt.Errorf("OAuth client state contains %d entries, maximum is %d", len(state.Clients), maxOAuthClients)
+	if len(state.Clients) > maxOAuthClients+maxPendingOAuthClients {
+		return nil, fmt.Errorf("OAuth client state contains %d entries, maximum is %d", len(state.Clients), maxOAuthClients+maxPendingOAuthClients)
 	}
 	store.grants = state.Grants
 	store.clients = state.Clients
@@ -351,6 +365,12 @@ func validStoredClient(clientID string, registration OAuthClientRegistration, no
 	if len(registration.ClientName) > 200 {
 		return false
 	}
+	if registration.Lifecycle != "" && registration.Lifecycle != oauthClientPending && registration.Lifecycle != oauthClientAuthorized {
+		return false
+	}
+	if registration.Lifecycle == oauthClientPending && registration.PendingUntil <= 0 || registration.Lifecycle == oauthClientAuthorized && registration.PendingUntil != 0 {
+		return false
+	}
 	return len(uniqueNonEmptyStrings(registration.RedirectURIs)) == len(registration.RedirectURIs) &&
 		len(uniqueNonEmptyStrings(registration.GrantTypes)) == len(registration.GrantTypes)
 }
@@ -363,15 +383,24 @@ func (s *OAuthStore) RegisterClient(clientName string, redirectURIs, grantTypes 
 		GrantTypes:   uniqueNonEmptyStrings(grantTypes),
 		IssuedAt:     now.Unix(),
 		LastUsedAt:   now.Unix(),
+		Lifecycle:    oauthClientPending,
+		PendingUntil: now.Add(oauthPendingClientTTL).Unix(),
 	}
 	if len(registration.RedirectURIs) == 0 {
-		return "", errors.New("at least one redirect URI is required")
+		return "", fmt.Errorf("%w: at least one redirect URI is required", ErrOAuthClientMetadata)
 	}
 	if len(registration.GrantTypes) == 0 {
-		return "", errors.New("at least one grant type is required")
+		return "", fmt.Errorf("%w: at least one grant type is required", ErrOAuthClientMetadata)
 	}
 	if len(registration.ClientName) > 200 {
-		return "", errors.New("client name exceeds 200 characters")
+		return "", fmt.Errorf("%w: client name exceeds 200 bytes", ErrOAuthClientMetadata)
+	}
+	encoded, err := json.Marshal(registration)
+	if err != nil {
+		return "", err
+	}
+	if len(encoded)+len(shortClientPrefix)+32+4 > maxPendingOAuthBytes {
+		return "", fmt.Errorf("%w: registration metadata exceeds pending pool byte budget", ErrOAuthClientMetadata)
 	}
 	randomValue, err := RandomToken(24)
 	if err != nil {
@@ -386,12 +415,13 @@ func (s *OAuthStore) RegisterClient(clientName string, redirectURIs, grantTypes 
 	previousCodes := cloneOAuthCodes(s.codes)
 	previousAccessIndex := cloneStringMap(s.accessIndex)
 	s.pruneExpiredClientsLocked(now.Unix())
-	if len(s.clients) >= maxOAuthClients {
+	pendingCount, pendingBytes, retry := s.pendingClientUsageLocked(now.Unix())
+	if pendingCount >= maxPendingOAuthClients || pendingBytes+len(encoded)+len(clientID)+4 > maxPendingOAuthBytes {
 		s.clients = previousClients
 		s.grants = previousGrants
 		s.codes = previousCodes
 		s.accessIndex = previousAccessIndex
-		return "", fmt.Errorf("OAuth client limit %d reached", maxOAuthClients)
+		return "", &OAuthCapacityError{Pool: "pending registrations", RetryAfter: retry}
 	}
 	s.clients[clientID] = registration
 	if err := s.persistStateLocked(); err != nil {
@@ -451,6 +481,9 @@ func (s *OAuthStore) pruneExpiredClientsLocked(now int64) int {
 }
 
 func clientRegistrationExpired(registration OAuthClientRegistration, now int64) bool {
+	if registration.Lifecycle == oauthClientPending {
+		return registration.PendingUntil <= now
+	}
 	lastUsed := registration.LastUsedAt
 	if lastUsed == 0 {
 		lastUsed = registration.IssuedAt
@@ -514,7 +547,7 @@ func (s *OAuthStore) clientRegistration(clientID string) (OAuthClientRegistratio
 		}
 	}
 	registration, ok := s.clients[clientID]
-	if !ok {
+	if !ok || clientRegistrationExpired(registration, now) {
 		return OAuthClientRegistration{}, false
 	}
 	if now-registration.LastUsedAt >= int64(oauthClientTouchInterval/time.Second) {

@@ -20,6 +20,9 @@ var localGates = struct {
 }{entries: make(map[string]*localGate)}
 
 func acquireLocal(ctx context.Context, path string) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	key, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -49,6 +52,11 @@ func acquireLocal(ctx context.Context, path string) (func(), error) {
 		dropReference()
 		return nil, ctx.Err()
 	case <-gate.token:
+	}
+	if err := ctx.Err(); err != nil {
+		gate.token <- struct{}{}
+		dropReference()
+		return nil, err
 	}
 	var once sync.Once
 	return func() { once.Do(func() { gate.token <- struct{}{}; dropReference() }) }, nil

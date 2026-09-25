@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup>
   <ItemGroup><Compile Include="../control-panel/Services/ConversationActivityPolicy.cs" Link="ConversationActivityPolicy.cs"/><Compile Include="../control-panel/Services/SidebarOrdering.cs" Link="SidebarOrdering.cs"/></ItemGroup>
-  <ItemGroup><Compile Include="../control-panel/Models/ExecutionModels.cs" Link="ExecutionModels.cs"/></ItemGroup>
+  <ItemGroup><Compile Include="../control-panel/Models/ExecutionModels.cs" Link="ExecutionModels.cs"/><Compile Include="../control-panel/Models/ExecutionTitleFormatter.cs" Link="ExecutionTitleFormatter.cs"/></ItemGroup>
 	<ItemGroup><Compile Include="../control-panel/Models/ExecutionPayloadView.cs" Link="ExecutionPayloadView.cs"/><Compile Include="../control-panel/Services/SidebarNavigationState.cs" Link="SidebarNavigationState.cs"/></ItemGroup>
+  <ItemGroup><Compile Include="../control-panel/Services/PrivilegeTransition.cs" Link="PrivilegeTransition.cs"/></ItemGroup>
+  <ItemGroup><Compile Include="../control-panel/Models/ToolOutputSettings.cs" Link="ToolOutputSettings.cs"/></ItemGroup>
 </Project>

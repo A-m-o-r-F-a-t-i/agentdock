@@ -507,94 +507,6 @@ public sealed partial class RuntimeService : IDisposable
             cancellationToken);
     }
 
-    public async Task SetPrivilegeModeAsync(bool elevated, CancellationToken cancellationToken = default)
-    {
-        var manifest = await ReadRuntimeManifestAsync(cancellationToken)
-            ?? throw new InvalidOperationException(UiText.Get("RuntimeJsonMissing"));
-        var wasElevated = string.Equals(manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase);
-        if (wasElevated == elevated)
-        {
-            return;
-        }
-
-        var snapshot = await GetSnapshotAsync(cancellationToken);
-        var backupDirectory = Path.Combine(Path.GetTempPath(), $"agentdock-privilege-{Guid.NewGuid():N}");
-        var taskTransitionPrepared = false;
-        Directory.CreateDirectory(backupDirectory);
-
-        try
-        {
-            await RunTaskAdminTransitionAsync(
-                elevated ? "prepare-elevated" : "prepare-standard",
-                manifest,
-                backupDirectory,
-                cancellationToken);
-            taskTransitionPrepared = true;
-
-            // 任务迁移完成后再切换 manifest，避免普通控制链提前把半完成状态当成新模式。
-            await WritePrivilegeModeAsync(elevated, cancellationToken);
-            if (elevated)
-            {
-                SetStandardCoreStartup(manifest, enabled: false);
-
-                // 任务创建时默认禁用。若 Core 当前正在运行，则临时启用任务用于启动；
-                // 最后再恢复原本的开机启动选择，从而让“当前运行”和“开机启动”保持彼此独立。
-                if (snapshot.CoreStartupEnabled || snapshot.CoreRunning)
-                {
-                    await SetStartupAsync("core", true, cancellationToken);
-                }
-                if (snapshot.CoreRunning)
-                {
-                    await RunCoreActionAsync("start", cancellationToken);
-                }
-                if (!snapshot.CoreStartupEnabled)
-                {
-                    await SetStartupAsync("core", false, cancellationToken);
-                }
-            }
-            else
-            {
-                SetStandardCoreStartup(manifest, snapshot.CoreStartupEnabled);
-                if (snapshot.CoreRunning)
-                {
-                    await RunCoreActionAsync("start", cancellationToken);
-                }
-            }
-        }
-        catch (Exception transitionError)
-        {
-            if (!taskTransitionPrepared)
-            {
-                throw;
-            }
-
-            try
-            {
-                await RunTaskAdminTransitionAsync("restore", manifest, backupDirectory, cancellationToken);
-                await WritePrivilegeModeAsync(wasElevated, cancellationToken);
-                SetStandardCoreStartup(manifest, !wasElevated && snapshot.CoreStartupEnabled);
-                if (!wasElevated && snapshot.CoreRunning)
-                {
-                    await RunCoreActionAsync("start", cancellationToken);
-                }
-            }
-            catch (Exception rollbackError)
-            {
-                throw new AggregateException(UiText.Get("PrivilegeSwitchRollbackFailed"), transitionError, rollbackError);
-            }
-            throw;
-        }
-        finally
-        {
-            try
-            {
-                Directory.Delete(backupDirectory, recursive: true);
-            }
-            catch
-            {
-            }
-        }
-    }
 
     public Task<UrlTestResult> TestUrlAsync(string value, CancellationToken cancellationToken = default) =>
         TestPublicDiscoveryAsync(value, cancellationToken);
@@ -886,13 +798,13 @@ public sealed partial class RuntimeService : IDisposable
         }
     }
 
-    private async Task WritePrivilegeModeAsync(bool elevated, CancellationToken cancellationToken)
+    private async Task WritePrivilegeModeAsync(bool elevated, CancellationToken cancellationToken, string taskName)
     {
         var text = await File.ReadAllTextAsync(ManifestPath, cancellationToken);
         var manifest = JsonNode.Parse(text) as JsonObject
             ?? throw new InvalidOperationException(UiText.Get("RuntimeJsonInvalid"));
         manifest["privilege_mode"] = elevated ? "elevated" : "standard";
-        manifest["agentdock_task_name"] = elevated ? "AgentDock" : "";
+        manifest["agentdock_task_name"] = elevated ? (string.IsNullOrWhiteSpace(taskName) ? "AgentDock" : taskName.Trim()) : "";
 
         var temporaryPath = ManifestPath + $".tmp.{Guid.NewGuid():N}";
         try
@@ -1056,8 +968,9 @@ public sealed partial class RuntimeService : IDisposable
             startInfo.ArgumentList.Add(argument);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException(UiText.Get("ManagerStartFailed"));
-        await process.WaitForExitAsync(cancellationToken);
+        await WaitForNativeExitAsync(process, cancellationToken);
         if (process.ExitCode != 0)
         {
             throw new InvalidOperationException(UiText.Format("ManagerFailedWithExitCode", process.ExitCode));
@@ -1127,10 +1040,12 @@ public sealed partial class RuntimeService : IDisposable
 
     private static async Task<string> RunProcessAsync(ProcessStartInfo startInfo, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException(UiText.Format("ProcessStartFailed", startInfo.FileName));
-        var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var standardError = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
+        // Drain pipes while cancellation waits for a known native terminal state.
+        var standardOutput = process.StandardOutput.ReadToEndAsync();
+        var standardError = process.StandardError.ReadToEndAsync();
+        await WaitForNativeExitAsync(process, cancellationToken);
         var output = (await standardOutput).Trim();
         var error = (await standardError).Trim();
         if (process.ExitCode != 0)

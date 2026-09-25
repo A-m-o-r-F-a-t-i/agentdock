@@ -9,22 +9,51 @@ namespace AgentDock.ControlPanel;
 
 public partial class ExecutionWindow
 {
+    private McpUiPreference? _outputPreference;
+    private async Task OpenDisplayPreferencesAsync()
+    {
+        var service = new DisplayPreferenceService(_runtime);
+        var display = await service.ReadAsync(_lifetime.Token);
+        _outputPreference = display;
+        if (!ExecutionDialogs.Preferences(this, _preferences, display, async output =>
+        {
+            using var save = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+            save.CancelAfter(TimeSpan.FromSeconds(12));
+            _outputPreference = await service.SaveOutputAsync(output, display.Revision, save.Token);
+        })) return;
+        FontSize = _preferences.FontSize; SavePreferences();
+        if (_detailCall is { } row)
+        {
+            await LoadPayloadPageAsync(row, "request", false, automatic: true);
+            await LoadPayloadPageAsync(row, "response", false, automatic: true);
+        }
+    }
+
     private async Task LoadPayloadPageAsync(ExecutionCallRow row, string kind, bool previous, bool automatic = false)
     {
         var payload = kind == "request" ? row.RequestPayload : row.ResponsePayload;
-        if (payload.Reference.Length == 0 || payload.Busy || automatic && (!payload.NeedsLoad || payload.HasReadError)) return;
+        if (payload.Reference.Length == 0 || payload.Busy) return;
+        var needsPolicyReload = _outputPreference is not null && payload.NeedsBudgetReload(_outputPreference.ToolOutput.Budget);
+        if (automatic && !needsPolicyReload && (!payload.NeedsLoad || payload.HasReadError)) return;
         var reference = payload.Reference;
-        var offset = automatic ? 0 : payload.RequestedOffset(previous);
         var box = kind == "request" ? RequestPayloadText : ResponsePayloadText;
         var scroll = box.VerticalOffset;
         var start = box.SelectionStart; var length = box.SelectionLength;
         var generation = _generation;
         payload.SetBusy(true);
+        long policyRevision = 0;
         try
         {
-            var page = await _client.ExecutionGetAsync("/internal/runtime/calls/" + Escape(row.Id) + "/payload/" + kind + "?offset=" + offset + "&limit=" + ExecutionPayloadView.PageBytes, SelectionToken);
+            var display = await new DisplayPreferenceService(_runtime).ReadAsync(SelectionToken);
+            if (_outputPreference is null || display.Revision >= _outputPreference.Revision) _outputPreference = display;
+            var budget = _outputPreference.ToolOutput.Budget; policyRevision = _outputPreference.Revision;
             if (_closed || generation != _generation || !ReferenceEquals(_detailCall, row)) return;
-            if (!payload.ApplyPage(page, reference, previous)) return;
+            var reset = payload.NeedsBudgetReload(budget);
+            var offset = automatic || reset ? 0 : payload.RequestedOffset(previous);
+            var storageKind = kind == "request" ? "request" : row.ResponsePayloadKind;
+            var page = await _client.ExecutionGetAsync("/internal/runtime/calls/" + Escape(row.Id) + "/payload/" + storageKind + "?offset=" + offset + "&" + budget.Query, SelectionToken);
+            if (_closed || generation != _generation || !ReferenceEquals(_detailCall, row) || policyRevision != _outputPreference.Revision) return;
+            if (!payload.ApplyPage(page, reference, reset ? false : previous, budget)) return;
             await Dispatcher.InvokeAsync(() =>
             {
                 if (_closed || generation != _generation || !ReferenceEquals(_detailCall, row)) return;
@@ -41,7 +70,12 @@ public partial class ExecutionWindow
         {
             if (reference == payload.Reference) payload.ReadFailed(ex.Message);
         }
-        finally { payload.SetBusy(false); }
+        finally
+        {
+            payload.SetBusy(false);
+            if (!_closed && generation == _generation && ReferenceEquals(_detailCall, row) && policyRevision > 0 && _outputPreference is not null && policyRevision != _outputPreference.Revision)
+                await LoadPayloadPageAsync(row, kind, false, automatic: true);
+        }
     }
     private async void PayloadPage_Click(object sender, RoutedEventArgs e)
     {

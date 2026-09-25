@@ -2,6 +2,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using System.Security.AccessControl;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace AgentDock.ControlPanel;
@@ -64,7 +67,8 @@ internal static class TaskAdminService
                     break;
                 case "restore":
                     RequireBackupDirectory(request);
-                    RestoreBackup(scheduler.Root, request.TaskName, request.BackupDirectory);
+                    RequireRuntimeRoot(request);
+                    RestoreBackup(scheduler.Root, request.TaskName, request.BackupDirectory, request.RuntimeRoot);
                     break;
                 case "remove":
                     RequireRuntimeRoot(request);
@@ -306,55 +310,58 @@ internal static class TaskAdminService
     private static void SaveBackup(dynamic root, string taskName, string backupDirectory)
     {
         Directory.CreateDirectory(backupDirectory);
+        if (File.Exists(Path.Combine(backupDirectory, "state.json")))
+            throw new IOException("不得覆盖仍有恢复价值的计划任务备份。");
         dynamic? task = FindTask(root, taskName);
-        var state = new TaskBackupState();
+        var state = new TaskBackupState { SchemaVersion = 2 };
         if (task is not null)
         {
             state.Exists = true;
             state.WasEnabled = task.Enabled;
             state.WasRunning = Convert.ToInt32(task.State) == 4;
-            try
-            {
-                state.SecurityDescriptor = task.GetSecurityDescriptor(DaclSecurityInformation);
-            }
-            catch (COMException)
-            {
-                state.SecurityDescriptor = "";
-            }
-            File.WriteAllText(
-                Path.Combine(backupDirectory, "task.xml"),
-                (string)task.Xml,
-                System.Text.Encoding.Unicode);
+            state.SecurityDescriptor = task.GetSecurityDescriptor(DaclSecurityInformation);
+            var xml = (string)task.Xml;
+            _ = ReadTaskUserId(xml);
+            state.XmlDigest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(xml)));
+            RecoveryFiles.WriteText(Path.Combine(backupDirectory, "task.xml"), xml, Encoding.Unicode);
         }
-        File.WriteAllText(
+        RecoveryFiles.WriteText(
             Path.Combine(backupDirectory, "state.json"),
-            JsonSerializer.Serialize(state),
-            new System.Text.UTF8Encoding(false));
+            JsonSerializer.Serialize(state));
     }
 
-    private static void RestoreBackup(dynamic root, string taskName, string backupDirectory)
+    private static (TaskBackupState State, string Xml, string UserId) ReadBackup(string backupDirectory)
     {
         var statePath = Path.Combine(backupDirectory, "state.json");
-        if (!File.Exists(statePath))
-        {
+        if (!File.Exists(statePath) || new FileInfo(statePath).Length > 65536)
             throw new InvalidOperationException(UiText.Format("TaskBackupStateMissing", statePath));
-        }
-        var state = JsonSerializer.Deserialize<TaskBackupState>(File.ReadAllText(statePath))
+        var json = File.ReadAllText(statePath);
+        using var document = JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty("Exists", out var exists) || exists.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            throw new IOException("计划任务备份缺少明确的原始存在状态。");
+        var state = JsonSerializer.Deserialize<TaskBackupState>(json)
             ?? throw new InvalidOperationException(UiText.Get("TaskBackupStateReadFailed"));
-
-        RemoveTask(root, taskName);
-        if (!state.Exists)
-        {
-            return;
-        }
-
+        if (state.SchemaVersion is not (0 or 2)) throw new IOException("不支持的计划任务备份格式。");
+        if (!state.Exists) return (state, "", "");
         var xmlPath = Path.Combine(backupDirectory, "task.xml");
-        if (!File.Exists(xmlPath))
-        {
+        if (!File.Exists(xmlPath) || new FileInfo(xmlPath).Length > 1048576)
             throw new InvalidOperationException(UiText.Format("TaskBackupXmlMissing", xmlPath));
-        }
         var xml = File.ReadAllText(xmlPath);
         var userId = ReadTaskUserId(xml);
+        if (state.SchemaVersion == 2 && !string.Equals(state.XmlDigest,
+            Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(xml))), StringComparison.Ordinal))
+            throw new IOException("计划任务 XML 与备份完整性记录不符。");
+        if (!string.IsNullOrWhiteSpace(state.SecurityDescriptor)) _ = new RawSecurityDescriptor(state.SecurityDescriptor);
+        return (state, xml, userId);
+    }
+
+    private static void RestoreBackup(dynamic root, string taskName, string backupDirectory, string runtimeRoot = "")
+    {
+        // Validate every restoration input before stopping or deleting anything.
+        var (state, xml, userId) = ReadBackup(backupDirectory);
+        if (runtimeRoot.Length > 0) StopInstalledCore(runtimeRoot);
+        RemoveTask(root, taskName);
+        if (!state.Exists) return;
         dynamic task = root.RegisterTask(
             taskName,
             xml,
@@ -368,9 +375,45 @@ internal static class TaskAdminService
         {
             task.SetSecurityDescriptor(state.SecurityDescriptor, 0);
         }
-        if (state.WasEnabled && state.WasRunning)
+        if (state.WasRunning)
         {
+            task.Enabled = true;
             task.Run(null);
+            task.Enabled = state.WasEnabled;
+        }
+    }
+
+    internal static void VerifyCurrentTask(string taskName, bool elevated, bool enabled)
+    {
+        using var scheduler = new SchedulerSession();
+        dynamic? task = FindTask(scheduler.Root, taskName);
+        if (!elevated)
+        {
+            if (task is not null) throw new IOException("普通权限转换后仍存在高权限计划任务。");
+            return;
+        }
+        if (task is null || (bool)task.Enabled != enabled || Convert.ToInt32(task.Definition.Principal.RunLevel) != TaskRunLevelHighest)
+            throw new IOException("高权限计划任务未达到预期状态。");
+    }
+
+    internal static void VerifyRestoredBackup(string taskName, string backupDirectory)
+    {
+        var (state, xml, userId) = ReadBackup(backupDirectory);
+        using var scheduler = new SchedulerSession();
+        dynamic? task = FindTask(scheduler.Root, taskName);
+        if (!state.Exists)
+        {
+            if (task is not null) throw new IOException("原本不存在的计划任务未移除。");
+            return;
+        }
+        if (task is null || (bool)task.Enabled != state.WasEnabled ||
+            !string.Equals(ReadTaskUserId((string)task.Xml), userId, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("计划任务恢复后的身份或启用状态不符。");
+        if (!string.IsNullOrWhiteSpace(state.SecurityDescriptor))
+        {
+            var expected = new RawSecurityDescriptor(state.SecurityDescriptor).GetSddlForm(AccessControlSections.Access);
+            var actual = new RawSecurityDescriptor((string)task.GetSecurityDescriptor(DaclSecurityInformation)).GetSddlForm(AccessControlSections.Access);
+            if (expected != actual) throw new IOException("计划任务恢复后的权限不符。");
         }
     }
 
@@ -504,6 +547,8 @@ internal static class TaskAdminService
 
     private sealed class TaskBackupState
     {
+        public int SchemaVersion { get; set; }
+        public string XmlDigest { get; set; } = "";
         public bool Exists { get; set; }
         public bool WasEnabled { get; set; }
         public bool WasRunning { get; set; }

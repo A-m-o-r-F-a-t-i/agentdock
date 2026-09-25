@@ -18,7 +18,7 @@ func (r *ConversationRegistry) LocalTarget(ctx context.Context, id string) (Conv
 		if record.DeletedAt != nil {
 			return false, ErrConversationDeleted
 		}
-		conversation, owner = record.Conversation, record.OwnerKey
+		conversation, owner = cloneConversation(record.Conversation), record.OwnerKey
 		return false, nil
 	})
 	return conversation, owner, err

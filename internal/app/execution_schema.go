@@ -25,6 +25,7 @@ func executionOutputSchema(original map[string]any) map[string]any {
 		}
 	}
 	properties["binding_updated"] = map[string]any{"type": "boolean"}
+	properties["output_policy"] = map[string]any{"type": "object", "additionalProperties": true, "description": "Budget for declared ordinary text fields, separate from control metadata and complete rules. Includes actual storage/continuation state when shortened."}
 	properties["agentdock_guidance"] = responseGuidanceSchema(properties["agentdock_guidance"])
 	success["properties"] = properties
 	pending := map[string]any{"type": "object", "properties": map[string]any{

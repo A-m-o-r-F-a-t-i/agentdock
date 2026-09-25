@@ -53,10 +53,13 @@ func TestExecution115MarkupAndSharedThemeContracts(t *testing.T) {
 		t.Fatal("sidebar loses identity or expansion reset")
 	}
 	navigation := source115(t, "desktop/windows/control-panel/Services/SidebarNavigationState.cs")
-	for _, rule := range []string{"HistoryLimit = 5; Cursor = \"\"", "HistoryLimit = 0; Cursor = \"\"", "DefaultCollapsed = true", "HistoryLimit < 20 ? 20 : checked(HistoryLimit + 20)"} {
+	for _, rule := range []string{"HistoryLimit = 5; Cursor = \"\"", "HistoryLimit = 0; Cursor = \"\"", "DefaultCollapsed = true", "HistoryLimit < 20 ? 20 : HistoryLimit + 20", "HistoryLimit > int.MaxValue - 20", "TryCommit", "IntentRevision"} {
 		if !strings.Contains(navigation, rule) {
 			t.Fatalf("missing 1.1.6 navigation rule: %s", rule)
 		}
+	}
+	if strings.Contains(sidebar, "new RoutedEventArgs()") || !strings.Contains(sidebar, "LoadMoreProjectConversationsAsync") || !strings.Contains(sidebar, "target.TryCommit(navigation, revision)") {
+		t.Fatal("pagination must use real events and commit only the successful candidate")
 	}
 	theme := source115(t, "desktop/windows/control-panel/MainWindow.Capabilities.cs")
 	if strings.Contains(theme, "Brushes.White") || strings.Contains(theme, "Color.FromRgb") {

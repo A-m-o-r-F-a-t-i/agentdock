@@ -65,6 +65,11 @@ func (s *OAuthStore) storeAuthorizationCode(raw string, info gooauth2.TokenInfo)
 	if len(s.codes) >= maxOAuthCodes {
 		return fmt.Errorf("OAuth authorization code limit %d reached", maxOAuthCodes)
 	}
+	// Code issuance follows successful owner consent. Persist promotion before
+	// returning an authorization code; pending flooding cannot evict this client.
+	if err := s.authorizeClientLocked(code.ClientID, time.Now().Unix()); err != nil {
+		return err
+	}
 	s.codes[raw] = code
 	return nil
 }
@@ -141,11 +146,18 @@ func (s *OAuthStore) storeGrantTokens(info gooauth2.TokenInfo) error {
 	if !refreshIssuedAt.IsZero() {
 		grant.RefreshIssuedAt = refreshIssuedAt.Unix()
 	}
+	previousClient := s.clients[clientID]
+	authorizedClient, err := s.prepareAuthorizedClientLocked(clientID, time.Now().Unix())
+	if err != nil {
+		return err
+	}
+	s.clients[clientID] = authorizedClient
 
 	delete(s.accessIndex, previous.AccessTokenHash)
 	s.grants[grantID] = grant
 	s.accessIndex[grant.AccessTokenHash] = grantID
 	if err := s.persistStateLocked(); err != nil {
+		s.clients[clientID] = previousClient
 		delete(s.accessIndex, grant.AccessTokenHash)
 		if exists {
 			s.grants[grantID] = previous

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -120,7 +121,7 @@ func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config, s
 	}
 	clientID, err := store.RegisterClient(metadata.ClientName, metadata.RedirectURIs, metadata.GrantTypes)
 	if err != nil {
-		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
+		writeOAuthRegistrationError(w, err)
 		return
 	}
 	response := map[string]any{
@@ -135,6 +136,19 @@ func handleRegister(w http.ResponseWriter, r *http.Request, cfg config.Config, s
 		response["client_name"] = metadata.ClientName
 	}
 	writeJSONStatus(w, http.StatusCreated, response)
+}
+
+func writeOAuthRegistrationError(w http.ResponseWriter, err error) {
+	var capacity *auth.OAuthCapacityError
+	switch {
+	case errors.Is(err, auth.ErrOAuthClientMetadata):
+		writeJSONStatus(w, http.StatusBadRequest, map[string]any{"error": "invalid_client_metadata"})
+	case errors.As(err, &capacity):
+		w.Header().Set("Retry-After", strconv.Itoa(max(1, int(capacity.RetryAfter/time.Second))))
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]any{"error": "temporarily_unavailable"})
+	default:
+		writeJSONStatus(w, http.StatusInternalServerError, map[string]any{"error": "server_error"})
+	}
 }
 func decodeClientRegistration(w http.ResponseWriter, r *http.Request) (clientRegistrationMetadata, error) {
 	body := http.MaxBytesReader(w, r.Body, 1<<20)
@@ -585,6 +599,16 @@ func newOAuthProtocolServer(cfg config.Config, store *auth.OAuthStore) *oauthser
 	})
 	protocol.SetUserAuthorizationHandler(func(http.ResponseWriter, *http.Request) (string, error) {
 		return "agentdock-user", nil
+	})
+	protocol.SetInternalErrorHandler(func(err error) *oautherrors.Response {
+		var capacity *auth.OAuthCapacityError
+		if !errors.As(err, &capacity) {
+			return nil
+		}
+		response := oautherrors.NewResponse(oautherrors.ErrTemporarilyUnavailable, http.StatusServiceUnavailable)
+		response.Description = "OAuth capacity is temporarily unavailable. Retry the existing authorization flow after the indicated delay."
+		response.SetHeader("Retry-After", strconv.Itoa(max(1, int(capacity.RetryAfter/time.Second))))
+		return response
 	})
 	protocol.SetResponseErrorHandler(func(response *oautherrors.Response) {
 		switch response.Error {

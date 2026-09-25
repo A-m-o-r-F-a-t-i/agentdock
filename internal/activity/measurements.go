@@ -93,6 +93,9 @@ func (details *FileEditDetails) clone(preview bool) *FileEditDetails {
 }
 
 func applyMeasurements(call *ExecutionCall, event Event) {
+	if event.OutputSource != nil {
+		call.OutputSource = event.OutputSource.clone(true)
+	}
 	if event.Request != nil {
 		call.Request = event.Request.clone(true)
 	}

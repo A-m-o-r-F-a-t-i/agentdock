@@ -32,6 +32,9 @@ const (
 // A stale lock is removed only when its contents have the exact shape created
 // by this package; unknown files are never deleted automatically.
 func Acquire(ctx context.Context, path string) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("file lock path is required")
 	}
@@ -59,6 +62,9 @@ func Acquire(ctx context.Context, path string) (func(), error) {
 	defer ticker.Stop()
 acquireLoop:
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		err := os.Mkdir(path, 0o700)
 		if err == nil {
 			// Windows may keep a just-removed directory in a transient delete-pending state.
@@ -90,6 +96,10 @@ acquireLoop:
 					continue acquireLoop
 				}
 				if ownerErr == nil {
+					if err := ctx.Err(); err != nil {
+						release(path, owner)
+						return nil, err
+					}
 					stopHeartbeat := maintainHeartbeat(ownerPath)
 					var releaseOnce sync.Once
 					leased = true
@@ -102,7 +112,11 @@ acquireLoop:
 					}, nil
 				}
 				if attempt+1 < ownerWriteRetryCount {
-					time.Sleep(ownerWriteRetryDelay)
+					select {
+					case <-ctx.Done():
+						return nil, errors.Join(ctx.Err(), cleanupInitialization(ownerPath))
+					case <-time.After(ownerWriteRetryDelay):
+					}
 				}
 			}
 			cleanupErr := cleanupInitialization(ownerPath)

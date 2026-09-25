@@ -131,17 +131,41 @@ internal static class ExecutionDialogs
         };
         ui.Actions.Children.Add(cancel); ui.Actions.Children.Add(save); ui.Window.ShowDialog(); return result;
     }
-    internal static bool Preferences(Window owner, ExecutionPreferences preferences)
+    internal static bool Preferences(Window owner, ExecutionPreferences preferences, McpUiPreference display, Func<ToolOutputSettings, Task> saveOutput)
     {
-        var ui = Create(owner, "显示与回收站保留", 520, 390); var panel = new StackPanel(); ui.Root.Children.Add(panel);
+        var ui = Create(owner, "显示与回收站保留", 560, 620); var panel = new StackPanel(); ui.Root.Children.Add(new ScrollViewer { Content = panel, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        var outputEnabled = new CheckBox { Content = "截断工具输出", IsChecked = display.ToolOutput.Enabled, Margin = new Thickness(0, 6, 0, 4) };
+        AutomationProperties.SetAutomationId(outputEnabled, "ToolOutputEnabled"); panel.Children.Add(outputEnabled);
+        panel.Children.Add(Label("输出上限（字符，1,000–100,000）"));
+        var outputChars = new ComboBox { IsEditable = true, ItemsSource = new[] { 1000, 5000, 10000, 20000, 50000, 100000 }, Text = display.ToolOutput.MaxChars.ToString(System.Globalization.CultureInfo.InvariantCulture), MinHeight = 34 };
+        AutomationProperties.SetAutomationId(outputChars, "ToolOutputMaxChars"); panel.Children.Add(outputChars);
+        panel.Children.Add(Label("作用于当前设备后续普通文本工具返回及活动中心分页。规则、结构化控制信息和用户插入保持完整；关闭后原有资源上限仍有效。"));
+        outputChars.ToolTip = "按 Unicode 标量计数：普通汉字、英文及单码点 emoji 各为一字符；组合字符按码点计数，CRLF 计两字符。位置和续读仍使用 UTF-8 字节偏移。";
+        if (display.Warning.Length > 0) panel.Children.Add(Label(display.Warning));
         panel.Children.Add(Label("新移入回收站对象的保留天数（1–3650）。已有对象继续使用其原定到期日期。工作区和源码不在回收站清理范围。"));
         var days = new TextBox { Text = preferences.RetentionDays.ToString(), MinHeight = 34, Padding = new Thickness(6) }; panel.Children.Add(days);
         panel.Children.Add(Label("界面字号（12–20）")); var font = new ComboBox { ItemsSource = new[] { 12d, 13d, 14d, 16d, 18d, 20d }, SelectedItem = preferences.FontSize, MinHeight = 34 }; panel.Children.Add(font);
         var notify = new CheckBox { Content = "提示新增待审批请求", IsChecked = preferences.Notifications, Margin = new Thickness(0, 16, 0, 0) }; panel.Children.Add(notify);
-        var saved = false; var save = Action("保存"); save.Click += (_, _) =>
+        var error = Label(""); error.SetResourceReference(TextBlock.ForegroundProperty, "DangerBrush"); panel.Children.Add(error);
+        var saved = false; var saving = false; var save = Action("保存", "ExecutionPreferencesSave");
+        ui.Window.Closing += (_, args) => { if (saving) args.Cancel = true; };
+        save.Click += async (_, _) =>
         {
-            if (!int.TryParse(days.Text, out var count) || count is < 1 or > 3650) { MessageBox.Show(ui.Window, "请输入 1–3650 天。", "保留期限无效"); return; }
-            preferences.RetentionDays = count; preferences.FontSize = font.SelectedItem is double size ? size : 14; preferences.Notifications = notify.IsChecked == true; saved = true; ui.Window.DialogResult = true;
+            if (saving) return;
+            if (!int.TryParse(days.Text, out var count) || count is < 1 or > 3650) { error.Text = "请输入 1–3650 天。"; return; }
+            if (!ToolOutputSettings.TryParse(outputChars.Text, outputEnabled.IsChecked == true, out var output)) { error.Text = "请输入 1,000–100,000 的整数。"; return; }
+            var selectedFont = font.SelectedItem is double size ? size : 14; var selectedNotify = notify.IsChecked == true;
+            saving = true; save.IsEnabled = false; panel.IsEnabled = false; error.Text = "";
+            try
+            {
+                await saveOutput(output);
+                preferences.RetentionDays = count; preferences.FontSize = selectedFont; preferences.Notifications = selectedNotify;
+                saved = true;
+            }
+            catch (Exception exception) when (exception is System.Net.Http.HttpRequestException or System.IO.IOException or JsonException or InvalidOperationException or OperationCanceledException)
+            { error.Text = exception.Message; }
+            finally { saving = false; save.IsEnabled = true; panel.IsEnabled = true; }
+            if (saved) ui.Window.DialogResult = true;
         };
         ui.Actions.Children.Add(save); ui.Window.ShowDialog(); return saved;
     }

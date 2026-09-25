@@ -104,7 +104,7 @@ func (s *Store) Create(ctx context.Context, a Approval) (Approval, error) {
 		a.ExpiresAt = a.CreatedAt.Add(15 * time.Minute)
 		a.Status = "pending"
 		a.DispatchCount = 0
-		return writeJSON(path, a)
+		return writeJSON(ctx, path, a)
 	})
 	return a, err
 }
@@ -164,11 +164,12 @@ func (s *Store) ClaimWithWorkspaceRule(ctx context.Context, id string, grantWork
 			a.Summary = "授权已过期或权限策略已变化，原操作未派发。"
 			a.DecidedAt = &now
 			path, _ := s.approvalPath(id)
-			if err = writeJSON(path, a); err != nil {
+			if err = writeJSON(ctx, path, a); err != nil {
 				return err
 			}
 			return ErrApprovalExpired
 		}
+		commitCtx := ctx
 		if grantWorkspace {
 			if a.WorkspaceID == "" {
 				return errors.New("workspace rule requires a fixed workspace")
@@ -180,9 +181,12 @@ func (s *Store) ClaimWithWorkspaceRule(ctx context.Context, id string, grantWork
 			if err = validatePolicy(p); err != nil {
 				return err
 			}
-			if err = writeJSON(filepath.Join(s.root, "policy.json"), p); err != nil {
+			if err = writeJSON(ctx, filepath.Join(s.root, "policy.json"), p); err != nil {
 				return err
 			}
+			// The grant is durable. Finish its associated claim rather than
+			// reporting cancellation as though no permission was committed.
+			commitCtx = context.WithoutCancel(ctx)
 			a.PolicyRevision = p.Revision
 			a.GrantedRuleID = ruleID
 		}
@@ -191,7 +195,7 @@ func (s *Store) ClaimWithWorkspaceRule(ctx context.Context, id string, grantWork
 		a.DecidedAt = &now
 		a.DecidedBy = "local_user"
 		path, _ := s.approvalPath(id)
-		if err = writeJSON(path, a); err != nil {
+		if err = writeJSON(commitCtx, path, a); err != nil {
 			return err
 		}
 		claimed = true
@@ -230,7 +234,7 @@ func (s *Store) Settle(ctx context.Context, id, status, summary string) (Approva
 		a.DecidedAt = &now
 		a.DecidedBy = "local_user"
 		path, _ := s.approvalPath(id)
-		return writeJSON(path, a)
+		return writeJSON(ctx, path, a)
 	})
 	return a, err
 }

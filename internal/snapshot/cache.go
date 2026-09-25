@@ -43,10 +43,14 @@ type flight[T any] struct {
 	err        error
 	finished   bool
 }
+type flightKey struct {
+	key        string
+	generation uint64
+}
 type Cache[T any] struct {
 	mu         sync.Mutex
 	entries    map[string]*entry[T]
-	flights    map[string]*flight[T]
+	flights    map[flightKey]*flight[T]
 	changed    chan struct{}
 	capacity   int
 	maxFlights int
@@ -69,7 +73,7 @@ func New[T any](capacity int, budget, ttl time.Duration) *Cache[T] {
 	if ttl <= 0 {
 		ttl = time.Minute
 	}
-	return &Cache[T]{entries: map[string]*entry[T]{}, flights: map[string]*flight[T]{}, changed: make(chan struct{}), capacity: capacity, maxFlights: 32, budget: budget, ttl: ttl}
+	return &Cache[T]{entries: map[string]*entry[T]{}, flights: map[flightKey]*flight[T]{}, changed: make(chan struct{}), capacity: capacity, maxFlights: 32, budget: budget, ttl: ttl}
 }
 
 // Get shares only the build. Every waiter keeps its own cancellation, timing
@@ -92,7 +96,10 @@ func (c *Cache[T]) Get(ctx context.Context, key string, build func(context.Conte
 			c.mu.Unlock()
 			return value, Info{CacheHit: true, BuildID: id}, nil
 		}
-		f, exists := c.flights[key]
+		// Old waiters may finish, but post-invalidation requests cannot join
+		// their build. All generations still share the global flight budget.
+		current := flightKey{key: key, generation: c.generation}
+		f, exists := c.flights[current]
 		if !exists && len(c.flights) >= c.maxFlights {
 			changed := c.changed
 			c.mu.Unlock()
@@ -107,7 +114,7 @@ func (c *Cache[T]) Get(ctx context.Context, key string, build func(context.Conte
 			c.sequence++
 			buildCtx, cancel := context.WithTimeout(context.Background(), c.budget)
 			f = &flight[T]{done: make(chan struct{}), cancel: cancel, id: c.sequence, generation: c.generation}
-			c.flights[key] = f
+			c.flights[current] = f
 			// Only one bounded goroutine exists for this key until the builder exits,
 			// including after its last waiter has cancelled.
 			go c.run(buildCtx, key, f, build)
@@ -166,7 +173,7 @@ func (c *Cache[T]) run(ctx context.Context, key string, f *flight[T], build func
 		}
 		c.entries[key] = &entry[T]{value: value, expires: time.Now().Add(c.ttl), used: c.hits + c.sequence, buildID: f.id}
 	}
-	delete(c.flights, key)
+	delete(c.flights, flightKey{key: key, generation: f.generation})
 	close(f.done)
 	close(c.changed)
 	c.changed = make(chan struct{})

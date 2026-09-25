@@ -9,8 +9,8 @@ import (
 
 func fileToolSpecs() []ToolSpec {
 	return []ToolSpec{
-		{Name: "read_file", Contract: fileToolContract, Title: "Read file", Description: toolfile.ToolDescription("Read a UTF-8 text file slice. Supports normal Host paths and host-issued skill:// resources. For Skills, pass the exact file URI returned by agentdock_context or workspace_context; do not construct one from a bare Skill name."), Annotations: readOnlyToolAnnotations(false), Handler: typedToolHandler("read_file", func(ctx context.Context, r *Runtime, request toolfile.ReadRequest) (Result, error) {
-			return r.files.ReadFile(ctx, request)
+		{Name: "read_file", Contract: fileToolContract, Title: "Read file", Description: toolfile.ToolDescription("Read a UTF-8 text file slice. Supports normal Host paths, host-issued skill:// resources and activity://call/.../source output references. For Skills, pass the exact file URI returned by agentdock_context or workspace_context; do not construct one from a bare Skill name. For retained output use its exact continue_read arguments, then next_offset (UTF-8 bytes); never repeat the original command to read more output."), Annotations: readOnlyToolAnnotations(false), Handler: typedToolHandler("read_file", func(ctx context.Context, r *Runtime, request toolfile.ReadRequest) (Result, error) {
+			return r.readFileWithOutputSource(ctx, request)
 		})},
 		{Name: "list_dir", Contract: fileToolContract, Title: "List directory", Description: toolfile.ToolDescription("List directory entries with explicit depth, glob filters, and entry-type filtering. Glob patterns are relative to path: * stays within one path segment and ** crosses directories. Relative paths resolve from ~/AgentDock; absolute and ~/ paths use Host rules."), Annotations: readOnlyToolAnnotations(false), Handler: typedToolHandler("list_dir", func(ctx context.Context, r *Runtime, request toolfile.ListRequest) (Result, error) {
 			return r.files.ListDir(ctx, request)
