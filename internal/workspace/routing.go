@@ -184,6 +184,11 @@ func ResolveCommandDirectory(record Record, request TargetRequest) (ResolvedTarg
 	return target, nil
 }
 
+// CanonicalNativePath resolves existing ancestors and retains a not-yet-created
+// suffix. Admission checks use the same representation as workspace routing,
+// including Windows long/short path aliases. It does not create any path.
+func CanonicalNativePath(value string) (string, error) { return canonicalNativePath(value) }
+
 func canonicalNativePath(value string) (string, error) {
 	if value == "" || !filepath.IsAbs(value) || strings.ContainsRune(value, 0) || len(value) > 4096 {
 		return "", ErrWorkspaceRequired

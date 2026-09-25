@@ -365,7 +365,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSAppleEventsUsageDescription</key>
-  <string>AgentDock needs to control System Events and Finder to perform desktop automation tasks you request.</string>
+  <string>AgentDock Workbench needs to control System Events and Finder to perform desktop automation tasks you request.</string>
   <key>NSHumanReadableCopyright</key>
   <string>Copyright © AgentDock contributors</string>
 </dict>

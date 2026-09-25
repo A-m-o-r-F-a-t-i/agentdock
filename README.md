@@ -2,24 +2,21 @@
 
 English | [简体中文](./README.zh-CN.md)
 
-<img src="./docs/assets/agentdock-logo.png" alt="AgentDock logo" width="128" />
+<img src="./docs/assets/agentdock-logo.png" alt="AgentDock Workbench logo" width="128" />
 
-# AgentDock Workbench MCP
+# AgentDock Workbench
 
-This fork's current Windows candidate: **AgentDock 1.1.4** · [1.1.4 release notes and verification](./docs/releases/v1.1.4.md) · [Differences from upstream and migration](./docs/official-version-differences-and-migration.md) · [Tailscale Funnel configuration](./docs/tailscale-funnel.md). This fork publishes Windows packages only; upstream platform downloads remain separate.
+**AgentDock Workbench 1.1.7** · [Release notes and platform packages](./docs/releases/v1.1.7.md) · [Layered permissions](./docs/permission-profiles.md) · [Insertion delivery](./docs/insertion-delivery-1.1.7.md). This fork extends [upstream AgentDock](https://github.com/uvwt/agentdock) with its task and execution workbench. Native Windows, Linux and macOS x64/ARM64 packages are built in this repository; the Windows activity-center UI remains platform-specific.
 
 **Give AI agents secure, controlled access to every machine you operate.**
 
 Open ChatGPT in your browser and manage multiple computers and servers from one conversation. Write code, change configuration, run commands, and deploy in the real environment where the work belongs—without consuming a dedicated Codex coding quota.
 
-<a href="https://trendshift.io/repositories/136526?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-136526" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/136526/daily?language=Go" alt="uvwt%2Fagentdock | Trendshift" width="250" height="55"/></a>
 
-[Documentation](https://uvwt.github.io/agentdock-docs/) · [Download](https://github.com/uvwt/agentdock/releases) · [Community](https://qun.qq.com/universal-share/share?ac=1&authKey=Rp86bSzI7vqm87KoYlKawgsPZ440Ubhyezw6Qkgcn3JISwX3zXxsXkbS5598RrY5&busi_data=eyJncm91cENvZGUiOiIxMDgxMzM3MDE5IiwidG9rZW4iOiJ0Mlg1bUU1ZWtuZzF3SHJDT3pSaGsrOURIMlNYaXBlYllOUjNLZ1BUb1hzM2lJSTZjeVNldzU0ajl0SjRVZkx2IiwidWluIjoiMzIwMjA4ODAzMiJ9&data=W28mWvuqaLf_Fwnf0CgAJXuDs6l3A78V7AoWZnizPboCpKoQMzHzZ-UlluYo47U3tmIBHK2xIgWEVEJbTiGsPQ&svctype=4&tempid=h5_group_info)
+[Documentation](https://uvwt.github.io/agentdock-docs/) · [Download](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases) · [Community](https://qun.qq.com/universal-share/share?ac=1&authKey=Rp86bSzI7vqm87KoYlKawgsPZ440Ubhyezw6Qkgcn3JISwX3zXxsXkbS5598RrY5&busi_data=eyJncm91cENvZGUiOiIxMDgxMzM3MDE5IiwidG9rZW4iOiJ0Mlg1bUU1ZWtuZzF3SHJDT3pSaGsrOURIMlNYaXBlYllOUjNLZ1BUb1hzM2lJSTZjeVNldzU0ajl0SjRVZkx2IiwidWluIjoiMzIwMjA4ODAzMiJ9&data=W28mWvuqaLf_Fwnf0CgAJXuDs6l3A78V7AoWZnizPboCpKoQMzHzZ-UlluYo47U3tmIBHK2xIgWEVEJbTiGsPQ&svctype=4&tempid=h5_group_info)
 
-[![CI](https://github.com/uvwt/agentdock/actions/workflows/ci.yml/badge.svg)](https://github.com/uvwt/agentdock/actions/workflows/ci.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/uvwt/agentdock?display_name=tag&logo=github)](https://github.com/uvwt/agentdock/releases)
-[![Docker Hub](https://img.shields.io/docker/pulls/agentdockio/agentdock?logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/agentdockio/agentdock)
-[![GHCR](https://img.shields.io/badge/GHCR-ghcr.io%2Fuvwt%2Fagentdock-2496ED?logo=docker&logoColor=white)](https://github.com/uvwt/agentdock/pkgs/container/agentdock)
+[![CI](https://github.com/A-m-o-r-F-a-t-i/agentdock/actions/workflows/ci.yml/badge.svg)](https://github.com/A-m-o-r-F-a-t-i/agentdock/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/A-m-o-r-F-a-t-i/agentdock?display_name=tag&logo=github)](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases)
 [![License](https://img.shields.io/github/license/uvwt/agentdock)](./LICENSE)
 
 </div>
@@ -208,7 +205,7 @@ User documentation is maintained separately in [`uvwt/agentdock-docs`](https://g
 
 Changes involving device pairing, cross-node tool routing, Recall, or Workflow integrations may also require coordinated changes in [`uvwt/nexusdock`](https://github.com/uvwt/nexusdock). The shared protocol is maintained in [`uvwt/agentdock-protocol`](https://github.com/uvwt/agentdock-protocol). When changing shared interfaces or data structures, update the protocol definitions first, then align both implementations and their protocol dependency versions, check compatibility, update the corresponding documentation, and link related cross-repository changes in the PR.
 
-Submit bugs and feature requests through [GitHub Issues](https://github.com/uvwt/agentdock/issues).
+Submit bugs and feature requests through [GitHub Issues](https://github.com/A-m-o-r-F-a-t-i/agentdock/issues).
 
 ## Support the project
 
@@ -235,7 +232,7 @@ Submit bugs and feature requests through [GitHub Issues](https://github.com/uvwt
 
 - [Documentation](https://uvwt.github.io/agentdock-docs/)
 - [Documentation source](https://github.com/uvwt/agentdock-docs)
-- [GitHub Releases](https://github.com/uvwt/agentdock/releases)
+- [GitHub Releases](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases)
 - [GitHub Container Registry](https://github.com/uvwt/agentdock/pkgs/container/agentdock)
 - [Docker Hub](https://hub.docker.com/r/agentdockio/agentdock)
 - [Linux Do](https://linux.do/)

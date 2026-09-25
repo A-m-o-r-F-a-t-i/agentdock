@@ -96,7 +96,9 @@ func (r *Runtime) profileFacts(f permission.Facts, args map[string]any, state ex
 	case "workspace_manage":
 		f.EffectsKnown = f.Action == "get" || f.Action == "list" || f.Action == "resolve"
 		f.WorkspaceBound = f.EffectsKnown
-	case "session_observe":
+	case "session_observe", "insertion_ack":
+		// Receipt bookkeeping is authenticated control-plane metadata, like
+		// task state. It cannot execute/retry business tools or change policy.
 		f.EffectsKnown, f.WorkspaceBound = true, true
 	case "session_act":
 		// Stopping a process cannot grant it new filesystem/network access.
@@ -113,6 +115,12 @@ func (r *Runtime) profileFacts(f permission.Facts, args map[string]any, state ex
 }
 
 func pathOverlaps(a, b string) bool {
+	left, leftErr := workspace.CanonicalNativePath(a)
+	right, rightErr := workspace.CanonicalNativePath(b)
+	if leftErr != nil || rightErr != nil {
+		return true
+	} // Unknown identity must not authorize a protected write.
+	a, b = left, right
 	for _, pair := range [][2]string{{a, b}, {b, a}} {
 		relative, err := filepath.Rel(pair[0], pair[1])
 		if err == nil && !filepath.IsAbs(relative) && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {

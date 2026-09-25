@@ -2,24 +2,21 @@
 
 [English](./README.md) | 简体中文
 
-<img src="./docs/assets/agentdock-logo.png" alt="AgentDock logo" width="128" />
+<img src="./docs/assets/agentdock-logo.png" alt="AgentDock Workbench logo" width="128" />
 
-# AgentDock Workbench MCP
+# AgentDock Workbench
 
-本分支当前 Windows 候选版：**AgentDock 1.1.4** · [1.1.4 发布说明与验证](./docs/releases/v1.1.4.md) · [与上游官方版的差异及迁移](./docs/official-version-differences-and-migration.md) · [Tailscale Funnel 配置](./docs/tailscale-funnel.md)。本分支仅发布 Windows 安装包，其他平台的上游发行版保持独立。
+　　**AgentDock Workbench 1.1.7** · [版本说明与各平台安装包](./docs/releases/v1.1.7.md) · [分层权限](./docs/permission-profiles.md) · [插入投递](./docs/insertion-delivery-1.1.7.md)。本分支基于[上游 AgentDock](https://github.com/uvwt/agentdock)，增加任务与执行工作台。从本版起提供 Windows、Linux、macOS 的 x64/ARM64 原生载荷，Windows 活动中心界面保持平台限定。
 
 **让 AI 的双手，真正触达你的每一台设备。**
 
 打开网页版 ChatGPT，即可管理多台电脑与服务器：在真实设备上写代码、改配置、跑命令与部署，执行发生在你的机器上，不消耗Codex额度。
 
-<a href="https://trendshift.io/repositories/136526?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-136526" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/136526/daily?language=Go" alt="uvwt%2Fagentdock | Trendshift" width="250" height="55"/></a>
 
-[在线文档](https://uvwt.github.io/agentdock-docs/zh-CN/) · [下载安装](https://github.com/uvwt/agentdock/releases) · [QQ群](https://qun.qq.com/universal-share/share?ac=1&authKey=Rp86bSzI7vqm87KoYlKawgsPZ440Ubhyezw6Qkgcn3JISwX3zXxsXkbS5598RrY5&busi_data=eyJncm91cENvZGUiOiIxMDgxMzM3MDE5IiwidG9rZW4iOiJ0Mlg1bUU1ZWtuZzF3SHJDT3pSaGsrOURIMlNYaXBlYllOUjNLZ1BUb1hzM2lJSTZjeVNldzU0ajl0SjRVZkx2IiwidWluIjoiMzIwMjA4ODAzMiJ9&data=W28mWvuqaLf_Fwnf0CgAJXuDs6l3A78V7AoWZnizPboCpKoQMzHzZ-UlluYo47U3tmIBHK2xIgWEVEJbTiGsPQ&svctype=4&tempid=h5_group_info)
+[在线文档](https://uvwt.github.io/agentdock-docs/zh-CN/) · [下载安装](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases) · [QQ群](https://qun.qq.com/universal-share/share?ac=1&authKey=Rp86bSzI7vqm87KoYlKawgsPZ440Ubhyezw6Qkgcn3JISwX3zXxsXkbS5598RrY5&busi_data=eyJncm91cENvZGUiOiIxMDgxMzM3MDE5IiwidG9rZW4iOiJ0Mlg1bUU1ZWtuZzF3SHJDT3pSaGsrOURIMlNYaXBlYllOUjNLZ1BUb1hzM2lJSTZjeVNldzU0ajl0SjRVZkx2IiwidWluIjoiMzIwMjA4ODAzMiJ9&data=W28mWvuqaLf_Fwnf0CgAJXuDs6l3A78V7AoWZnizPboCpKoQMzHzZ-UlluYo47U3tmIBHK2xIgWEVEJbTiGsPQ&svctype=4&tempid=h5_group_info)
 
-[![CI](https://github.com/uvwt/agentdock/actions/workflows/ci.yml/badge.svg)](https://github.com/uvwt/agentdock/actions/workflows/ci.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/uvwt/agentdock?display_name=tag&logo=github)](https://github.com/uvwt/agentdock/releases)
-[![Docker Hub](https://img.shields.io/docker/pulls/agentdockio/agentdock?logo=docker&label=Docker%20Hub)](https://hub.docker.com/r/agentdockio/agentdock)
-[![GHCR](https://img.shields.io/badge/GHCR-ghcr.io%2Fuvwt%2Fagentdock-2496ED?logo=docker&logoColor=white)](https://github.com/uvwt/agentdock/pkgs/container/agentdock)
+[![CI](https://github.com/A-m-o-r-F-a-t-i/agentdock/actions/workflows/ci.yml/badge.svg)](https://github.com/A-m-o-r-F-a-t-i/agentdock/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/A-m-o-r-F-a-t-i/agentdock?display_name=tag&logo=github)](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases)
 [![License](https://img.shields.io/github/license/uvwt/agentdock)](./LICENSE)
 
 </div>
@@ -211,7 +208,7 @@ make check
 
 涉及设备配对、跨节点工具路由、Recall 或 Workflow 等集成能力时，可能还需协同修改独立仓库 [`uvwt/nexusdock`](https://github.com/uvwt/nexusdock)。两者共享的协议维护在 [`uvwt/agentdock-protocol`](https://github.com/uvwt/agentdock-protocol)。变更共享接口或数据结构时，应先更新协议定义，再同步两端实现与协议依赖版本，核对兼容性并更新对应文档，在 PR 中关联跨仓库改动。
 
-提交问题或功能建议请使用 [GitHub Issues](https://github.com/uvwt/agentdock/issues)。
+提交问题或功能建议请使用 [GitHub Issues](https://github.com/A-m-o-r-F-a-t-i/agentdock/issues)。
 
 ## 支持项目
 
@@ -238,7 +235,7 @@ make check
 
 - [Documentation](https://uvwt.github.io/agentdock-docs/zh-CN/)
 - [Documentation source](https://github.com/uvwt/agentdock-docs)
-- [GitHub Releases](https://github.com/uvwt/agentdock/releases)
+- [GitHub Releases](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases)
 - [GitHub Container Registry](https://github.com/uvwt/agentdock/pkgs/container/agentdock)
 - [Docker Hub](https://hub.docker.com/r/agentdockio/agentdock)
 - [Linux Do](https://linux.do/)
