@@ -146,7 +146,7 @@ public sealed partial class RuntimeService : IDisposable
         if (usesTailscale)
         {
             tunnelMode = "funnel";
-            tailscale = CachedTailscaleStatus(publicOrigin);
+            tailscale = await CachedTailscaleStatusAsync(publicOrigin, localOrigin, cancellationToken).ConfigureAwait(false);
         }
 
         return new RuntimeSnapshot(

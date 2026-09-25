@@ -25,6 +25,15 @@ func verifyConfiguredTailscale(ctx context.Context, root string, hooks publicAcc
 		return TunnelStatus{}, pathErr
 	}
 	root = absRoot
+	// Serialize verification attempts, not configuration. No file is created;
+	// the separate mutex lets stop/mode changes finish during public HTTP.
+	goruntime.LockOSThread()
+	defer goruntime.UnlockOSThread()
+	releaseProbe, err := acquireTunnelOperation(ctx, filepath.Join(root, ".tailscale-verification"))
+	if err != nil {
+		return TunnelStatus{}, err
+	}
+	defer releaseProbe()
 	runtime, err := loadTunnelRuntime(root)
 	if err != nil {
 		return TunnelStatus{}, err
@@ -56,6 +65,30 @@ func verifyConfiguredTailscale(ctx context.Context, root string, hooks publicAcc
 	if err != nil {
 		return finish(err)
 	}
+	withCurrent := func(operation func(*tailscaleFunnelState) error) error {
+		return withTailscaleVerificationCommit(ctx, root, binary, func() error {
+			currentRuntime, err := loadTunnelRuntime(root)
+			if err != nil {
+				return err
+			}
+			current, err := loadTailscaleState(root)
+			if err != nil {
+				return err
+			}
+			if current == nil || !current.Enabled || currentRuntime.mode != "funnel" || !current.ConfiguredAt.Equal(state.ConfiguredAt) || current.DeviceID != state.DeviceID || current.PublicOrigin != state.PublicOrigin || current.LocalOrigin != state.LocalOrigin || currentRuntime.localOrigin() != state.LocalOrigin || currentRuntime.manifest.EffectivePublicAccess().URL != state.PublicOrigin {
+				return tailscaleProblem("mode_changed", "配置已变化，旧公网验证结果已丢弃")
+			}
+			return operation(current)
+		})
+	}
+	// Persist uncertainty before any blocking query: cancellation, timeout and
+	// a killed verifier must never leave yesterday's Ready as today's evidence.
+	if err := withCurrent(func(current *tailscaleFunnelState) error {
+		current.Pending, current.VerifiedAt = true, nil
+		return hooks.saveState(root, current)
+	}); err != nil {
+		return finish(err)
+	}
 	client := hooks.client(binary)
 	node, config, err := client.observe(ctx)
 	if err != nil {
@@ -85,21 +118,9 @@ func verifyConfiguredTailscale(ctx context.Context, root string, hooks publicAcc
 	// Use the same root-before-client lock order as configuration. Re-read all
 	// identities before persisting so stale probes cannot resurrect a stopped or
 	// replaced configuration.
-	commitErr := withTailscaleVerificationCommit(ctx, root, binary, func() error {
-		currentRuntime, err := loadTunnelRuntime(root)
-		if err != nil {
-			return err
-		}
-		current, err := loadTailscaleState(root)
-		if err != nil {
-			return err
-		}
-		if current == nil || !current.Enabled || currentRuntime.mode != "funnel" || !current.ConfiguredAt.Equal(state.ConfiguredAt) || current.DeviceID != state.DeviceID || current.PublicOrigin != state.PublicOrigin || current.LocalOrigin != state.LocalOrigin || currentRuntime.localOrigin() != state.LocalOrigin {
-			return tailscaleProblem("mode_changed", "配置已变化，旧公网验证结果已丢弃")
-		}
+	commitErr := withCurrent(func(current *tailscaleFunnelState) error {
 		if probeErr != nil {
-			current.Pending, current.VerifiedAt = true, nil
-			return hooks.saveState(root, current)
+			return nil // The begin record already says pending.
 		}
 		freshNode, freshConfig, err := client.observe(ctx)
 		if err != nil {
