@@ -128,44 +128,63 @@ func approvalDecision(d Decision, f Facts) Decision {
 	return d
 }
 
-// applySettingsChange updates one complete settings object. A conversation ID
-// may restrict legacy mode but cannot select or broaden a permission profile.
+// applySettingsChange updates the saved custom settings and their independent
+// enable flag. Disabling keeps the values; workspace inheritance clears both
+// local values and the local flag. Older clients that submit settings without
+// the new flag are treated as enabling those explicit settings.
 func applySettingsChange(p *Policy, c Change) error {
-	if c.Settings == nil && !c.InheritSettings {
+	if c.Settings == nil && c.CustomPermissionsEnabled == nil && !c.InheritSettings {
 		return nil
 	}
-	if c.Settings != nil && c.InheritSettings {
+	if c.InheritSettings && (c.Settings != nil || c.CustomPermissionsEnabled != nil) {
 		return errors.New("cannot set and inherit settings together")
 	}
 	if c.Scope != "global" && c.Scope != "workspace" || c.Scope == "global" && c.ScopeID != "" || c.Scope == "workspace" && !validID.MatchString(c.ScopeID) {
 		return errors.New("permission settings require an explicit global or workspace scope")
 	}
+	enabled := c.CustomPermissionsEnabled
 	if c.Settings != nil {
 		if err := c.Settings.Validate(); err != nil {
 			return err
+		}
+		if enabled == nil {
+			enabled = boolPointer(true)
 		}
 	}
 	if c.Scope == "global" {
 		if c.InheritSettings {
 			return errors.New("global settings have no parent to inherit")
 		}
-		p.Settings = c.Settings
-	} else {
-		found := false
-		for i := range p.Scopes {
-			if p.Scopes[i].Kind == c.Scope && p.Scopes[i].ID == c.ScopeID {
-				p.Scopes[i].Settings = c.Settings
-				if p.Scopes[i].Mode == "" && c.InheritSettings {
-					p.Scopes = append(p.Scopes[:i], p.Scopes[i+1:]...)
-				}
-				found = true
-				break
-			}
+		if c.Settings != nil {
+			p.Settings = c.Settings
 		}
-		if !found && c.Settings != nil {
-			p.Scopes = append(p.Scopes, Scope{Kind: c.Scope, ID: c.ScopeID, Settings: c.Settings})
+		if enabled != nil {
+			p.CustomPermissionsEnabled = enabled
 		}
+		return nil
 	}
-	p.SchemaVersion = 2
+	for index := range p.Scopes {
+		if p.Scopes[index].Kind != c.Scope || p.Scopes[index].ID != c.ScopeID {
+			continue
+		}
+		if c.InheritSettings {
+			p.Scopes[index].Settings = nil
+			p.Scopes[index].CustomPermissionsEnabled = nil
+			if p.Scopes[index].Mode == "" {
+				p.Scopes = append(p.Scopes[:index], p.Scopes[index+1:]...)
+			}
+			return nil
+		}
+		if c.Settings != nil {
+			p.Scopes[index].Settings = c.Settings
+		}
+		if enabled != nil {
+			p.Scopes[index].CustomPermissionsEnabled = enabled
+		}
+		return nil
+	}
+	if !c.InheritSettings {
+		p.Scopes = append(p.Scopes, Scope{Kind: c.Scope, ID: c.ScopeID, Settings: c.Settings, CustomPermissionsEnabled: enabled})
+	}
 	return nil
 }

@@ -2,9 +2,10 @@ package httpx
 
 import (
 	"context"
+	"net/http"
+
 	"github.com/uvwt/agentdock/internal/activity"
 	"github.com/uvwt/agentdock/internal/permission"
-	"net/http"
 )
 
 // Resource dispatch shares the original authentication, deadline and JSON boundary.
@@ -33,7 +34,30 @@ func (h *activityHTTP) serveExecutionPermissions(ctx context.Context, w http.Res
 				return
 			}
 			result, err := runtime.RuntimePermissionsUpdate(ctx, change)
-			finish(result, err)
+			if err != nil {
+				finish(nil, err)
+				return
+			}
+			binding := activity.Binding{}
+			switch change.Scope {
+			case "workspace":
+				binding.WorkspaceID = change.ScopeID
+			case "conversation":
+				binding.ConversationID = change.ScopeID
+			}
+			readback, readErr := runtime.RuntimePermissions(ctx, binding)
+			if readErr != nil {
+				// The revision-checked update already committed. Report the readback
+				// failure without turning a successful save into an ambiguous retry.
+				result["effective_readback_available"] = false
+				result["readback_error"] = readErr.Error()
+			} else {
+				for key, value := range readback {
+					result[key] = value
+				}
+				result["effective_readback_available"] = true
+			}
+			finish(result, nil)
 			return
 		}
 	}
