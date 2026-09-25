@@ -71,12 +71,28 @@ func applyCallExecutionFacts(call *ExecutionCall, event Event) {
 		call.Visibility = event.Visibility
 	}
 	call.UpdatedAt, call.UpdatedSeq = event.CreatedAt, event.Seq
+	rpcAlreadyReturned := call.RPCCompletedAt != nil
 	applyMeasurements(call, event)
 	// Only genuine external-root execution facts advance activity. Projection reads,
 	// metadata edits and recovery events must not restart an activity window.
 	if call.RequestReceivedAt != nil && call.ParentCallID == "" && call.Visibility != "diagnostic" && genuineActivityEvent(event.Kind) {
 		if call.LastActivityAt == nil || event.CreatedAt.After(*call.LastActivityAt) {
 			call.LastActivityAt = copyValue(&event.CreatedAt)
+		}
+	}
+	// Interaction is narrower than execution activity. It ends with the root
+	// RPC return, so output from a detached/background process cannot keep the
+	// two-minute conversation marker alive indefinitely.
+	if call.RequestReceivedAt != nil && call.ParentCallID == "" && call.Visibility != "diagnostic" && genuineInteractionEvent(event.Kind, rpcAlreadyReturned) {
+		interactionAt := event.CreatedAt
+		if event.Kind == "call.created" {
+			interactionAt = *call.RequestReceivedAt
+		}
+		if event.Kind == "call.rpc_returned" && call.RPCCompletedAt != nil {
+			interactionAt = *call.RPCCompletedAt
+		}
+		if call.LastInteractionAt == nil || interactionAt.After(*call.LastInteractionAt) {
+			call.LastInteractionAt = copyValue(&interactionAt)
 		}
 	}
 	call.EventCount++

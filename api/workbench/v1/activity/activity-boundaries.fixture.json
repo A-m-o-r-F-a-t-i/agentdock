@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "interval_convention": "half-open",
+  "cases": {
+    "recent_interaction": [
+      { "elapsed_ms": 119999, "expected": true },
+      { "elapsed_ms": 120000, "expected": false },
+      { "elapsed_ms": 120001, "expected": false }
+    ],
+    "insertion_eligibility": [
+      { "elapsed_ms": 179999, "expected": true },
+      { "elapsed_ms": 180000, "expected": false },
+      { "elapsed_ms": 180001, "expected": false }
+    ],
+    "unclaimed_insertion_expired": [
+      { "elapsed_ms": 299999, "expected": false },
+      { "elapsed_ms": 300000, "expected": true },
+      { "elapsed_ms": 300001, "expected": true }
+    ],
+    "receipt_wait_elapsed": [
+      { "elapsed_ms": 29999, "expected": false },
+      { "elapsed_ms": 30000, "expected": true },
+      { "elapsed_ms": 30001, "expected": true }
+    ]
+  }
+}

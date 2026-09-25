@@ -11,9 +11,21 @@ namespace AgentDock.ControlPanel;
 
 public partial class ExecutionWindow
 {
+    private sealed class SidebarFailureState(string fingerprint, string message, long generation)
+    {
+        internal string Fingerprint { get; } = fingerprint;
+        internal string Message { get; } = message;
+        internal long Generation { get; } = generation;
+        internal int Attempts { get; set; } = 1;
+        internal bool Dismissed { get; set; }
+        internal long RetryAfter { get; set; }
+    }
+
     private readonly Dictionary<string, WorkspaceGroupKey> _sidebarGroups = new(StringComparer.Ordinal);
     private readonly Dictionary<string, SidebarNavigationState> _sidebarViews = new(StringComparer.Ordinal);
     private readonly HashSet<string> _sidebarPaging = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SidebarFailureState> _sidebarFailures = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (int Count, long Last)> _sidebarDiagnostics = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _sidebarPageGate = new(1, 1);
     private SidebarNavigationState? _searchNavigation;
     private string _searchNavigationScope = "", _sidebarScope = "";
@@ -21,6 +33,109 @@ public partial class ExecutionWindow
     private CancellationTokenSource? _sidebarRequest;
     private int _openMenus;
     private long _lastSidebarRefresh;
+    private string _visibleSidebarFailureScope = "";
+
+    private string SidebarScope() => _conversationView + "\n" + SearchBox.Text.Trim();
+
+    private void RecordSidebarFailures(string requestScope, IEnumerable<SidebarProtocolException> failures, bool automaticRetry = true)
+    {
+        var ordered = failures.OrderBy(item => item.Scope, StringComparer.Ordinal).ThenBy(item => item.Code, StringComparer.Ordinal).ToArray();
+        if (ordered.Length == 0) return;
+        var fingerprint = string.Join(";", ordered.Select(item => $"{item.Code}|{item.Scope}|{item.RowType}"));
+        var generation = ordered.Max(item => item.ResponseGeneration);
+        var message = string.Join("\n", ordered.Take(3).Select(item => item.UserMessage));
+        if (ordered.Length > 3) message += $"\n另有 {ordered.Length - 3} 个项目响应被隔离。";
+        SidebarFailureState state;
+        if (_sidebarFailures.TryGetValue(requestScope, out var previous) && previous.Fingerprint == fingerprint)
+            state = new SidebarFailureState(fingerprint, message, generation)
+            {
+                Attempts = Math.Min(previous.Attempts + 1, 6),
+                Dismissed = previous.Dismissed
+            };
+        else state = new SidebarFailureState(fingerprint, message, generation);
+        var delay = TimeSpan.FromSeconds(Math.Min(30, 1 << Math.Min(state.Attempts, 5)));
+        state.RetryAfter = Stopwatch.GetTimestamp() + (long)(delay.TotalSeconds * Stopwatch.Frequency);
+        _sidebarFailures[requestScope] = state;
+        foreach (var failure in ordered) TraceSidebarFailure(failure);
+        if (!state.Dismissed)
+        {
+            _visibleSidebarFailureScope = requestScope;
+            _warningOwner = "sidebar:" + requestScope;
+            _warningCode = "";
+            WarningText.Text = state.Message;
+            WarningPanel.Visibility = Visibility.Visible;
+        }
+        // Five bounded automatic retries are allowed for an unchanged failure.
+        // A manual refresh, stream reset, or new root call resets the budget.
+        _sidebarDirty = automaticRetry && state.Attempts <= 5;
+    }
+
+    private void TraceSidebarFailure(SidebarProtocolException failure)
+    {
+        var now = Stopwatch.GetTimestamp();
+        if (_sidebarDiagnostics.Count >= 128 && !_sidebarDiagnostics.ContainsKey(failure.Fingerprint))
+            _sidebarDiagnostics.Remove(_sidebarDiagnostics.MinBy(pair => pair.Value.Last).Key);
+        var previous = _sidebarDiagnostics.GetValueOrDefault(failure.Fingerprint);
+        var count = previous.Count + 1;
+        _sidebarDiagnostics[failure.Fingerprint] = (count, now);
+        if (count == 1 || Stopwatch.GetElapsedTime(previous.Last, now) >= TimeSpan.FromMinutes(1))
+            Trace.TraceWarning("Sidebar response rejected: code={0} scope={1} row={2} generation={3} count={4}",
+                failure.Code, failure.Scope, failure.RowType, failure.ResponseGeneration, count);
+    }
+
+    private void ClearSidebarFailure(string requestScope)
+    {
+        _sidebarFailures.Remove(requestScope);
+        if (_visibleSidebarFailureScope != requestScope) return;
+        _visibleSidebarFailureScope = "";
+        if (_warningOwner == "sidebar:" + requestScope)
+        {
+            _warningOwner = "";
+            WarningText.Text = "";
+            WarningPanel.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void ActivateSidebarFailureScope(string requestScope)
+    {
+        if (_warningOwner.StartsWith("sidebar:", StringComparison.Ordinal) && _visibleSidebarFailureScope != requestScope)
+        {
+            _warningOwner = "";
+            WarningText.Text = "";
+            WarningPanel.Visibility = Visibility.Collapsed;
+        }
+        _visibleSidebarFailureScope = "";
+        if (!_sidebarFailures.TryGetValue(requestScope, out var state) || state.Dismissed) return;
+        _visibleSidebarFailureScope = requestScope;
+        _warningOwner = "sidebar:" + requestScope;
+        _warningCode = "";
+        WarningText.Text = state.Message;
+        WarningPanel.Visibility = Visibility.Visible;
+    }
+
+    private void ResetSidebarRecoveryBudget()
+    {
+        var scope = SidebarScope();
+        if (_sidebarFailures.TryGetValue(scope, out var state))
+        {
+            state.Attempts = 1;
+            state.RetryAfter = 0;
+        }
+    }
+
+    private TimeSpan SidebarRetryDelay(string requestScope)
+    {
+        if (!_sidebarFailures.TryGetValue(requestScope, out var state) || state.RetryAfter == 0) return TimeSpan.Zero;
+        var now = Stopwatch.GetTimestamp();
+        if (now >= state.RetryAfter) return TimeSpan.Zero;
+        return Stopwatch.GetElapsedTime(now, state.RetryAfter);
+    }
+
+    private bool SidebarAutomaticRefreshAllowed()
+    {
+        var scope = SidebarScope();
+        return !_sidebarFailures.TryGetValue(scope, out var state) || state.Attempts <= 5 && SidebarRetryDelay(scope) <= TimeSpan.Zero;
+    }
 
     private SidebarNavigationState CurrentNavigation()
     {
@@ -54,7 +169,15 @@ public partial class ExecutionWindow
         _sidebarRequest?.Cancel(); _sidebarRequest?.Dispose();
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         _sidebarRequest = cancellation; _sidebarLoading = true; _sidebarDirty = false;
+        var requestScope = SidebarScope();
+        var automaticRetry = candidate.Revision == revision;
+        ActivateSidebarFailureScope(requestScope);
         try { await LoadSidebarCoreAsync(epoch, cancellation.Token, candidate, target, revision, selectionGeneration); }
+        catch (OperationCanceledException) { throw; }
+        catch (SidebarProtocolException error) { RecordSidebarFailures(requestScope, [error], automaticRetry); }
+        catch (JsonException) { RecordSidebarFailures(requestScope, [SidebarResponseValidation.TransportFailure("SIDEBAR_RESPONSE_JSON_INVALID", "response")], automaticRetry); }
+        catch (HttpRequestException) { RecordSidebarFailures(requestScope, [SidebarResponseValidation.TransportFailure("SIDEBAR_TRANSPORT_UNAVAILABLE", "transport")], automaticRetry); }
+        catch (IOException) { RecordSidebarFailures(requestScope, [SidebarResponseValidation.TransportFailure("SIDEBAR_TRANSPORT_IO", "transport")], automaticRetry); }
         finally
         {
             if (ReferenceEquals(_sidebarRequest, cancellation)) { _sidebarRequest = null; _sidebarLoading = false; }
@@ -77,15 +200,31 @@ public partial class ExecutionWindow
         token.ThrowIfCancellationRequested();
         if (_closed || epoch != _objectEpoch || selectionGeneration != _generation ||
             scope != _conversationView + "\n" + SearchBox.Text.Trim() || !ReferenceEquals(target, CurrentNavigation())) return;
-        var parsedRows = ParseSidebarRows(page);
+        var parsed = ParseSidebarRows(page);
+        var selectedResponse = SidebarResponseValidation.ParseSelected(page.Field("selected"), page.Number("latest_seq"));
+        var hasNavigationIntent = navigation.Revision != revision;
         foreach (var group in page.Array("groups"))
-            if (group.Text("mode") == "history") navigation.For(group.Text("workspace_id")).AcceptHistory(group.Text("history_cursor"), (int)group.Number("history_limit"));
-        if (!target.TryCommit(navigation, revision)) return;
+        {
+            var id = group.Text("workspace_id");
+            if (parsed.Groups.ContainsKey(id) && group.Text("mode") == "history")
+                navigation.For(id).AcceptHistory(group.Text("history_cursor"), (int)group.Number("history_limit"));
+        }
+        // A pagination intent must commit atomically. Passive refreshes may
+        // still accept healthy projects while retaining a malformed project.
+        if (parsed.IsPartial && hasNavigationIntent)
+            throw parsed.GroupFailures.Values.First();
+        if (parsed.IsPartial)
+        {
+            if (target.Revision != revision) return;
+        }
+        else if (!target.TryCommit(navigation, revision)) return;
         StartSidebarStream((ulong)page.Number("latest_seq"));
         var freshScope = scope != _sidebarScope; _sidebarScope = scope;
         var selectedKeys = ObjectsList.SelectedItems.Cast<ExecutionObject>().Where(item => !item.IsGroupFooter).Select(item => item.SelectionKey).ToHashSet();
         var scroll = FindVisualChild<ScrollViewer>(ObjectsList); var offset = scroll?.VerticalOffset ?? 0;
         var old = Objects.ToDictionary(item => item.SelectionKey, StringComparer.Ordinal);
+        var trustedGroups = Objects.GroupBy(item => item.WorkspaceKey.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.Ordinal);
         var incomingGroups = new List<WorkspaceGroupKey>();
         var groupRows = new Dictionary<string, List<ExecutionObject>>(StringComparer.Ordinal);
         var previousOrder = Objects.Select(item => item.WorkspaceKey.Id).Distinct().ToArray();
@@ -95,11 +234,20 @@ public partial class ExecutionWindow
             foreach (var group in page.Array("groups"))
             {
                 var id = group.Text("workspace_id");
+                if (parsed.GroupFailures.ContainsKey(id))
+                {
+                    if (_sidebarGroups.TryGetValue(id, out var trustedKey) && trustedGroups.TryGetValue(id, out var trustedRows))
+                    {
+                        incomingGroups.Add(trustedKey);
+                        groupRows[id] = trustedRows;
+                    }
+                    continue;
+                }
                 if (!_sidebarGroups.TryGetValue(id, out var key)) _sidebarGroups[id] = key = new(id, group.Text("title"));
                 key.Apply(group); incomingGroups.Add(key);
                 var state = target.For(id);
-                key.IsExpanded = group.Text("mode") == "history" || state.Expanded(key.RecentCount);
-                var rows = parsedRows[id];
+                key.IsExpanded = group.Text("mode") == "history" || state.Expanded(key.VisibleActivityCount);
+                var rows = parsed.Groups[id];
                 foreach (var incoming in rows)
                 {
                     incoming.WorkspaceKey = key;
@@ -110,7 +258,7 @@ public partial class ExecutionWindow
                 rows.Add(new ExecutionObject { Id = "footer:" + id, IsGroupFooter = true, HasMore = group.Flag("has_more"), IsPaging = _sidebarPaging.Contains(id), WorkspaceKey = key, WorkspaceId = id });
                 groupRows[id] = rows;
             }
-            MergeUnacknowledgedSidebarCalls(page.Number("latest_seq"), target, incomingGroups, groupRows);
+            MergeUnacknowledgedSidebarCalls(page.Number("latest_seq"), target, incomingGroups, groupRows, parsed.GroupFailures.Keys.ToHashSet(StringComparer.Ordinal));
         }
         finally { _initializingGroup = false; }
         var orderedGroups = SidebarOrdering.Stable(freshScope ? [] : previousOrder, incomingGroups, key => key.Id, key => key.LastActivityAt);
@@ -145,10 +293,9 @@ public partial class ExecutionWindow
         foreach (var stale in _sidebarGroups.Keys.Except(incomingGroups.Select(key => key.Id)).ToArray()) _sidebarGroups.Remove(stale);
         _lastSidebarRefresh = Stopwatch.GetTimestamp();
         var selected = Objects.FirstOrDefault(item => !item.IsGroupFooter && item.SelectionKey == selection);
-        var selectedRaw = page.Field("selected");
-        if (selected is null && selectedRaw.ValueKind == JsonValueKind.Object)
+        if (selected is null && selectedResponse is not null)
         {
-            var incoming = ExecutionObject.From(selectedRaw, "conversation"); PreserveProvisionalTitle(incoming, selectedRaw.Text("title"));
+            var incoming = selectedResponse; PreserveProvisionalTitle(incoming, incoming.Snapshot.Text("title"));
             if (_selected?.Id == incoming.Id) { _selected.Apply(incoming); selected = _selected; } else selected = incoming;
         }
         selected ??= Objects.FirstOrDefault(item => !item.IsGroupFooter);
@@ -174,34 +321,13 @@ public partial class ExecutionWindow
             }
         }
         _activityClock.Refresh(); UpdateStopButton();
+        if (parsed.IsPartial) RecordSidebarFailures(scope, parsed.GroupFailures.Values);
+        else ClearSidebarFailure(scope);
         if (!freshScope && scroll is not null && Math.Abs(scroll.VerticalOffset - offset) > 0.1)
             await Dispatcher.InvokeAsync(() => scroll.ScrollToVerticalOffset(offset), DispatcherPriority.Loaded);
     }
 
-    private static Dictionary<string, List<ExecutionObject>> ParseSidebarRows(JsonElement page)
-    {
-        if (page.ValueKind != JsonValueKind.Object || page.Field("groups").ValueKind != JsonValueKind.Array)
-            throw new JsonException("项目列表响应缺少 groups。");
-        var parsed = new Dictionary<string, List<ExecutionObject>>(StringComparer.Ordinal);
-        var ids = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var group in page.Array("groups"))
-        {
-            var id = group.Text("workspace_id");
-            if (id.Length == 0 || parsed.ContainsKey(id) || group.Field("conversations").ValueKind != JsonValueKind.Array ||
-                group.Number("history_limit") is < 0 or > int.MaxValue)
-                throw new JsonException("项目分页响应无效，原列表已保留。");
-            var rows = new List<ExecutionObject>();
-            foreach (var raw in group.Array("conversations"))
-            {
-                var row = ExecutionObject.From(raw, "conversation");
-                if (row.Id.Length == 0 || row.Id.StartsWith("footer:", StringComparison.Ordinal) || !ids.Add(row.Id))
-                    throw new JsonException("对话标识缺失或重复，原列表已保留。");
-                rows.Add(row);
-            }
-            parsed.Add(id, rows);
-        }
-        return parsed;
-    }
+    private static SidebarParseResult ParseSidebarRows(JsonElement page) => SidebarResponseValidation.Parse(page);
 
     private async void SidebarFooter_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
@@ -284,7 +410,7 @@ public partial class ExecutionWindow
     {
         if (_closed || !_initialized || _updating || _initializingGroup) return;
         var navigation = CurrentNavigation();
-        var active = Objects.Where(item => !item.IsGroupFooter && item.RecentlyActive).GroupBy(item => item.WorkspaceKey.Id).ToDictionary(group => group.Key, group => group.Count());
+        var active = Objects.Where(item => !item.IsGroupFooter && item.VisibleInAuto).GroupBy(item => item.WorkspaceKey.Id).ToDictionary(group => group.Key, group => group.Count());
         _initializingGroup = true;
         try
         {

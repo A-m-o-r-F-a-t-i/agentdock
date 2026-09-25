@@ -84,10 +84,12 @@ public partial class ExecutionWindow : Window
         catch (Exception ex) when (ex is HttpRequestException or IOException or JsonException or InvalidOperationException or UnauthorizedAccessException or ArgumentException)
         { if (!_closed) Warn(ex.Message); }
     }
-    private string _warningCode = "";
+    private string _warningCode = "", _warningOwner = "";
     private void Warn(string text, string code = "")
     {
+        if (string.IsNullOrWhiteSpace(text) && _warningOwner.StartsWith("sidebar:", StringComparison.Ordinal)) return;
         if (code.Length > 0 && _preferences.DismissedNotices.Contains(code)) return;
+        _warningOwner = "general";
         _warningCode = code;
         WarningText.Text = text; WarningPanel.Visibility = string.IsNullOrWhiteSpace(text) ? Visibility.Collapsed : Visibility.Visible;
     }
@@ -117,6 +119,12 @@ public partial class ExecutionWindow : Window
             if (latest is not null && (item.LastToolCallAt is null || latest > item.LastToolCallAt)) item.LastToolCallAt = latest;
             var changed = facts.Date("last_activity_at");
             if (changed is not null && (item.LastActivityAt is null || changed > item.LastActivityAt)) item.LastActivityAt = changed;
+            var interaction = facts.Date("last_interaction_at");
+            if (interaction is not null && (item.LastInteractionAt is null || interaction > item.LastInteractionAt))
+            {
+                item.LastInteractionAt = interaction;
+                item.InteractionExpiresAt = interaction + ConversationActivityPolicy.ActivityWindow;
+            }
             item.PendingCount = facts.Number("pending"); item.RunningCount = facts.Number("running");
 			item.InFlight = value.Field("in_flight").Flag(item.Id); item.RefreshActivity();
         }
@@ -365,7 +373,7 @@ public partial class ExecutionWindow : Window
             if (_ticks % 3 == 0) await GuardAsync(RefreshOverviewAsync);
 			if (_detailCall is { } row && CallDetailsTabs.Visibility == Visibility.Visible && (row.CanStop || !row.DetailLoaded || row.RequestPayload.NeedsLoad || row.ResponsePayload.NeedsLoad)) await GuardAsync(() => LoadCallDetailAsync(row));
             if (_ticks % 5 == 0 && _selectedTaskId.Length > 0 && TaskDetailsPanel.Visibility != Visibility.Visible) await GuardAsync(() => LoadTaskAsync(_selectedTaskId, "", false));
-			if (System.Diagnostics.Stopwatch.GetElapsedTime(_lastSidebarRefresh) >= TimeSpan.FromSeconds(_streamConnected ? 60 : 3) && ObjectsList.SelectedItems.Count <= 1 && _frozenSelection is null && _openMenus == 0 && _sidebarPaging.Count == 0 && !_sidebarLoading) await GuardAsync(() => LoadObjectsAsync());
+			if (System.Diagnostics.Stopwatch.GetElapsedTime(_lastSidebarRefresh) >= TimeSpan.FromSeconds(_streamConnected ? 60 : 3) && ObjectsList.SelectedItems.Count <= 1 && _frozenSelection is null && _openMenus == 0 && _sidebarPaging.Count == 0 && !_sidebarLoading && SidebarAutomaticRefreshAllowed()) await GuardAsync(() => LoadObjectsAsync());
             if (_ticks % 3 == 0) await GuardAsync(RefreshInsertionsAsync);
             UpdateStopButton();
         }
@@ -458,10 +466,20 @@ public partial class ExecutionWindow : Window
 		_following = false; UpdateFollowButton();
 		await TryLoadOlderCallsAsync();
 	}
-    private async void Refresh_Click(object sender, RoutedEventArgs e) => await GuardAsync(async () => { await LoadWorkspacesAsync(); await LoadObjectsAsync(); await LoadCallsAsync(false); await RefreshOverviewAsync(); });
+    private async void Refresh_Click(object sender, RoutedEventArgs e) => await GuardAsync(async () => { ResetSidebarRecoveryBudget(); await LoadWorkspacesAsync(); await LoadObjectsAsync(); await LoadCallsAsync(false); await RefreshOverviewAsync(); });
     private void CloseDetails_Click(object sender, RoutedEventArgs e) => CloseDetails();
     private void DismissWarning_Click(object sender, RoutedEventArgs e)
     {
+        if (_warningOwner.StartsWith("sidebar:", StringComparison.Ordinal))
+        {
+            var scope = _warningOwner["sidebar:".Length..];
+            if (_sidebarFailures.TryGetValue(scope, out var state)) state.Dismissed = true;
+            _visibleSidebarFailureScope = "";
+            _warningOwner = "";
+            WarningText.Text = "";
+            WarningPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
         var code = _warningCode;
         Warn("");
         if (code.Length > 0) { _preferences.DismissedNotices.Add(code); SavePreferences(); }
