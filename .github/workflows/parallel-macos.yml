@@ -1,0 +1,293 @@
+name: WB06 macOS Native Workbench Candidate
+
+on:
+  push:
+    branches:
+      - parallel/20260925/macos
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  WB06_LANE: 06-macos
+
+concurrency:
+  group: wb06-macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-tests:
+    name: Native Workbench tests · ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify immutable candidate source
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "short_sha=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+          test "$(uname -m)" = '${{ matrix.arch }}'
+      - name: Workbench model, stream, type and existing macOS regression tests
+        env:
+          RUN_EXISTING_MACOS_TESTS: '1'
+        run: zsh scripts/ci/parallel-macos/run-workbench-tests.sh
+      - name: Build native fixture renderer and capture light/dark evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk="$(xcrun --sdk macosx --show-sdk-path)"
+          mkdir -p "evidence/${{ matrix.arch }}"
+          xcrun swiftc \
+            -swift-version 5 \
+            -target '${{ matrix.arch }}-apple-macosx13.0' \
+            -sdk "$sdk" \
+            desktop/macos/AgentDockApp/Sources/*.swift \
+            -o "$RUNNER_TEMP/AgentDockWorkbench"
+          "$RUNNER_TEMP/AgentDockWorkbench" \
+            --render-workbench-screenshot="$PWD/evidence/${{ matrix.arch }}/workbench-light.png" \
+            --workbench-theme=light
+          "$RUNNER_TEMP/AgentDockWorkbench" \
+            --render-workbench-screenshot="$PWD/evidence/${{ matrix.arch }}/workbench-dark.png" \
+            --workbench-theme=dark
+          file "$RUNNER_TEMP/AgentDockWorkbench" | tee "evidence/${{ matrix.arch }}/binary-file.txt"
+          lipo -archs "$RUNNER_TEMP/AgentDockWorkbench" | tee "evidence/${{ matrix.arch }}/binary-architectures.txt"
+          uname -a > "evidence/${{ matrix.arch }}/runner-uname.txt"
+          sw_vers > "evidence/${{ matrix.arch }}/runner-sw-vers.txt"
+          xcodebuild -version > "evidence/${{ matrix.arch }}/runner-xcode.txt"
+          python3 - <<'PY'
+          import json, os, pathlib, platform, subprocess
+          arch = os.environ['MATRIX_ARCH']
+          out = pathlib.Path('evidence') / arch / 'native-evidence.json'
+          payload = {
+              'lane': '06-macos',
+              'source_sha': os.environ['GITHUB_SHA'],
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'runner_label': os.environ['MATRIX_RUNNER'],
+              'requested_architecture': arch,
+              'native_architecture': subprocess.check_output(['uname','-m'], text=True).strip(),
+              'machine': platform.machine(),
+              'tests': 'passed',
+              'screenshots': ['workbench-light.png','workbench-dark.png'],
+              'production_installation': 'not_performed',
+          }
+          if payload['native_architecture'] != arch:
+              raise SystemExit(f"runner architecture mismatch: {payload}")
+          out.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + '\n')
+          PY
+        env:
+          MATRIX_ARCH: ${{ matrix.arch }}
+          MATRIX_RUNNER: ${{ matrix.runner }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wb06-native-${{ matrix.arch }}-${{ steps.meta.outputs.short_sha }}-${{ github.run_id }}
+          path: evidence/${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 30
+
+  payload:
+    name: Native Core payload · darwin/${{ matrix.arch }}
+    needs: native-tests
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: amd64
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Build source-pinned native payload
+        id: meta
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "short_sha=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+          python3 packaging/build-unix-release.py \
+            --os darwin \
+            --arch "$TARGET_ARCH" \
+            --commit "$GITHUB_SHA" \
+            --output dist/payload
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wb06-payload-darwin-${{ matrix.arch }}-${{ steps.meta.outputs.short_sha }}-${{ github.run_id }}
+          path: dist/payload/*
+          if-no-files-found: error
+          retention-days: 30
+
+  candidate:
+    name: Universal macOS candidate · no publish
+    needs: [native-tests, payload]
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Resolve candidate identity
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "short_sha=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+          echo "version=$(go run ./tools/release version)" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wb06-payload-darwin-*-${{ steps.meta.outputs.short_sha }}-${{ github.run_id }}
+          path: payload
+          merge-multiple: true
+      - name: Verify official cloudflared inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          for architecture in amd64 arm64; do
+            archive="$RUNNER_TEMP/cloudflared-$architecture.tgz"
+            directory="$RUNNER_TEMP/cloudflared-$architecture"
+            curl -fL --retry 5 --retry-delay 2 \
+              "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-$architecture.tgz" \
+              -o "$archive"
+            mkdir -p "$directory"
+            tar -xzf "$archive" -C "$directory"
+            test -f "$directory/cloudflared" && test ! -L "$directory/cloudflared"
+            codesign --verify --deep --strict --verbose=2 "$directory/cloudflared"
+            install -m 0755 "$directory/cloudflared" "payload/cloudflared_darwin_$architecture"
+            (cd payload && shasum -a 256 "cloudflared_darwin_$architecture" > "cloudflared_darwin_$architecture.sha256")
+          done
+      - name: Build ad-hoc signed universal candidate
+        env:
+          AGENTDOCK_MACOS_ARCHES: arm64,x86_64
+          AGENTDOCK_MACOS_APP_OUTPUT_DIR: dist/macos-app
+          AGENTDOCK_MACOS_OFFLINE_PAYLOAD_DIR: ${{ github.workspace }}/payload
+          AGENTDOCK_CODESIGN_IDENTITY: '-'
+          AGENTDOCK_CODESIGN_TIMESTAMP: none
+        run: zsh packaging/macos/build-app.sh '${{ steps.meta.outputs.version }}'
+      - name: Verify universal source, architecture and bundle contracts
+        run: |
+          set -euo pipefail
+          python3 scripts/test/verify-macos-workbench.py \
+            dist/macos-app \
+            '${{ steps.meta.outputs.version }}' \
+            "$GITHUB_SHA"
+      - name: Capture screenshots from packaged universal application
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/evidence
+          binary='dist/macos-app/AgentDock.app/Contents/MacOS/AgentDock'
+          "$binary" \
+            --render-workbench-screenshot="$PWD/dist/evidence/workbench-packaged-light.png" \
+            --workbench-theme=light
+          "$binary" \
+            --render-workbench-screenshot="$PWD/dist/evidence/workbench-packaged-dark.png" \
+            --workbench-theme=dark
+      - name: Record architecture, signature and notarization truth
+        shell: bash
+        env:
+          CANDIDATE_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/evidence
+          app='dist/macos-app/AgentDock.app'
+          {
+            echo "source_sha=$GITHUB_SHA"
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "runner_arch=$(uname -m)"
+            echo "app_architectures=$(lipo -archs "$app/Contents/MacOS/AgentDock")"
+            echo "core_architectures=$(lipo -archs "$app/Contents/Helpers/agentdock")"
+            echo "signature=ad-hoc"
+            echo "notarization=not_run_no_developer_identity"
+            codesign -d --verbose=4 "$app" 2>&1
+          } | tee dist/evidence/architecture-signature.txt
+          codesign --verify --deep --strict --verbose=2 "$app"
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          app = pathlib.Path('dist/macos-app/AgentDock.app')
+          def arch(path):
+              return sorted(subprocess.check_output(['lipo','-archs',str(path)], text=True).split())
+          report = {
+              'lane': '06-macos',
+              'source_sha': os.environ['GITHUB_SHA'],
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'version': os.environ['CANDIDATE_VERSION'],
+              'candidate_only': True,
+              'published': False,
+              'production_installed': False,
+              'app_architectures': arch(app/'Contents/MacOS/AgentDock'),
+              'core_architectures': arch(app/'Contents/Helpers/agentdock'),
+              'codesign': 'ad-hoc_verified',
+              'notarization': 'not_run_no_developer_identity',
+              'native_runner_evidence_jobs': ['arm64','x86_64'],
+              'screenshots': ['workbench-packaged-light.png','workbench-packaged-dark.png'],
+          }
+          if report['app_architectures'] != ['arm64','x86_64']:
+              raise SystemExit(report)
+          pathlib.Path('dist/evidence/candidate-evidence.json').write_text(
+              json.dumps(report, ensure_ascii=False, indent=2) + '\n'
+          )
+          PY
+      - name: Assemble branch/SHA/run-scoped candidate artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          short='${{ steps.meta.outputs.short_sha }}'
+          prefix="wb06-macos-parallel-${short}-${GITHUB_RUN_ID}"
+          mkdir -p dist/candidate
+          cp dist/macos-app/AgentDock-macos-universal.dmg "dist/candidate/${prefix}.dmg"
+          cp dist/macos-app/AgentDock-macos-universal.zip "dist/candidate/${prefix}.zip"
+          (cd dist/candidate && shasum -a 256 "${prefix}.dmg" > "${prefix}.dmg.sha256")
+          (cd dist/candidate && shasum -a 256 "${prefix}.zip" > "${prefix}.zip.sha256")
+          cp dist/macos-app/verification-macos-app.json dist/candidate/
+          cp dist/evidence/* dist/candidate/
+          cat > dist/candidate/README.txt <<EOF
+          WB06 macOS native Workbench candidate
+          Branch: $GITHUB_REF_NAME
+          Source: $GITHUB_SHA
+          Actions run: $GITHUB_RUN_ID
+          Signing: ad-hoc
+          Notarization: not run (no Developer ID identity supplied)
+          Production installation: not performed
+          Publication: not performed
+          EOF
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wb06-macos-candidate-${{ steps.meta.outputs.short_sha }}-${{ github.run_id }}
+          path: dist/candidate/*
+          if-no-files-found: error
+          retention-days: 30
