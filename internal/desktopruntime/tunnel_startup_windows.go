@@ -14,7 +14,7 @@ func platformSetTunnelAutostart(_ context.Context, runtimeRoot string, enabled b
 		return err
 	}
 	name := defaultString(runtime.manifest.CloudflaredStartupValueName, "AgentDockCloudflared")
-	if !enabled {
+	if runtime.manifest.UsesScheduledTask() || !enabled {
 		return removeRunValue(name)
 	}
 	if runtime.mode == "funnel" {
@@ -28,6 +28,10 @@ func platformSetTunnelAutostart(_ context.Context, runtimeRoot string, enabled b
 }
 
 func tunnelAutostartEnabled(manifest Manifest) (bool, error) {
+	if manifest.UsesScheduledTask() {
+		state, err := nativeRuntimeTaskAction(context.Background(), manifest.InstallRoot, manifest, "status")
+		return state.Enabled, err
+	}
 	return runValuePresent(defaultString(manifest.CloudflaredStartupValueName, "AgentDockCloudflared"))
 }
 

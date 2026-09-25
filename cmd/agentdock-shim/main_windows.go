@@ -25,7 +25,7 @@ import (
 
 const (
 	setupRuntimeHostFlag = "--setup-runtime-host"
-	taskCoreHostFlag     = "--task-core-host"
+	taskCoreHostFlag     = "--run-core-task"
 )
 
 func main() {

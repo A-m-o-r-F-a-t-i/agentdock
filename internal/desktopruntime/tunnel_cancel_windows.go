@@ -49,9 +49,17 @@ func tunnelActionContext(parent context.Context, root string, stop bool) (contex
 	if err != nil {
 		return nil, nil, err
 	}
-	event, createErr := windows.CreateEvent(nil, 1, 0, name)
+	attributes, sid, err := runtimeCoordinationAttributes()
+	if err != nil {
+		return nil, nil, err
+	}
+	event, createErr := windows.CreateEvent(attributes, 1, 0, name)
 	if event == 0 {
 		return nil, nil, fmt.Errorf("create tunnel operation event: %w", createErr)
+	}
+	if err := validateRuntimeCoordinationObject(event, sid); err != nil {
+		windows.CloseHandle(event)
+		return nil, nil, err
 	}
 	closeEvent := func() { _ = windows.CloseHandle(event) }
 	if stop {
@@ -75,9 +83,17 @@ func acquireTunnelOperation(ctx context.Context, root string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	mutex, createErr := windows.CreateMutex(nil, false, name)
+	attributes, sid, err := runtimeCoordinationAttributes()
+	if err != nil {
+		return nil, err
+	}
+	mutex, createErr := windows.CreateMutex(attributes, false, name)
 	if mutex == 0 {
 		return nil, fmt.Errorf("create tunnel operation mutex: %w", createErr)
+	}
+	if err := validateRuntimeCoordinationObject(mutex, sid); err != nil {
+		windows.CloseHandle(mutex)
+		return nil, err
 	}
 	for {
 		if err := ctx.Err(); err != nil {

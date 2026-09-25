@@ -154,9 +154,6 @@ func platformPrepareCoreEnvironment(runtimeRoot string) error {
 		if err != nil {
 			return err
 		}
-		if err := writeRuntimeText(filepath.Join(root, "server-url.txt"), serverURL); err != nil {
-			return err
-		}
 		oauthPassword, passwordErr := readOrCreateProtectedText(filepath.Join(root, "oauth-password.dpapi"), "agentdock.oauth.password.v1", 12, "OAuth 密码")
 		if passwordErr != nil {
 			return passwordErr

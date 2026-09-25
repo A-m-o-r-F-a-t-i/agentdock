@@ -57,11 +57,22 @@ func RunTunnelCommand(ctx context.Context, args []string, stdout, stderr io.Writ
 
 	switch args[0] {
 	case "launch":
-		runtimeRoot, err := parseLaunchRuntimeRoot("agentdock tunnel launch", args[1:], stderr)
+		flags := flag.NewFlagSet("agentdock tunnel launch", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		root := flags.String("runtime-root", DefaultRuntimeRoot(), "AgentDock runtime root")
+		hosted := flags.Bool("host-controlled", false, "internal inherited host channel")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || strings.TrimSpace(*root) == "" {
+			return tunnelCommandUsageError()
+		}
+		hostedCtx, closeHost, err := prepareTunnelHostContext(ctx, *root, *hosted)
 		if err != nil {
 			return err
 		}
-		return platformLaunchTunnel(ctx, runtimeRoot)
+		defer closeHost()
+		return platformLaunchTunnel(hostedCtx, *root)
 	case "status":
 		flags := flag.NewFlagSet("agentdock tunnel status", flag.ContinueOnError)
 		flags.SetOutput(stderr)

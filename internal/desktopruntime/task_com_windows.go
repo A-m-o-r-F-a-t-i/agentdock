@@ -351,11 +351,12 @@ func variantDispatch(value variant) *iDispatch {
 }
 
 func variantString(value variant) string {
-	if value.VT != vtBstr || value.Val == 0 {
+	if value.VT != vtBstr {
 		return fmt.Sprint(variantInt(value))
 	}
 	bstr := *(**uint16)(unsafe.Pointer(&value.Val))
 	if bstr == nil {
+		// A null BSTR is an empty string, including an unset task WorkingDirectory.
 		return ""
 	}
 	text := windows.UTF16PtrToString(bstr)

@@ -10,12 +10,10 @@ import (
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
-	processctl "github.com/uvwt/agentdock/internal/process"
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
@@ -54,6 +52,9 @@ func runTaskCoreHost(args []string) (int, error) {
 		return 1, fmt.Errorf("task core host runtime root %s does not match stable entry root %s", runtimeRoot, stableRoot)
 	}
 
+	if _, _, err := desktopruntime.ValidateManagedRuntimeTask(context.Background(), runtimeRoot); err != nil {
+		return 1, err
+	}
 	store, err := updateengine.NewStore(runtimeRoot)
 	if err != nil {
 		return 1, err
@@ -80,35 +81,8 @@ func runTaskCoreHost(args []string) (int, error) {
 	if compatibilityErr != nil {
 		return 1, compatibilityErr
 	}
-	command := exec.Command(coreBinary, "service", "launch-core", "--runtime-root", runtimeRoot)
-	command.Dir = runtimeRoot
-	processctl.Configure(command)
-	nullFile, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
-	if err != nil {
-		return 1, fmt.Errorf("open null device for task core host: %w", err)
-	}
-	defer nullFile.Close()
-	command.Stdin = nullFile
-	command.Stdout = nullFile
-	command.Stderr = nullFile
-
-	if err := command.Start(); err != nil {
-		return 1, fmt.Errorf("start active AgentDock Core from task host: %w", err)
-	}
-	controller, err := processctl.Attach(command)
-	if err != nil {
-		_ = command.Process.Kill()
-		_ = command.Wait()
-		return 1, fmt.Errorf("attach AgentDock Core to task host Job Object: %w", err)
-	}
-	defer controller.Close()
-
-	if err := command.Wait(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return exitErr.ExitCode(), nil
-		}
-		return 1, fmt.Errorf("wait for AgentDock Core task process: %w", err)
+	if err := desktopruntime.RunTaskRuntime(context.Background(), runtimeRoot, coreBinary, active.ActiveVersion); err != nil {
+		return 1, err
 	}
 	return 0, nil
 }
