@@ -178,12 +178,14 @@ jobs:
         run: |
           set -euo pipefail
           version_code=$((101070000 + GITHUB_RUN_NUMBER))
+          mkdir -p evidence/build
           gradle -p mobile/android --no-daemon --stacktrace --warning-mode all \
             lintDebug testDebugUnitTest assembleDebug assembleRelease assembleDebugAndroidTest \
             -PagentdockAndroidVersionCode="$version_code" \
             -PagentdockCandidateSha="$GITHUB_SHA" \
             -PagentdockCandidateRunId="$GITHUB_RUN_ID" \
-            -PagentdockCandidateRunAttempt="$GITHUB_RUN_ATTEMPT"
+            -PagentdockCandidateRunAttempt="$GITHUB_RUN_ATTEMPT" \
+            2>&1 | tee evidence/build/gradle.log
 
       - name: Stage test-signed candidate evidence
         shell: bash
