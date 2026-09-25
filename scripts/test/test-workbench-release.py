@@ -27,7 +27,7 @@ class ReleaseGate(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root=Path(self.temp.name); self.inputs=self.root/'input'; self.inputs.mkdir()
-        self.dist=self.root/'dist';self.version='1.1.7';self.commit='a'*40
+        self.dist=self.root/'dist';self.version=getattr(self,'target_version','1.1.7');self.commit='a'*40
         (self.inputs/'windows').mkdir()
         self.payloads=release.expected_payloads(self.version)
         for name in self.payloads:
@@ -74,6 +74,28 @@ class ReleaseGate(unittest.TestCase):
     def test_unexpected_staged_file(self):
         self.dist.mkdir();(self.dist/'foreign.exe').write_text('not in release')
         with self.assertRaisesRegex(RuntimeError,'unexpected artifacts'):self.assemble()
+
+class EnhancedReleaseGate(ReleaseGate):
+    target_version='1.1.8'
+    def setUp(self):
+        super().setUp()
+        for arch in ['amd64','arm64']:
+            self.reports[f'verification-linux-{arch}.json']['package_installation']={'deb':'native_installed_verified_removed','rpm':'isolated_root_installed_verified_removed'}
+            self.reports[f'acceptance-source-{arch}.json']={'version':self.version,'commit':self.commit,'platform':f'windows/{arch}','native_privilege':'passed','native_backup':'passed','keyboard':'passed' if arch=='amd64' else 'tested_on_x64'}
+        self.reports['verification-native-windows-arm64.json']={'version':self.version,'commit':self.commit,'platform':'windows/arm64','native_execution':'passed','native_installation':'passed'}
+        self.flush()
+    def test_missing_linux_installation_cannot_publish(self):
+        self.reports['verification-linux-arm64.json']['package_installation']='not_run';self.flush()
+        with self.assertRaisesRegex(RuntimeError,'Linux package installation'):self.assemble()
+    def test_missing_native_recovery_cannot_publish(self):
+        self.reports['acceptance-source-amd64.json']['native_privilege']='not_run';self.flush()
+        with self.assertRaisesRegex(RuntimeError,'recovery/metadata/keyboard'):self.assemble()
+    def test_failed_arm_installation_cannot_publish(self):
+        self.reports['verification-native-windows-arm64.json']['native_installation']='failed';self.flush()
+        with self.assertRaisesRegex(RuntimeError,'ARM64 installation'):self.assemble()
+    def test_native_evidence_cannot_mix_source_generations(self):
+        self.reports['acceptance-source-arm64.json']['commit']='b'*40;self.flush()
+        with self.assertRaisesRegex(RuntimeError,'different source'):self.assemble()
 
 class PublicationGate(unittest.TestCase):
     def setUp(self):

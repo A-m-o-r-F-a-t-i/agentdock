@@ -6,6 +6,11 @@
 review_threshold_lines: 300
 
 scripts:
+  - path: scripts/test/test-linux-native-packages.py
+    class: test
+    owner: release
+    public_contract: false
+    notes: 显式启用的隔离Linux runner中运行DEB原生安装卸载和独立根RPM事务，校验同SHA原生Core及许可证，不启动服务。
   - path: scripts/test/test-workbench-release.py
     class: test
     owner: release

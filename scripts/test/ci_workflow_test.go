@@ -155,7 +155,7 @@ func TestWindowsPackageReusableAndSingleAutomaticReleaseOwner(t *testing.T) {
 		t.Fatal("Windows-only workflow must not race all-platform publication")
 	}
 	unified := readWorkflow(t, "workbench-release.yml")
-	for _, required := range []string{"push:\n    tags:", "windows-package.yml", "needs: [resolve-source, windows, unix, macos-app]", "publish-workbench.py"} {
+	for _, required := range []string{"push:\n    tags:", "windows-package.yml", "needs: [resolve-source, windows, windows-arm-package, unix, macos-app]", "publish-workbench.py"} {
 		if !strings.Contains(unified, required) {
 			t.Fatalf("all-platform release gate missing %q", required)
 		}

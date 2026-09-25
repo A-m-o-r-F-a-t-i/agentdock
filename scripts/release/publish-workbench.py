@@ -61,12 +61,17 @@ def assemble(inputs: Path,dist: Path,version: str,commit: str) -> dict:
     if run('git','status','--porcelain','--untracked-files=no'):
         raise RuntimeError('Verified build tracked sources were modified')
     reports=[]
+    enhanced_acceptance=tuple(map(int,version.split('.'))) >= (1,1,8)
     for platform in ['linux','darwin']:
         for arch in ['amd64','arm64']:
             report=read_report(inputs,f'verification-{platform}-{arch}.json')
             identity(report,version,commit)
             if report.get('platform')!=f'{platform}/{arch}' or report.get('native_execution')!='passed' or report.get('product_name')!=PRODUCT:
                 raise RuntimeError('Missing native Unix execution/branding evidence')
+            if enhanced_acceptance and platform=='linux':
+                installed=report.get('package_installation',{})
+                if not isinstance(installed,dict) or installed.get('deb')!='native_installed_verified_removed' or installed.get('rpm')!='isolated_root_installed_verified_removed':
+                    raise RuntimeError('Missing native Linux package installation/removal evidence')
             reports.append(report)
     mac=read_report(inputs,'verification-macos-app.json');identity(mac,version,commit)
     if mac.get('bundle_verification')!='passed' or mac.get('embedded_core')!='passed' or set(mac.get('architectures',[]))!={'amd64','arm64'}:
@@ -87,6 +92,16 @@ def assemble(inputs: Path,dist: Path,version: str,commit: str) -> dict:
         if item['platform']=='windows/amd64' and item.get('native_execution') is not True:
             raise RuntimeError('Windows x64 packaged execution was not verified')
     reports.extend(verified)
+    if enhanced_acceptance:
+        for arch in ['amd64','arm64']:
+            native=read_report(inputs,f'acceptance-source-{arch}.json');identity(native,version,commit)
+            if native.get('platform')!=f'windows/{arch}' or native.get('native_privilege')!='passed' or native.get('native_backup')!='passed' or arch=='amd64' and native.get('keyboard')!='passed':
+                raise RuntimeError('Native Windows recovery/metadata/keyboard acceptance incomplete')
+            reports.append(dict(native,assets={}))
+        arm_native=read_report(inputs,'verification-native-windows-arm64.json');identity(arm_native,version,commit)
+        if arm_native.get('platform')!='windows/arm64' or arm_native.get('native_installation')!='passed' or arm_native.get('native_execution')!='passed':
+            raise RuntimeError('Native Windows ARM64 installation evidence incomplete')
+        reports.append(dict(arm_native,assets={}))
     scope=read_report(inputs/'windows','verification-scope.json');identity(scope,version,commit)
     if scope.get('resolved_commit')!=commit or scope.get('linux_tested_commit')!=commit:
         raise RuntimeError('Windows workflow lost its immutable validation source')

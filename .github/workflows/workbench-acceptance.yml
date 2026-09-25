@@ -56,17 +56,20 @@ jobs:
           go test -p 1 ./internal/installer ./internal/activity ./internal/fs/... -count=1 -timeout=8m -json > dist/native-validation/go-native.jsonl
           if ($LASTEXITCODE -ne 0) { Get-Content dist/native-validation/go-native.jsonl -Tail 100; throw 'Native Go recovery tests failed' }
       - name: Actual scheduled task and native process recovery
+        if: ${{ !cancelled() }}
         run: |
           dotnet run --project desktop/windows/control-panel-native-tests/AgentDock.ControlPanel.NativeTests.csproj -c Release -r ${{ matrix.rid }} -- dist/native-validation
           if ($LASTEXITCODE -ne 0) { throw 'Native task/privilege recovery failed' }
       - name: WPF input and all existing layout contracts
-        if: matrix.arch == 'amd64'
+        if: ${{ !cancelled() && matrix.arch == 'amd64' }}
         run: |
           dotnet run --project desktop/windows/control-panel-layout-tests/AgentDock.ControlPanel.LayoutTests.csproj -c Release -- $PWD (Join-Path $PWD 'dist/layout-validation')
           if ($LASTEXITCODE -ne 0) { throw 'Actual WPF input validation failed' }
       - name: Record source and completed native evidence
         run: |
-          @{commit=$env:EXPECTED_COMMIT;platform='windows/${{ matrix.arch }}';native_privilege='passed';native_backup='passed';keyboard=$(if('${{ matrix.arch }}'-eq'amd64'){'passed'}else{'tested_on_x64'});production_touched=$false} | ConvertTo-Json | Set-Content dist/native-validation/acceptance-source.json
+          $version=go run ./tools/release version
+          if ($LASTEXITCODE -ne 0) { throw 'Native evidence version unresolved' }
+          @{version=$version;commit=$env:EXPECTED_COMMIT;platform='windows/${{ matrix.arch }}';native_privilege='passed';native_backup='passed';keyboard=$(if('${{ matrix.arch }}'-eq'amd64'){'passed'}else{'tested_on_x64'});production_touched=$false} | ConvertTo-Json | Set-Content dist/native-validation/acceptance-source-${{ matrix.arch }}.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:

@@ -147,7 +147,7 @@ func copyBackupTree(ctx context.Context, source, destination string) (string, er
 	for _, change := range nativeChanges {
 		actual, err := readBackupNativeMetadata(change.path)
 		if err != nil || !equalBackupNativeMetadata(actual, change.metadata) {
-			return "", fmt.Errorf("native backup metadata was not preserved: %s: %w", change.path, errors.Join(err, errors.New("metadata mismatch")))
+			return "", fmt.Errorf("native backup metadata was not preserved: %s: %w", change.path, errors.Join(err, errors.New(backupNativeMetadataDifference(actual, change.metadata))))
 		}
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil

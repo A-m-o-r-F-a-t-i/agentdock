@@ -68,6 +68,47 @@ jobs:
       publish: false
       installation_tests: ${{ inputs.installation_tests || false }}
 
+  windows-arm-package:
+    needs: [resolve-source, windows]
+    name: Native Windows ARM64 install and uninstall
+    runs-on: windows-11-arm
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.resolve-source.outputs.commit }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.windows.outputs.artifact_name }}
+          path: dist/windows-package
+      - name: Native ARM64 packaged runtime validation
+        run: |
+          $ErrorActionPreference='Stop'
+          if ((go env GOARCH) -ne 'arm64') { throw 'ARM64 native runner required' }
+          & ./scripts/test/verify-windows-release-assets.ps1 -ReleaseDirectory dist/windows-package/release -BuildReport dist/windows-package/build-report.json -ExpectedVersion '${{ needs.resolve-source.outputs.version }}' -ExpectedCommit '${{ needs.resolve-source.outputs.commit }}' -ExpectedChannel release -ExpectedAuthenticode unsigned -Architecture arm64 -Architectures amd64,arm64
+          if ($LASTEXITCODE -ne 0) { throw 'Native ARM64 payload verification failed' }
+      - name: Isolated ARM64 install repair and uninstall
+        run: |
+          $ErrorActionPreference='Stop'
+          $fixture=Join-Path $env:RUNNER_TEMP 'arm64-package-fixture'
+          Expand-Archive dist/windows-package/release/agentdock_windows_arm64.zip -DestinationPath $fixture
+          & ./scripts/test/test-windows-setup-e2e.ps1 -SetupPath dist/windows-package/release/AgentDockSetup-arm64.exe -LegacyCorePath (Join-Path $fixture 'agentdock.exe') -LegacyTrayPath (Join-Path $fixture 'agentdock-tray.exe') -AllowLegacyTaskMutation
+          if ($LASTEXITCODE -ne 0) { throw 'Native ARM64 install/repair/uninstall failed' }
+          @{version='${{ needs.resolve-source.outputs.version }}';commit='${{ needs.resolve-source.outputs.commit }}';platform='windows/arm64';native_execution='passed';native_installation='passed';scope='isolated runner install, repair, health, uninstall'} | ConvertTo-Json | Set-Content dist/verification-native-windows-arm64.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workbench-windows-arm-native-${{ github.run_id }}
+          path: dist/verification-native-windows-arm64.json
+          if-no-files-found: error
+          retention-days: 30
+
   unix:
     needs: resolve-source
     name: Native ${{ matrix.platform }} ${{ matrix.arch }}
@@ -121,6 +162,14 @@ jobs:
         run: |
           set -euo pipefail
           python3 packaging/build-unix-release.py --os "$TARGET_OS" --arch "$TARGET_ARCH" --commit "$EXPECTED_COMMIT" --output dist/unix
+      - name: Native Linux package manager installation and removal
+        if: matrix.platform == 'linux'
+        env:
+          AGENTDOCK_NATIVE_ACCEPTANCE: '1'
+          EXPECTED_COMMIT: ${{ needs.resolve-source.outputs.commit }}
+          EXPECTED_VERSION: ${{ needs.resolve-source.outputs.version }}
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: python3 scripts/test/test-linux-native-packages.py --directory dist/unix --version "$EXPECTED_VERSION" --commit "$EXPECTED_COMMIT" --arch "$TARGET_ARCH"
       - uses: actions/upload-artifact@v7
         with:
           name: workbench-${{ matrix.platform }}-${{ matrix.arch }}-${{ github.run_id }}
@@ -190,7 +239,7 @@ jobs:
           retention-days: 30
 
   publish:
-    needs: [resolve-source, windows, unix, macos-app]
+    needs: [resolve-source, windows, windows-arm-package, unix, macos-app]
     name: Verify complete artifact set and publish Latest
     runs-on: ubuntu-24.04
     timeout-minutes: 25
