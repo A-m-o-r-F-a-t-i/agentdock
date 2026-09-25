@@ -230,6 +230,14 @@ public sealed partial class RuntimeService : IDisposable
 
     public async Task RunActionAsync(string action, CancellationToken cancellationToken = default)
     {
+        var manifest = await ReadRuntimeManifestAsync(cancellationToken);
+        if (manifest?.PrivilegeMode == "elevated")
+        {
+            await RunCoreActionAsync(action, cancellationToken);
+            if (manifest.PublicAccessProvider == "tailscale") await RunTunnelActionAsync(action, cancellationToken);
+            return;
+        }
+
         switch (action)
         {
             case "start":
@@ -520,6 +528,7 @@ public sealed partial class RuntimeService : IDisposable
         var snapshot = await GetSnapshotAsync(cancellationToken);
         var backupDirectory = Path.Combine(Path.GetTempPath(), $"agentdock-privilege-{Guid.NewGuid():N}");
         var taskTransitionPrepared = false;
+        var preserveRecovery = false;
         Directory.CreateDirectory(backupDirectory);
 
         try
@@ -563,23 +572,25 @@ public sealed partial class RuntimeService : IDisposable
         }
         catch (Exception transitionError)
         {
-            if (!taskTransitionPrepared)
+            if (!taskTransitionPrepared && !File.Exists(Path.Combine(backupDirectory, "state.json")))
             {
                 throw;
             }
 
             try
             {
-                await RunTaskAdminTransitionAsync("restore", manifest, backupDirectory, cancellationToken);
-                await WritePrivilegeModeAsync(wasElevated, cancellationToken);
+                using var recovery = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+                await RunTaskAdminTransitionAsync("restore", manifest, backupDirectory, recovery.Token);
+                await WritePrivilegeModeAsync(wasElevated, recovery.Token);
                 SetStandardCoreStartup(manifest, !wasElevated && snapshot.CoreStartupEnabled);
-                if (!wasElevated && snapshot.CoreRunning)
+                if (snapshot.CoreRunning)
                 {
-                    await RunCoreActionAsync("start", cancellationToken);
+                    await RunCoreActionAsync("start", recovery.Token);
                 }
             }
             catch (Exception rollbackError)
             {
+                preserveRecovery = true;
                 throw new AggregateException(UiText.Get("PrivilegeSwitchRollbackFailed"), transitionError, rollbackError);
             }
             throw;
@@ -588,7 +599,7 @@ public sealed partial class RuntimeService : IDisposable
         {
             try
             {
-                Directory.Delete(backupDirectory, recursive: true);
+                if (!preserveRecovery) Directory.Delete(backupDirectory, recursive: true);
             }
             catch
             {
@@ -936,54 +947,11 @@ public sealed partial class RuntimeService : IDisposable
         key.SetValue(valueName, command, RegistryValueKind.String);
     }
 
-    internal async Task<int> RunElevatedCoreTaskAsync(CancellationToken cancellationToken = default)
-    {
-        var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
-        var binaryPath = ResolveCoreBinaryPath(manifest);
-        if (!File.Exists(binaryPath))
-        {
-            throw new FileNotFoundException(UiText.Format("CoreBinaryMissing", binaryPath), binaryPath);
-        }
-
-        var workingDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AgentDock");
-        Directory.CreateDirectory(workingDirectory);
-
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = binaryPath,
-            WorkingDirectory = workingDirectory,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden
-        };
-        startInfo.ArgumentList.Add("service");
-        startInfo.ArgumentList.Add("launch-core");
-        startInfo.ArgumentList.Add("--runtime-root");
-        startInfo.ArgumentList.Add(RuntimeRoot);
-
-        // Highest 计划任务运行 WinExe 托管进程，再由它无控制台启动核心并持续等待。
-        // Core 加入 KILL_ON_JOB_CLOSE Job Object，确保 Task Scheduler 强制结束 host 时不会留下孤儿进程。
-        using var job = KillOnCloseJob.Create();
-        using var process = Process.Start(startInfo) ?? throw new InvalidOperationException(UiText.Get("CoreStartFailed"));
-        try
-        {
-            job.Assign(process);
-        }
-        catch
-        {
-            process.Kill(entireProcessTree: true);
-            throw;
-        }
-        // Core 自己持有受限轮转日志；宿主只负责生命周期，避免第二个追加句柄绕过大小上限。
-        await process.WaitForExitAsync(cancellationToken);
-        return process.ExitCode;
-    }
-
     internal Task RunCoreStartupAsync(CancellationToken cancellationToken = default) =>
-        RunNativeAgentDockAsync("service", ["start"], cancellationToken, allowElevation: false);
+        RunNativeAgentDockAsync("service", ["start"], cancellationToken);
 
     internal Task RunTunnelStartupAsync(CancellationToken cancellationToken = default) =>
-        RunNativeAgentDockAsync("tunnel", ["start"], cancellationToken, allowElevation: false);
+        RunNativeAgentDockAsync("tunnel", ["start"], cancellationToken);
 
     internal Task RunCoreActionAsync(string action, CancellationToken cancellationToken = default)
     {
@@ -1008,8 +976,7 @@ public sealed partial class RuntimeService : IDisposable
     private async Task RunNativeAgentDockAsync(
         string command,
         IReadOnlyCollection<string> arguments,
-        CancellationToken cancellationToken,
-        bool allowElevation = true)
+        CancellationToken cancellationToken)
     {
         var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
         var binaryPath = await ResolveCoreBinaryAsync(cancellationToken);
@@ -1023,20 +990,7 @@ public sealed partial class RuntimeService : IDisposable
             startInfo.ArgumentList.Add(argument);
         }
 
-        try
-        {
-            _ = await RunProcessAsync(startInfo, cancellationToken);
-        }
-        catch (InvalidOperationException) when (
-            allowElevation &&
-            manifest.PublicAccessProvider != "tailscale" &&
-            !arguments.Contains("tailscale") &&
-            string.Equals(manifest.PrivilegeMode, "elevated", StringComparison.OrdinalIgnoreCase))
-        {
-            // 最高权限计划任务启动的核心进程不能保证允许普通托盘终止。
-            // 原生命令真正失败时才请求 UAC；命令设计为幂等，可安全重试已完成的前置状态变更。
-            await RunElevatedProcessAsync(binaryPath, commandArguments, cancellationToken);
-        }
+        _ = await RunProcessAsync(startInfo, cancellationToken);
     }
 
     private static async Task RunElevatedProcessAsync(

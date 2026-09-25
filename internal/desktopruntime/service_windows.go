@@ -23,6 +23,9 @@ func platformServiceStatus(ctx context.Context, runtimeRoot string) (ServiceStat
 	if err != nil {
 		return ServiceStatus{}, err
 	}
+	if manifest.UsesScheduledTask() {
+		return runtimeHostServiceStatus(ctx, runtimeRoot, manifest)
+	}
 	coreBinary := ActiveCoreBinary(runtimeRoot, manifest)
 	running, err := processRunningAtPath(coreBinary)
 	if err != nil {
@@ -40,6 +43,10 @@ func platformServiceAction(ctx context.Context, runtimeRoot, action string) erro
 	manifest, root, err := loadDesktopManifest(runtimeRoot)
 	if err != nil {
 		return err
+	}
+
+	if manifest.UsesScheduledTask() {
+		return elevatedRuntimeAction(ctx, root, manifest, action)
 	}
 
 	switch action {
@@ -70,6 +77,9 @@ func loadDesktopManifest(runtimeRoot string) (Manifest, string, error) {
 }
 
 func startCore(ctx context.Context, manifest Manifest, runtimeRoot string) error {
+	if manifest.UsesScheduledTask() {
+		return elevatedRuntimeActionLocked(ctx, runtimeRoot, manifest, "start")
+	}
 	if err := CheckExecutionCompatibility(ctx, runtimeRoot, ActiveCoreBinary(runtimeRoot, manifest)); err != nil {
 		return err
 	}
@@ -88,6 +98,9 @@ func startCore(ctx context.Context, manifest Manifest, runtimeRoot string) error
 }
 
 func stopCore(ctx context.Context, manifest Manifest, runtimeRoot string) error {
+	if manifest.UsesScheduledTask() {
+		return elevatedRuntimeActionLocked(ctx, runtimeRoot, manifest, "stop")
+	}
 	coreBinary := ActiveCoreBinary(runtimeRoot, manifest)
 	excluded := map[uint32]struct{}{}
 	ancestorPIDs, err := ancestorProcessIDsAtPath(coreBinary)

@@ -48,19 +48,9 @@ public partial class App : System.Windows.Application
             Environment.Exit(TaskAdminService.Run(e.Args));
             return;
         }
-        if (e.Args.Any(argument => string.Equals(argument, "--run-core-task", StringComparison.OrdinalIgnoreCase)))
-        {
-            ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            if (TryGetStartupRuntimeRoot(e.Args, "--run-core-task", out var taskRuntimeRoot))
-            {
-                _ = RunCoreTaskAndExitAsync(taskRuntimeRoot);
-            }
-            else
-            {
-                Environment.Exit(2);
-            }
-            return;
-        }
+        // Task Scheduler's --run-core-task action is owned by the stable native shim.
+        // A direct generation WPF launch must never create a competing runtime host.
+        if (e.Args.Contains("--run-core-task", StringComparer.OrdinalIgnoreCase)) { Environment.Exit(2); return; }
         if (TryGetStartupRuntimeRoot(e.Args, "--start-core", out var coreRuntimeRoot))
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -126,24 +116,6 @@ public partial class App : System.Windows.Application
             }
         }
         return !string.IsNullOrWhiteSpace(runtimeRoot);
-    }
-
-    private async Task RunCoreTaskAndExitAsync(string runtimeRoot)
-    {
-        var exitCode = 1;
-        try
-        {
-            using var runtime = new RuntimeService(runtimeRoot);
-            exitCode = await runtime.RunElevatedCoreTaskAsync();
-        }
-        catch (Exception ex)
-        {
-            RecordBackgroundStartupFailure(runtimeRoot, "elevated-core", ex);
-        }
-        finally
-        {
-            Environment.Exit(exitCode);
-        }
     }
 
     private async Task StartRuntimeComponentAndExitAsync(string runtimeRoot, string component)

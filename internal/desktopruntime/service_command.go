@@ -84,6 +84,16 @@ func RunServiceCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 			return err
 		}
 		return json.NewEncoder(stdout).Encode(serviceCommandResult{Action: "autostart", Completed: true})
+	case "task-validate":
+		root, err := parseRuntimeRoot("agentdock service task-validate", args[1:], stderr)
+		if err != nil {
+			return err
+		}
+		enabled, running, err := ValidateManagedRuntimeTask(ctx, root)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(stdout).Encode(map[string]any{"validated": true, "enabled": enabled, "running": running})
 	case "task-start":
 		flags := flag.NewFlagSet("agentdock service task-start", flag.ContinueOnError)
 		flags.SetOutput(stderr)

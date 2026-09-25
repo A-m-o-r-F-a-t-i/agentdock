@@ -120,6 +120,11 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 			}
 		}
 	}
+	if runtime.manifest.UsesScheduledTask() {
+		if _, err := nativeRuntimeTaskAction(ctx, runtime.root, runtime.manifest, "validate"); err != nil {
+			return err
+		}
+	}
 	settingsPath := filepath.Join(runtime.root, "control-panel-settings.json")
 	tailscaleEnabled, tailscaleCoreRunning := true, true
 	if runtime.mode == "funnel" {
@@ -154,8 +159,10 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		snapshots = append(snapshots, snapshot)
 	}
 
-	if err := stopTunnel(ctx, runtime); err != nil {
-		return err
+	if !runtime.manifest.UsesScheduledTask() {
+		if err := stopTunnel(ctx, runtime); err != nil {
+			return err
+		}
 	}
 	rollback := func(cause error) error {
 		recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Minute)
@@ -166,8 +173,8 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		restoreErr := restoreSnapshots(snapshots)
 		oldRuntime, loadErr := loadTunnelRuntime(request.RuntimeRoot)
 		if loadErr == nil && restoreErr == nil {
-			restoreErr = platformServiceAction(recovery, oldRuntime.root, "restart")
-			if oldRuntime.mode != "none" {
+			restoreErr = restartConfiguredCore(recovery, oldRuntime)
+			if oldRuntime.mode != "none" && !oldRuntime.manifest.UsesScheduledTask() {
 				restoreErr = errors.Join(restoreErr, startTunnel(recovery, oldRuntime))
 			}
 		}
@@ -205,7 +212,7 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		if err := clearActivePublicURL(runtime.files); err != nil {
 			return rollback(err)
 		}
-		manifestMode = "none"
+		manifestMode = "quick"
 	case "named":
 		publicURL, err = readTrimmedText(runtime.files.namedServerURL)
 		if err != nil {
@@ -217,7 +224,7 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 	if err := runtime.updateManifest(manifestMode, publicURL); err != nil {
 		return rollback(err)
 	}
-	if err := platformServiceAction(ctx, runtime.root, "restart"); err != nil {
+	if err := restartConfiguredCore(ctx, runtime); err != nil {
 		return rollback(err)
 	}
 	if runtime.mode == "funnel" && !tailscaleEnabled {
@@ -232,10 +239,17 @@ func platformUpdateConfig(ctx context.Context, request ConfigUpdateRequest) erro
 		if err := saveTailscaleState(runtime.root, state); err != nil {
 			return rollback(err)
 		}
-	} else if runtime.mode != "none" {
+	} else if runtime.mode != "none" && !runtime.manifest.UsesScheduledTask() {
 		if err := startTunnel(ctx, runtime); err != nil {
 			return rollback(err)
 		}
 	}
 	return nil
+}
+
+func restartConfiguredCore(ctx context.Context, run tunnelRuntime) error {
+	if run.manifest.UsesScheduledTask() {
+		return elevatedRuntimeActionLocked(ctx, run.root, run.manifest, "restart")
+	}
+	return platformServiceAction(ctx, run.root, "restart")
 }

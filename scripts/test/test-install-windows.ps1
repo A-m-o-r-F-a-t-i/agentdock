@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string] $InstallerPath = '',
-    [switch] $StaticOnly
+    [switch] $StaticOnly,
+    [switch] $RuntimeBoundaryOnly
 )
 
 Set-StrictMode -Version Latest
@@ -23,7 +24,7 @@ if ($errors.Count -gt 0) {
     throw "$InstallerPath contains PowerShell syntax errors"
 }
 
-$content = Get-Content -LiteralPath $resolvedInstaller -Raw
+$content = (Get-Content -LiteralPath $resolvedInstaller -Raw).Replace("`r`n", "`n")
 $bytes = [IO.File]::ReadAllBytes($resolvedInstaller)
 for ($index = 0; $index -lt $bytes.Length; $index++) {
     if ($bytes[$index] -gt 127) {
@@ -37,6 +38,72 @@ foreach ($line in ($content -split "`n")) {
             throw "$InstallerPath must keep $keyword on the same line as the preceding closing brace: $line"
         }
     }
+}
+
+
+if ($RuntimeBoundaryOnly) {
+    # Replay only original source AST blocks with local mocks. The installer,
+    # Task Scheduler, registry, activation broker and product UI never run.
+    function Check-Runtime([bool]$Pass,[string]$Message) { if(-not $Pass){throw $Message}; $script:checks++ }
+    $script:checks=0; $script:events=[Collections.Generic.List[string]]::new()
+    function Assert-AgentDockManagedTask { param($AgentDockBinary,$RuntimeRoot,[switch]$RequireDisabled)
+        $script:events.Add('validate-disabled'); if($script:rejectTask){throw 'fixture task owner mismatch'} }
+    function Enable-AgentDockTask { $script:events.Add('enable') }
+    function Start-AgentDockManagedRuntime { param($AgentDockBinary,$RuntimeRoot); $script:events.Add('run-accepted') }
+    function Invoke-SetupRuntimeProcess { param($FilePath,$Arguments,[switch]$WaitForExit); $script:events.Add('standard-start') }
+    function Start-AgentDockTask { throw 'Unexpected legacy task-start path' }
+    function Wait-AgentDockHealth { param($HealthPort); $script:events.Add('local-health'); if($script:rejectHealth){throw 'fixture local health failed'} }
+    function Start-AgentDockTray { param($BinaryPath); $script:events.Add('tray') }
+    function Read-TextFile { param($Path); return '' }
+    function Fixture-Core { param([Parameter(ValueFromRemainingArguments=$true)]$NativeArgs)
+        Check-Runtime ($NativeArgs[0] -eq 'install' -and $NativeArgs[1] -eq 'commit') 'Unexpected native operation'
+        Check-Runtime ($NativeArgs -contains '--keep-journal') 'Premature journal deletion'
+        $script:events.Add('commit-keep'); $global:LASTEXITCODE=0 }
+    $candidate=@($installerAst.FindAll({param($node) $node -is [Management.Automation.Language.IfStatementAst] -and $node.Extent.Text.Contains("`$engineArgs += @('--no-start', '--skip-health')")},$true) | Sort-Object { $_.Extent.Text.Length })[0]
+    $noStart=[scriptblock]::Create($candidate.Extent.Text)
+    $provisionStart=$content.IndexOf("    if (`$effectivePrivilegeMode -eq 'elevated') {`n        Assert-AgentDockManagedTask")
+    $activationStart=$content.IndexOf("    `$healthStatus = 'not-started'",$provisionStart)
+    $activationEnd=$content.IndexOf('    if (Test-Path -LiteralPath $legacyManagerPath',$activationStart)
+    Check-Runtime ($provisionStart -ge 0 -and $activationEnd -gt $activationStart) 'Missing actual provision/activation boundaries'
+    $provision=[scriptblock]::Create($content.Substring($provisionStart,$activationStart-$provisionStart))
+    $activation=[scriptblock]::Create($content.Substring($activationStart,$activationEnd-$activationStart))
+    $sourceBinary='Fixture-Core';$runtimeDir='fixture-root';$engineTransactionId='fixture-transaction';$enginePrepared=$true
+    $InstallChannel='setup';$trayProcessWasRunning=$false;$mustRestartExistingProcess=$false;$Port=12345
+    $destinationTrayBinary='fixture-tray';$generationBootstrapDirectory='fixture-generation';$RegisterStartup=$true
+    $taskState=[pscustomobject]@{SchedulerAvailable=$true;SchedulerError=''};$resolvedTunnelMode='quick';$quickTunnelUrlPath='fixture-url'
+    foreach($mode in @('standard','elevated')) {
+        foreach($existing in @($false,$true)) {
+            $effectivePrivilegeMode=$mode;$existingInstallDetected=$existing;$engineArgs=@();. $noStart
+            Check-Runtime (($engineArgs -contains '--no-start') -eq ($mode -eq 'elevated' -or -not $existing)) 'Incorrect Engine activation scope'
+        }
+        $existingInstallDetected=$false;$engineCommitted=$false;$script:rejectTask=$false;$script:rejectHealth=$false;$script:events.Clear()
+        . $provision; . $activation
+        if($mode -eq 'elevated') {
+            Check-Runtime (($script:events -join ',') -eq 'validate-disabled,commit-keep,enable,run-accepted,tray') 'Elevated validation/commit/start order changed'
+            Check-Runtime ($healthStatus -eq 'scheduled') 'Scheduled task was falsely reported healthy'
+        } else {
+            Check-Runtime (($script:events -join ',') -eq 'commit-keep,standard-start,local-health,tray') 'Standard activation lost local health'
+            Check-Runtime ($healthStatus -eq 'healthy') 'Successful standard health was not retained'
+        }
+    }
+    $effectivePrivilegeMode='elevated';$script:rejectTask=$true;$script:events.Clear();$failed=$false
+    try{. $provision}catch{$failed=$true}
+    Check-Runtime ($failed -and ($script:events -join ',') -eq 'validate-disabled') 'Bad task owner reached commit/start'
+    $effectivePrivilegeMode='standard';$script:rejectHealth=$true;$script:events.Clear();$failed=$false
+    try{. $activation}catch{$failed=$true}
+    Check-Runtime ($failed -and $healthStatus -ne 'deferred' -and ($script:events -join ',') -eq 'standard-start,local-health') 'Failed health was converted to successful deferred activation'
+    Check-Runtime (-not $content.Contains("`$installWarningCode = 'runtime-launch-deferred'")) 'Deferred success remains active'
+    Check-Runtime ($content.Contains("if (`$taskTransactionStarted -and `$effectivePrivilegeMode -eq 'elevated')")) 'Rollback may stop a foreign task'
+    $lastResult=$content.IndexOf("-Success `$true")
+    $seal=$content.IndexOf("Installer Engine failed to seal adapter completion.")
+    Check-Runtime ($seal -gt $lastResult) 'Journal discarded before final adapter result'
+    $rollback=$content.Substring($content.IndexOf("        if (`$rollbackPrivilegeMode -eq 'elevated')"))
+    $elevatedRestore=$rollback.Substring(0,$rollback.IndexOf('        } else {'))
+    Check-Runtime (-not $elevatedRestore.Contains('Wait-AgentDockHealth') -and -not $elevatedRestore.Contains('--require-health')) 'Elevated rollback waits for HTTP health'
+    Check-Runtime ([regex]::Matches($elevatedRestore,'Start-AgentDockManagedRuntime').Count -eq 1) 'Elevated rollback submits multiple resumes'
+    Write-Host "Installer runtime boundaries: $script:checks assertions passed; actual AST replay with mocks only. No installation, task, registry or runtime mutation."
+    $global:LASTEXITCODE=0
+    return
 }
 
 foreach ($forbidden in @(
@@ -197,9 +264,9 @@ foreach ($required in @(
     '--user-name',
     '-AdminLauncherPath $sourceTrayBinary',
     '-LauncherPath $destinationTrayBinary',
-    '$effectivePrivilegeMode -eq ''elevated'' -and -not $taskState.Exists',
-    '$installWarningCode = ''elevated-mode-fallback''',
-    '$installWarningCode = "$installWarningCode,runtime-launch-deferred"',
+    'Assert-AgentDockManagedTask -AgentDockBinary $sourceBinary -RuntimeRoot $runtimeDir -RequireDisabled',
+    '$installErrorCode = ''elevated-unavailable''',
+    'Start-AgentDockManagedRuntime -AgentDockBinary $sourceBinary -RuntimeRoot $runtimeDir',
     'WarningCode=$WarningCode',
     '-WarningCode $installWarningCode',
     '-ErrorCode ''install-validation-failed''',
@@ -239,7 +306,7 @@ foreach ($required in @(
     '-ErrorCode $resultErrorCode',
     "`$resultErrorCode = 'elevated-task-rollback-failed'",
     "`$resultErrorCode = 'rollback-failed'",
-    "`$installWarningCode = 'runtime-launch-deferred'",
+    "`$installErrorCode = 'runtime-activation-failed'",
     '$taskTransactionCommitted = $taskTransactionStarted',
     '-ErrorRecord $resultErrorRecord',
     'Get-Sha256Hex -Path $archivePath',
