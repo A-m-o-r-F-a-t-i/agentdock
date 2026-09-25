@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -214,8 +215,13 @@ func (c *Config) Normalize() error {
 		if !info.IsDir() {
 			return fmt.Errorf("%s is not a directory: %s", path.label, cleaned)
 		}
-		if err := securepath.EnsurePrivate(cleaned); err != nil {
-			return fmt.Errorf("secure %s %s: %w", path.label, cleaned, err)
+		// AgentDock owns its data home, not the selected Windows project.
+		// In particular, changing a parent DACL can rewrite inherited access on
+		// pre-existing descendants. Unix private-mode behavior is unchanged.
+		if path.label == "AgentDockHome" || runtime.GOOS != "windows" {
+			if err := securepath.EnsurePrivate(cleaned); err != nil {
+				return fmt.Errorf("secure %s %s: %w", path.label, cleaned, err)
+			}
 		}
 		*path.value = cleaned
 	}
