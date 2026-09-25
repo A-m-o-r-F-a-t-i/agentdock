@@ -151,223 +151,353 @@
     {
       "method": "GET",
       "path": "/status",
-      "commands": ["status"]
+      "commands": [
+        "status"
+      ]
     },
     {
       "method": "GET",
       "path": "/execution/tasks",
-      "commands": ["task list"]
+      "commands": [
+        "task list"
+      ]
     },
     {
       "method": "GET",
       "path": "/tasks/{task_id}",
-      "commands": ["task show", "task steps", "task export"]
+      "commands": [
+        "task show",
+        "task steps",
+        "task export"
+      ]
     },
     {
       "method": "GET",
       "path": "/tasks/{task_id}/calls",
-      "commands": ["task calls"]
+      "commands": [
+        "task calls"
+      ]
     },
     {
       "method": "POST",
       "path": "/tasks",
-      "commands": ["task create", "task checkpoint", "task block", "task resume", "task final-review", "task complete", "task cancel"],
+      "commands": [
+        "task create",
+        "task checkpoint",
+        "task block",
+        "task resume",
+        "task final-review",
+        "task complete",
+        "task cancel"
+      ],
       "local_write": true,
       "delegates_to": "task_manage"
     },
     {
       "method": "POST",
       "path": "/tasks/batch",
-      "commands": ["task pin", "task unpin", "task tags", "task archive", "task unarchive", "task trash", "task restore", "task rename", "task delete"],
+      "commands": [
+        "task pin",
+        "task unpin",
+        "task tags",
+        "task archive",
+        "task unarchive",
+        "task trash",
+        "task restore",
+        "task rename",
+        "task delete"
+      ],
       "local_write": true
     },
     {
       "method": "GET",
       "path": "/workspaces",
-      "commands": ["workspace list"]
+      "commands": [
+        "workspace list"
+      ]
     },
     {
       "method": "GET",
       "path": "/workspaces/{workspace_id}",
-      "commands": ["workspace show", "workspace status"]
+      "commands": [
+        "workspace show",
+        "workspace status"
+      ]
     },
     {
       "method": "POST",
       "path": "/workspaces",
-      "commands": ["workspace create", "workspace register", "workspace update", "workspace validate", "workspace resolve"],
+      "commands": [
+        "workspace create",
+        "workspace register",
+        "workspace update",
+        "workspace validate",
+        "workspace resolve"
+      ],
       "local_write": true,
       "delegates_to": "workspace_manage"
     },
     {
       "method": "GET",
       "path": "/conversations",
-      "commands": ["conversation list"]
+      "commands": [
+        "conversation list"
+      ]
     },
     {
       "method": "GET",
       "path": "/conversations/{conversation_id}",
-      "commands": ["conversation show", "conversation tasks", "conversation export"]
+      "commands": [
+        "conversation show",
+        "conversation tasks",
+        "conversation export"
+      ]
     },
     {
       "method": "GET",
       "path": "/conversations/{conversation_id}/calls",
-      "commands": ["conversation calls"]
+      "commands": [
+        "conversation calls"
+      ]
     },
     {
       "method": "GET",
       "path": "/conversations/{conversation_id}/stream",
-      "commands": ["conversation follow"],
+      "commands": [
+        "conversation follow"
+      ],
       "stream": true
     },
     {
       "method": "POST",
       "path": "/conversations/{conversation_id}/current-task",
-      "commands": ["conversation attach", "conversation detach"],
+      "commands": [
+        "conversation attach",
+        "conversation detach"
+      ],
       "local_write": true,
       "optimistic_revision": "binding_revision"
     },
     {
       "method": "POST",
       "path": "/conversations/{conversation_id}/link-task",
-      "commands": ["conversation link"],
+      "commands": [
+        "conversation link"
+      ],
       "local_write": true
     },
     {
       "method": "POST",
       "path": "/conversations/{conversation_id}/terminate",
-      "commands": ["conversation stop"],
+      "commands": [
+        "conversation stop"
+      ],
       "local_write": true
     },
     {
       "method": "POST",
       "path": "/conversations/{conversation_id}/resume",
-      "commands": ["conversation resume"],
+      "commands": [
+        "conversation resume"
+      ],
       "local_write": true
     },
     {
       "method": "POST",
       "path": "/conversations/batch",
-      "commands": ["conversation pin", "conversation unpin", "conversation tags", "conversation archive", "conversation unarchive", "conversation trash", "conversation restore", "conversation rename", "conversation delete"],
+      "commands": [
+        "conversation pin",
+        "conversation unpin",
+        "conversation tags",
+        "conversation archive",
+        "conversation unarchive",
+        "conversation trash",
+        "conversation restore",
+        "conversation rename",
+        "conversation delete"
+      ],
       "local_write": true
     },
     {
       "method": "GET",
       "path": "/calls",
-      "commands": ["call list"]
+      "commands": [
+        "call list"
+      ]
     },
     {
       "method": "GET",
       "path": "/calls/stream",
-      "commands": ["call follow", "task follow"],
+      "commands": [
+        "call follow",
+        "task follow"
+      ],
       "stream": true
     },
     {
       "method": "GET",
       "path": "/calls/export",
-      "commands": ["call export", "activity export"]
+      "commands": [
+        "call export",
+        "activity export"
+      ]
     },
     {
       "method": "GET",
       "path": "/calls/{call_id}",
-      "commands": ["call show", "call wait"]
+      "commands": [
+        "call show",
+        "call wait"
+      ]
     },
     {
       "method": "GET",
       "path": "/calls/{call_id}/events",
-      "commands": ["call events"]
+      "commands": [
+        "call events"
+      ]
     },
     {
       "method": "GET",
       "path": "/calls/{call_id}/payload/{kind}",
-      "commands": ["call logs"]
+      "commands": [
+        "call logs"
+      ]
     },
     {
       "method": "POST",
       "path": "/calls/{call_id}/stop",
-      "commands": ["call cancel"],
+      "commands": [
+        "call cancel"
+      ],
       "local_write": true
     },
     {
       "method": "POST",
       "path": "/calls/batch",
-      "commands": ["call archive", "call unarchive", "call isolate", "call unisolate", "call trash", "call restore", "call delete"],
+      "commands": [
+        "call archive",
+        "call unarchive",
+        "call isolate",
+        "call unisolate",
+        "call trash",
+        "call restore",
+        "call delete"
+      ],
       "local_write": true
     },
     {
       "method": "GET",
       "path": "/activity",
-      "commands": ["activity list"]
+      "commands": [
+        "activity list"
+      ]
     },
     {
       "method": "GET",
       "path": "/activity/stream",
-      "commands": ["activity watch"],
+      "commands": [
+        "activity watch"
+      ],
       "stream": true
     },
     {
       "method": "GET",
       "path": "/conversations/{conversation_id}/insertions",
-      "commands": ["insertion list", "insertion show", "insertion wait"]
+      "commands": [
+        "insertion list",
+        "insertion show",
+        "insertion wait"
+      ]
     },
     {
       "method": "POST",
       "path": "/conversations/{conversation_id}/insertions",
-      "commands": ["insertion send"],
+      "commands": [
+        "insertion send"
+      ],
       "local_write": true
     },
     {
       "method": "POST",
       "path": "/conversations/{conversation_id}/insertions/{insertion_id}/{cancel|retry}",
-      "commands": ["insertion cancel", "insertion retry"],
+      "commands": [
+        "insertion cancel",
+        "insertion retry"
+      ],
       "local_write": true
     },
     {
       "method": "GET",
       "path": "/approvals",
-      "commands": ["approval list", "approval history"]
+      "commands": [
+        "approval list",
+        "approval history"
+      ]
     },
     {
       "method": "GET",
       "path": "/approvals/{approval_id}",
-      "commands": ["approval show", "approval wait"]
+      "commands": [
+        "approval show",
+        "approval wait"
+      ]
     },
     {
       "method": "POST",
       "path": "/approvals/{approval_id}/{approve|reject}",
-      "commands": ["approval approve", "approval reject"],
+      "commands": [
+        "approval approve",
+        "approval reject"
+      ],
       "local_write": true
     },
     {
       "method": "GET",
       "path": "/permissions/effective",
-      "commands": ["permission show", "permission effective"]
+      "commands": [
+        "permission show",
+        "permission effective"
+      ]
     },
     {
       "method": "POST",
       "path": "/permissions",
-      "commands": ["permission set"],
+      "commands": [
+        "permission set"
+      ],
       "local_write": true,
       "optimistic_revision": "expected_revision"
     },
     {
       "method": "GET",
       "path": "/skills",
-      "commands": ["skill list"]
+      "commands": [
+        "skill list"
+      ]
     },
     {
       "method": "GET",
       "path": "/skills/{skill}",
-      "commands": ["skill show", "skill status"]
+      "commands": [
+        "skill show",
+        "skill status"
+      ]
     },
     {
       "method": "GET",
       "path": "/plugins",
-      "commands": ["plugin list"]
+      "commands": [
+        "plugin list"
+      ]
     },
     {
       "method": "GET",
       "path": "/plugins/{plugin}",
-      "commands": ["plugin show", "plugin status"]
+      "commands": [
+        "plugin show",
+        "plugin status"
+      ]
     }
   ],
   "safety_confirmations": {
