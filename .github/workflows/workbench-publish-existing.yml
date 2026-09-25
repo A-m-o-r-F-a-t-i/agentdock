@@ -1,0 +1,117 @@
+name: AgentDock Workbench Publish Verified Build
+run-name: Publish verified Workbench ${{ inputs.version }} from run ${{ inputs.run_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Completed Workbench Release run with successful platform builds and artifact assembly'
+        required: true
+        type: string
+      commit:
+        description: 'Exact 40-character source SHA already tested and built'
+        required: true
+        type: string
+      version:
+        description: 'Existing verified product version, without v'
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: workbench-release-${{ inputs.commit }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN: ${{ inputs.run_id }}
+      SOURCE_SHA: ${{ inputs.commit }}
+      PRODUCT_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Publisher regression without network writes
+        run: python3 -B scripts/test/test-workbench-release.py
+      - name: Verify original build and assembly succeeded
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          run_id=os.environ['SOURCE_RUN']; sha=os.environ['SOURCE_SHA']; version=os.environ['PRODUCT_VERSION']
+          if not re.fullmatch(r'[0-9]+',run_id) or not re.fullmatch(r'[a-f0-9]{40}',sha) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+',version):
+              raise RuntimeError('Invalid immutable build identity')
+          repo=os.environ['GITHUB_REPOSITORY']
+          def api(path):
+              return json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/{path}'],text=True,timeout=60))
+          build=api(f'actions/runs/{run_id}')
+          if build['status']!='completed' or build['head_sha']!=sha or build['repository']['full_name']!=repo or build['path']!='.github/workflows/workbench-release.yml':
+              raise RuntimeError('Source run does not match the verified Workbench workflow and SHA')
+          response=api(f'actions/runs/{run_id}/jobs?filter=latest&per_page=100')
+          if response['total_count']>100: raise RuntimeError('Unexpected source job count')
+          jobs={job['name']:job for job in response['jobs']}
+          required=['resolve-source','windows / Resolve requested ref once','windows / Linux transaction and concurrency regression','windows / Build verified unsigned Windows packages','Universal macOS Workbench application']
+          required += [f'Native {system} {arch}' for system in ['linux','darwin'] for arch in ['amd64','arm64']]
+          for name in required:
+              if name not in jobs or jobs[name]['conclusion']!='success':
+                  raise RuntimeError('Required source validation did not succeed: '+name)
+          assembly=jobs.get('Verify complete artifact set and publish Latest',{})
+          if not any(step['name']=='Validate reports and assemble complete release' and step['conclusion']=='success' for step in assembly.get('steps',[])):
+              raise RuntimeError('Original complete-artifact assembly was not verified')
+          print('All nine platform/validation jobs and complete assembly match '+sha)
+          PY
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.commit }}
+          path: verified-source
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: verified-source/go.mod
+          cache-dependency-path: verified-source/go.sum
+          cache: true
+      - name: Verify existing tag still matches the tested source
+        run: |
+          set -euo pipefail
+          test "$(git -C verified-source rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git -C verified-source rev-list -n 1 "refs/tags/v$PRODUCT_VERSION")" = "$SOURCE_SHA"
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id }}
+          pattern: workbench-*-*-${{ inputs.run_id }}
+          path: input/unix
+      - uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id }}
+          name: agentdock-windows-${{ inputs.version }}-${{ inputs.run_id }}
+          path: input/windows
+      - name: Verify original payloads and finish draft by numeric ID
+        run: |
+          python3 scripts/release/publish-workbench.py --source-root verified-source --input input --dist dist/release --version "$PRODUCT_VERSION" --commit "$SOURCE_SHA" --publish
+      - name: Record recovery and source identities
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          record={'build_run_id':os.environ['SOURCE_RUN'],'build_source_sha':os.environ['SOURCE_SHA'],'publication_run_id':os.environ['GITHUB_RUN_ID'],'publication_script_sha':os.environ['GITHUB_SHA'],'version':os.environ['PRODUCT_VERSION'],'product_name':'AgentDock Workbench','state':'published_latest'}
+          Path('publication-result.json').write_text(json.dumps(record,ensure_ascii=False,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workbench-publication-${{ github.run_id }}
+          path: |
+            publication-result.json
+            dist/release/release-manifest.json
+            dist/release/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 90

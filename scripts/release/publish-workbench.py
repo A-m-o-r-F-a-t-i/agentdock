@@ -16,7 +16,7 @@ PRODUCT = 'AgentDock Workbench'
 
 
 def run(*args: str) -> str:
-    return subprocess.check_output(args,cwd=ROOT,text=True).strip()
+    return subprocess.check_output(args,cwd=ROOT,text=True,encoding='utf-8',timeout=600).strip()
 
 
 def digest(path: Path) -> str:
@@ -58,6 +58,8 @@ def assemble(inputs: Path,dist: Path,version: str,commit: str) -> dict:
         raise RuntimeError('Invalid release identity')
     if run('git','rev-parse','HEAD')!=commit or run('go','run','./tools/release','version')!=version:
         raise RuntimeError('Publisher checkout does not match build evidence')
+    if run('git','status','--porcelain','--untracked-files=no'):
+        raise RuntimeError('Verified build tracked sources were modified')
     reports=[]
     for platform in ['linux','darwin']:
         for arch in ['amd64','arm64']:
@@ -121,6 +123,30 @@ def assemble(inputs: Path,dist: Path,version: str,commit: str) -> dict:
     return manifest
 
 
+def find_release(tag: str) -> dict | None:
+    # /releases/tags/{tag} only returns published releases. The authenticated
+    # list includes drafts; retain their numeric ID throughout publication.
+    matches=[]
+    for page in range(1,21):
+        records=json.loads(run('gh','api',f'repos/{REPOSITORY}/releases?per_page=100&page={page}'))
+        if not isinstance(records,list):raise RuntimeError('Invalid release listing')
+        matches.extend(record for record in records if record.get('tag_name')==tag)
+        if len(matches)>1:raise RuntimeError('Multiple releases reference the same tag; resolve before publishing')
+        if len(records)<100:return matches[0] if matches else None
+    raise RuntimeError('Release listing exceeded its bounded search; no release was created')
+
+
+def missing_release_assets(record: dict,expected: dict[str,dict]) -> list[str]:
+    rows=record.get('assets',[])
+    actual={asset['name']:asset for asset in rows}
+    if len(actual)!=len(rows) or set(actual)-set(expected):
+        raise RuntimeError('Remote release contains duplicate or unexpected assets')
+    for name,asset in actual.items():
+        if asset.get('state')!='uploaded' or asset.get('size')!=expected[name]['size'] or asset.get('digest')!=expected[name]['digest']:
+            raise RuntimeError(f'Remote asset integrity mismatch: {name}; existing bytes were not overwritten')
+    return sorted(set(expected)-set(actual))
+
+
 def publish(dist: Path,version: str,commit: str) -> None:
     if os.environ.get('GITHUB_REPOSITORY')!=REPOSITORY:
         raise RuntimeError('Publication is restricted to the user fork')
@@ -135,26 +161,32 @@ def publish(dist: Path,version: str,commit: str) -> None:
     else:
         subprocess.run(['git','tag',tag,commit],cwd=ROOT,check=True)
         subprocess.run(['git','push','origin',f'refs/tags/{tag}'],cwd=ROOT,check=True)
-    result=subprocess.run(['gh','api',f'repos/{REPOSITORY}/releases/tags/{tag}'],text=True,capture_output=True)
-    if result.returncode==0:
-        if not json.loads(result.stdout).get('draft'):
-            raise RuntimeError('Refusing to replace an already published release')
-    elif '404' in result.stderr or 'Not Found' in result.stderr:
+    record=find_release(tag)
+    if record is None:
         run('gh','release','create',tag,'--repo',REPOSITORY,'--verify-tag','--target',commit,'--draft','--title',f'{PRODUCT} {version}','--notes-file',str(notes))
-    else:
-        raise RuntimeError('Could not determine existing release status: '+result.stderr)
+        record=find_release(tag)
+    if record is None or not isinstance(record.get('id'),int) or record['id']<=0:
+        raise RuntimeError('Created release could not be located; preserve draft and inspect before retrying')
+    if not record.get('draft'):
+        raise RuntimeError('Refusing to replace an already published release')
+    release_id=record['id']
+    endpoint=f'repos/{REPOSITORY}/releases/{release_id}'
+    record=json.loads(run('gh','api',endpoint))
+    if record.get('id')!=release_id or record.get('tag_name')!=tag or not record.get('draft'):
+        raise RuntimeError('Release identity or draft state changed before upload')
     files=sorted(path for path in dist.iterdir() if path.is_file())
-    run('gh','release','upload',tag,'--repo',REPOSITORY,'--clobber',*(str(path) for path in files))
-    record=json.loads(run('gh','api',f'repos/{REPOSITORY}/releases/tags/{tag}'))
-    assets={asset['name']:asset for asset in record['assets']}
-    if set(assets)!={path.name for path in files}:raise RuntimeError('Remote draft asset set differs from the verified release')
-    for path in files:
-        asset=assets[path.name]
-        if asset['size']!=path.stat().st_size or asset.get('digest')!='sha256:'+digest(path):
-            raise RuntimeError(f'Remote asset integrity mismatch: {path.name}')
-    run('gh','release','edit',tag,'--repo',REPOSITORY,'--draft=false','--prerelease=false','--latest','--title',f'{PRODUCT} {version}','--notes-file',str(notes))
+    expected={path.name:{'size':path.stat().st_size,'digest':'sha256:'+digest(path)} for path in files}
+    missing=missing_release_assets(record,expected)
+    if missing:
+        run('gh','release','upload',tag,'--repo',REPOSITORY,*(str(dist/name) for name in missing))
+    record=json.loads(run('gh','api',endpoint))
+    if record.get('id')!=release_id or record.get('tag_name')!=tag or not record.get('draft'):
+        raise RuntimeError('Release identity or draft state changed before publication')
+    if missing_release_assets(record,expected):raise RuntimeError('Remote draft asset set is incomplete')
+    run('gh','api','--method','PATCH',endpoint,'-F','draft=false','-F','prerelease=false',
+        '-f','make_latest=true','-f',f'name={PRODUCT} {version}','-F',f'body=@{notes}')
     latest=json.loads(run('gh','api',f'repos/{REPOSITORY}/releases/latest'))
-    if latest['tag_name']!=tag or latest['draft'] or latest['prerelease'] or latest['name']!=f'{PRODUCT} {version}':
+    if latest.get('id')!=release_id or latest['tag_name']!=tag or latest['draft'] or latest['prerelease'] or latest['name']!=f'{PRODUCT} {version}':
         raise RuntimeError('Published release identity/Latest status mismatch')
     print(latest['html_url'])
     if summary:=os.environ.get('GITHUB_STEP_SUMMARY'):
@@ -162,13 +194,16 @@ def publish(dist: Path,version: str,commit: str) -> None:
 
 
 def main() -> None:
+    global ROOT
     parser=argparse.ArgumentParser()
     parser.add_argument('--input',type=Path,required=True)
     parser.add_argument('--dist',type=Path,required=True)
     parser.add_argument('--version',required=True)
     parser.add_argument('--commit',required=True)
     parser.add_argument('--publish',action='store_true')
+    parser.add_argument('--source-root',type=Path,default=ROOT,help='Verified build source checkout; does not change the artifact SHA')
     args=parser.parse_args()
+    ROOT=args.source_root.resolve()
     manifest=assemble(args.input.resolve(),args.dist.resolve(),args.version,args.commit)
     print(f'Verified {len(manifest["assets"])} payloads for all six target platforms')
     if args.publish:publish(args.dist.resolve(),args.version,args.commit)
