@@ -1,0 +1,2 @@
+{"id":"42","event":"activity","data":{"seq":42,"status":"succeeded"}}
+{"ok":false,"code":"STREAM_TIMEOUT","error":"事件订阅超时: context deadline exceeded","exit_code":10}
