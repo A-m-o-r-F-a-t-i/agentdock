@@ -365,15 +365,15 @@ internal static class TaskAdminService
         dynamic task = root.RegisterTask(
             taskName,
             xml,
-            TaskCreateOrUpdate,
+            TaskCreateOrUpdate | 0x10, // TASK_DONT_ADD_PRINCIPAL_ACE: restore the saved ACL verbatim.
             userId,
             null,
             TaskLogonInteractiveToken,
-            null);
+            string.IsNullOrWhiteSpace(state.SecurityDescriptor) ? null : state.SecurityDescriptor);
         task.Enabled = state.WasEnabled;
         if (!string.IsNullOrWhiteSpace(state.SecurityDescriptor))
         {
-            task.SetSecurityDescriptor(state.SecurityDescriptor, 0);
+            task.SetSecurityDescriptor(state.SecurityDescriptor, 0x10);
         }
         if (state.WasRunning)
         {

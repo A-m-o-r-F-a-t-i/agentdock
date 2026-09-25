@@ -113,9 +113,10 @@ func applyBackupNativeMetadata(path string, metadata *backupNativeMetadata) erro
 	information := uint32(backupSecurityInformation)
 	if control&windows.SE_DACL_PROTECTED != 0 {
 		information |= windows.PROTECTED_DACL_SECURITY_INFORMATION
-	} else {
-		information |= windows.UNPROTECTED_DACL_SECURITY_INFORMATION
 	}
+	// Do not request UNPROTECTED_DACL here: that explicitly recomputes ACEs
+	// from the private temporary parent, replacing the source's inherited ACEs.
+	// Fresh copy targets are unprotected; protection is set only when recorded.
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return err
