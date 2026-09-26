@@ -12,4 +12,4 @@ The optional foreground guardian exposes Open, Pause/Resume and Stop Core action
 
 The Quick Settings tile toggles guardian enabled/paused state. It is not a hidden process bypass and does not change Core desired state.
 
-Termux process control stores a process-group leader PID and uses bounded TERM/KILL. Health—not PID existence—is success. A stale process is terminated before a new current version starts, and a bridge lock serializes install/start/rollback operations.
+Termux process control records PID, boot identity, start time, process group and session. Signals require a matching owned identity. A reused PID, missing ownership record or surviving unknown group is reported as requiring user review, not as stopped. Stop intent is persisted first. Probe/status do not create node files. A mandatory bridge lock serializes mutations; restoration policy, circuit breaking and complete transaction recovery remain outstanding.

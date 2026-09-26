@@ -21,25 +21,15 @@ LOCKS="$STATE/locks"
 TRUST="$STATE/trust"
 LOGS="$STATE/logs"
 PAYLOAD=""
-mkdir -p "$INBOX" "$LOCKS" "$TRUST" "$LOGS"
 
 json_result() {
-  status="$1"; message="$2"; phase="${3:-$status}"; credential="${4:-}"
+  status="$1"; message="$2"; phase="${3:-$status}"
   if command -v jq >/dev/null 2>&1; then
-    if [ -n "$credential" ]; then
-      jq -cn --arg op "$OPERATION" --arg oid "$OPERATION_ID" --arg rid "$REQUEST_ID" --arg nonce "$NONCE" \
-        --arg status "$status" --arg phase "$phase" --arg message "$message" --arg token "$credential" \
-        '{schema_version:1,operation:$op,operation_id:$oid,request_id:$rid,nonce:$nonce,status:$status,phase:$phase,message:$message,credential:{type:"bearer",value:$token}}'
-    else
-      jq -cn --arg op "$OPERATION" --arg oid "$OPERATION_ID" --arg rid "$REQUEST_ID" --arg nonce "$NONCE" \
-        --arg status "$status" --arg phase "$phase" --arg message "$message" \
-        '{schema_version:1,operation:$op,operation_id:$oid,request_id:$rid,nonce:$nonce,status:$status,phase:$phase,message:$message}'
-    fi
+    jq -cn --arg op "$OPERATION" --arg oid "$OPERATION_ID" --arg rid "$REQUEST_ID" --arg nonce "$NONCE" \
+      --arg status "$status" --arg phase "$phase" --arg message "$message" \
+      '{schema_version:1,operation:$op,operation_id:$oid,request_id:$rid,nonce:$nonce,status:$status,phase:$phase,message:$message}'
   else
-    # jq is mandatory after bootstrap. This fallback is deliberately static and
-    # never interpolates untrusted message text into JSON.
-    printf '{"schema_version":1,"operation":"%s","operation_id":"%s","request_id":"%s","nonce":"%s","status":"requires_user_action","phase":"blocked","message":"Install jq in Termux"}\n' \
-      "$OPERATION" "$OPERATION_ID" "$REQUEST_ID" "$NONCE"
+    printf '%s\n' '{"schema_version":1,"status":"requires_user_action","message":"Install jq in Termux before using the bridge"}'
   fi
 }
 
@@ -60,11 +50,13 @@ valid_id "$REQUEST_ID" || fail "Invalid request id" "invalid_request"
 valid_nonce "$NONCE" || fail "Invalid nonce" "invalid_request"
 [ "$PAYLOAD_PATH" = "-" ] || fail "Only bounded stdin payloads are accepted" "invalid_request"
 
-PAYLOAD="$INBOX/$REQUEST_ID.json"
+command -v jq >/dev/null 2>&1 || { json_result requires_user_action "Install jq in Termux"; exit 0; }
+# A private temporary request is removed on exit. Probe/status do not initialize a node.
+PAYLOAD="$(mktemp "${TMPDIR:-/tmp}/agentdock-request.XXXXXXXX")"
 cleanup() { rm -f "$PAYLOAD"; }
 trap cleanup EXIT HUP INT TERM
 # Read one byte beyond the contract limit so oversize payloads cannot be silently truncated.
-dd bs=65537 count=1 of="$PAYLOAD" 2>/dev/null || true
+timeout 5 head -c 65537 >"$PAYLOAD" || fail "Request input timed out" "invalid_request"
 size="$(wc -c <"$PAYLOAD" | tr -d ' ')"
 [ "$size" -le 65536 ] || fail "Payload exceeds 65536 bytes" "invalid_request"
 if [ "$size" -eq 0 ]; then printf '{}\n' >"$PAYLOAD"; fi
@@ -77,10 +69,15 @@ if command -v jq >/dev/null 2>&1; then
   [ "$(jq -r '.operation // ""' "$PAYLOAD")" = "$OPERATION" ] || fail "Payload operation mismatch" "invalid_request"
 fi
 
-exec 9>"$LOCKS/bridge.lock"
-if command -v flock >/dev/null 2>&1; then
-  flock -w 30 9 || fail "Another node operation is still running" "busy"
-fi
+case "$OPERATION" in
+  probe|status) ;;
+  *)
+    command -v flock >/dev/null 2>&1 || fail "Missing flock; mutation was not attempted" "requires_user_action"
+    mkdir -p "$LOCKS"
+    exec 9>"$LOCKS/bridge.lock"
+    flock -w 10 9 || fail "Another node operation is still running" "busy"
+    ;;
+esac
 
 managed_root() {
   if [ -f "$STATE/adopted-root" ]; then
@@ -89,7 +86,9 @@ managed_root() {
   fi
   printf '%s' "$STATE/node"
 }
-ROOT="$(managed_root)"
+HOME_ROOT="$(realpath -m -- "$HOME_ROOT")"
+ROOT="$(realpath -m -- "$(managed_root)")"
+case "$ROOT" in "$HOME_ROOT"/*) ;; *) fail "Managed root escapes Termux home" "invalid_request" ;; esac
 VERSIONS="$ROOT/versions"
 CURRENT="$ROOT/current"
 PREVIOUS="$ROOT/previous"
@@ -97,12 +96,23 @@ RUNTIME="$ROOT/runtime"
 DATA="$ROOT/data"
 WORKSPACE="$ROOT/workspace"
 PIDFILE="$ROOT/core.pid"
+IDENTITY="$ROOT/core.identity"
 DESIRED="$ROOT/desired-state"
 TOKEN_FILE="$ROOT/auth-token"
-mkdir -p "$VERSIONS" "$RUNTIME" "$DATA" "$WORKSPACE" "$ROOT/logs"
+for protected in "$VERSIONS" "$RUNTIME" "$DATA" "$WORKSPACE" "$ROOT/logs"; do
+  [ ! -L "$protected" ] || fail "Managed directory symlink requires explicit migration" "requires_user_action"
+done
+if [ -L "$CURRENT" ]; then
+  resolved_current="$(realpath -m -- "$CURRENT")"
+  case "$resolved_current" in "$VERSIONS"/*) ;; *) fail "Current version escapes managed versions" "invalid_request" ;; esac
+fi
+case "$OPERATION" in
+  probe|status) ;;
+  *) mkdir -p "$VERSIONS" "$RUNTIME" "$DATA" "$WORKSPACE" "$ROOT/logs" ;;
+esac
 
 have_termux_dependencies() {
-  command -v proot-distro >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && command -v sha256sum >/dev/null 2>&1
+  command -v proot-distro >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && command -v sha256sum >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1
 }
 debian_installed() {
   if [ "${AGENTDOCK_WORKBENCH_TEST_MODE:-0}" = 1 ]; then return 0; fi
@@ -116,64 +126,110 @@ run_debian() {
   fi
 }
 ensure_token() {
-  if [ ! -s "$TOKEN_FILE" ]; then
-    if command -v openssl >/dev/null 2>&1; then openssl rand -hex 32 >"$TOKEN_FILE"
-    else od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$TOKEN_FILE"; fi
-    chmod 600 "$TOKEN_FILE"
+  [ ! -L "$TOKEN_FILE" ] || return 1
+  if [ -e "$TOKEN_FILE" ]; then
+    # A damaged existing identity is a repair case, not permission to replace it.
+    grep -Eq '^[a-fA-F0-9]{64}$' "$TOKEN_FILE" || return 1
+    return 0
   fi
+  temporary="$ROOT/.token-$REQUEST_ID"
+  openssl rand -hex 32 >"$temporary" || return 1
+  chmod 600 "$temporary"
+  mv -T "$temporary" "$TOKEN_FILE"
 }
-health_ok() { curl -fsS --max-time 3 http://127.0.0.1:8765/healthz >/dev/null 2>&1; }
+
+process_stamp() {
+  process_id="$1"
+  printf '%s' "$process_id" | grep -Eq '^[0-9]{1,10}$' || return 1
+  [ "$process_id" -gt 1 ] || return 1
+  [ -r "/proc/$process_id/stat" ] || return 1
+  # After the final comm closing parenthesis: state, ppid, pgrp, session, ... starttime.
+  stamp="$(sed 's/.*) //' "/proc/$process_id/stat" | awk '{print $3 ":" $4 ":" $20}')"
+  boot="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)" || return 1
+  printf '%s:%s:%s' "$process_id" "$stamp" "$boot"
+}
 pid_alive() {
-  [ -s "$PIDFILE" ] || return 1
-  pid="$(cat "$PIDFILE" 2>/dev/null || true)"
-  valid_id "$pid" || return 1
+  [ -s "$PIDFILE" ] && [ -s "$IDENTITY" ] || return 1
+  pid="$(cat "$PIDFILE")"
+  now_stamp="$(process_stamp "$pid")" || return 1
+  [ "$now_stamp" = "$(cat "$IDENTITY")" ] || return 1
+  # Only a process group/session created by this bridge is eligible for group signals.
+  case "$now_stamp" in "$pid:$pid:$pid:"*) ;; *) return 1 ;; esac
   kill -0 "$pid" 2>/dev/null
 }
-core_version() {
-  [ -x "$CURRENT/bin/agentdock" ] || { printf 'not-installed'; return; }
-  run_debian '/opt/agentdock-workbench/current/bin/agentdock version --json 2>/dev/null' | jq -r '.version // "unknown"' 2>/dev/null || printf 'unknown'
+health_ok() {
+  pid_alive || return 1
+  [ -s "$TOKEN_FILE" ] && [ ! -L "$TOKEN_FILE" ] || return 1
+  grep -Eq '^[a-fA-F0-9]{64}$' "$TOKEN_FILE" || return 1
+  # Bearer is passed to curl over stdin, never argv, URLs or an Android Intent.
+  response="$(printf 'header = "Authorization: Bearer %s"\n' "$(cat "$TOKEN_FILE")" |
+    curl --config - --noproxy '*' -fsS --max-time 3 --max-filesize 65536 --write-out '\n%{http_code}' \
+      http://127.0.0.1:8765/internal/runtime/permissions/effective 2>/dev/null)" || return 1
+  [ "$(printf '%s\n' "$response" | tail -n 1)" = 200 ] || return 1
+  printf '%s\n' "$response" | sed '$d' |
+    jq -e 'type == "object" and (.revision? != null or .effective.revision? != null)' >/dev/null 2>&1
 }
+core_version() {
+  if [ -f "$CURRENT/.workbench-release.json" ]; then
+    jq -r '.version // "unknown"' "$CURRENT/.workbench-release.json"
+  elif [ -x "$CURRENT/bin/agentdock" ]; then printf unknown
+  else printf not-installed; fi
+}
+stop_owned_process() {
+  [ -e "$PIDFILE" ] || return 0
+  if ! pid_alive; then
+    stale_pid="$(cat "$PIDFILE")"
+    if printf '%s' "$stale_pid" | grep -Eq '^[0-9]{1,10}$' && [ "$stale_pid" -gt 1 ] && [ ! -d "/proc/$stale_pid" ]; then
+      rm -f "$PIDFILE" "$IDENTITY"
+      return 0
+    fi
+    return 3
+  fi
+  pid="$(cat "$PIDFILE")"
+  kill -TERM -- "-$pid" 2>/dev/null || return 1
+  attempts=0
+  while pid_alive && [ "$attempts" -lt 10 ]; do attempts=$((attempts + 1)); sleep 1; done
+  if pid_alive; then kill -KILL -- "-$pid" 2>/dev/null || return 1; sleep 0.1; fi
+  # A surviving group is not reported as a fully stopped node.
+  if kill -0 -- "-$pid" 2>/dev/null; then return 1; fi
+  rm -f "$PIDFILE" "$IDENTITY"
+}
+
 start_core() {
   [ -x "$CURRENT/bin/agentdock" ] || return 2
   if health_ok; then return 0; fi
-  if pid_alive; then
-    pid="$(cat "$PIDFILE")"; kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-    rm -f "$PIDFILE"
-  fi
-  ensure_token
+  if [ -e "$PIDFILE" ]; then stop_owned_process || return 3; fi
+  [ -s "$TOKEN_FILE" ] && [ ! -L "$TOKEN_FILE" ] || return 2
+  grep -Eq '^[a-fA-f0-9]{64}$' "$TOKEN_FILE" || return 2
   printf 'running\n' >"$DESIRED"
-  token="$(cat "$TOKEN_FILE")"
-  command="export AGENTDOCK_HOME=/opt/agentdock-workbench/data; export AGENTDOCK_DEFAULT_DIR=/opt/agentdock-workbench/workspace; export AGENTDOCK_HOST=127.0.0.1; export AGENTDOCK_PORT=8765; export AGENTDOCK_AUTH_TOKEN='$token'; export AGENTDOCK_MCP_APPS_ENABLED=false; exec /opt/agentdock-workbench/current/bin/agentdock"
-  if [ "${AGENTDOCK_WORKBENCH_TEST_MODE:-0}" = 1 ]; then
-    /bin/sh -c 'while :; do sleep 60; done' >"$ROOT/logs/core.log" 2>&1 &
-  else
-    setsid proot-distro login debian --bind "$ROOT:/opt/agentdock-workbench" -- /bin/sh -lc "$command" >"$ROOT/logs/core.log" 2>&1 &
-  fi
+  command='export AGENTDOCK_HOME=/opt/agentdock-workbench/data; export AGENTDOCK_DEFAULT_DIR=/opt/agentdock-workbench/workspace; export AGENTDOCK_HOST=127.0.0.1; export AGENTDOCK_PORT=8765; export AGENTDOCK_AUTH_TOKEN="$(cat /opt/agentdock-workbench/auth-token)"; export AGENTDOCK_MCP_APPS_ENABLED=false; exec /opt/agentdock-workbench/current/bin/agentdock'
+  setsid proot-distro login debian --bind "$ROOT:/opt/agentdock-workbench" -- /bin/sh -lc "$command" 9>&- >"$ROOT/logs/core.log" 2>&1 &
   pid=$!
   printf '%s\n' "$pid" >"$PIDFILE"
+  # setsid may not have executed at the first scheduler tick.
+  stamp_attempt=0
+  while [ "$stamp_attempt" -lt 10 ]; do
+    initial_stamp="$(process_stamp "$pid" 2>/dev/null || true)"
+    case "$initial_stamp" in "$pid:$pid:$pid:"*) printf '%s\n' "$initial_stamp" >"$IDENTITY"; break ;; esac
+    stamp_attempt=$((stamp_attempt + 1)); sleep 0.1
+  done
+  pid_alive || return 3
   attempts=0
   while [ "$attempts" -lt 20 ]; do
     if health_ok; then return 0; fi
     kill -0 "$pid" 2>/dev/null || break
     attempts=$((attempts + 1)); sleep 1
   done
-  kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-  rm -f "$PIDFILE"
+  stop_owned_process || return 3
   return 1
 }
 stop_core() {
-  # Desired state is persisted before any process signal, preventing an enabled
-  # guardian from interpreting an explicit stop as a crash.
-  printf 'stopped\n' >"$DESIRED"
-  if pid_alive; then
-    pid="$(cat "$PIDFILE")"
-    kill -TERM "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-    attempts=0
-    while kill -0 "$pid" 2>/dev/null && [ "$attempts" -lt 10 ]; do attempts=$((attempts + 1)); sleep 1; done
-    kill -KILL "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-  fi
-  rm -f "$PIDFILE"
+  # Persist intent before signals. Unknown/stale PID ownership requires user review.
+  printf 'stopped\n' >"$ROOT/.desired-$REQUEST_ID"
+  mv -f "$ROOT/.desired-$REQUEST_ID" "$DESIRED"
+  stop_owned_process
 }
+
 require_signed_manifest() {
   key="$TRUST/release-ed25519-public.pem"
   [ -s "$key" ] || return 75
@@ -182,8 +238,8 @@ require_signed_manifest() {
   case "$manifest_url" in https://*) ;; *) return 76 ;; esac
   case "$signature_url" in https://*) ;; *) return 76 ;; esac
   manifest="$ROOT/manifest.$REQUEST_ID.json"; signature="$manifest.sig.$REQUEST_ID"
-  curl -fsSL --retry 3 --proto '=https' --tlsv1.2 "$manifest_url" -o "$manifest" || return 77
-  curl -fsSL --retry 3 --proto '=https' --tlsv1.2 "$signature_url" -o "$signature" || return 77
+  curl --noproxy '*' -fsSL --retry 2 --max-time 30 --max-filesize 65536 --proto '=https' --proto-redir '=https' --tlsv1.2 "$manifest_url" -o "$manifest" || return 77
+  curl --noproxy '*' -fsSL --retry 2 --max-time 30 --max-filesize 4096 --proto '=https' --proto-redir '=https' --tlsv1.2 "$signature_url" -o "$signature" || return 77
   openssl pkeyutl -verify -pubin -inkey "$key" -rawin -in "$manifest" -sigfile "$signature" >/dev/null 2>&1 || return 78
   jq -e '.schema_version == 1 and .platform == "linux" and .arch == "arm64" and (.version|type=="string") and (.asset_url|type=="string") and (.sha256|test("^[0-9a-f]{64}$"))' "$manifest" >/dev/null || return 79
   printf '%s' "$manifest"
@@ -191,53 +247,104 @@ require_signed_manifest() {
 install_from_manifest() {
   manifest="$(require_signed_manifest)" || return $?
   version="$(jq -r '.version' "$manifest")"
+  printf '%s' "$version" | grep -Eq '^[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9.-]+)?$' || return 80
+  [ "${#version}" -le 80 ] || return 80
   asset_url="$(jq -r '.asset_url' "$manifest")"
   expected="$(jq -r '.sha256' "$manifest")"
   case "$asset_url" in https://*) ;; *) return 80 ;; esac
   archive="$ROOT/agentdock.$REQUEST_ID.tar.gz"; stage="$VERSIONS/.stage-$REQUEST_ID"
-  rm -rf "$stage"; mkdir -p "$stage"
-  curl -fsSL --retry 3 --proto '=https' --tlsv1.2 "$asset_url" -o "$archive" || return 81
+  [ ! -e "$stage" ] && [ ! -L "$stage" ] || return 86
+  mkdir "$stage" || return 86
+  curl --noproxy '*' -fsSL --retry 2 --max-time 180 --max-filesize 268435456 --proto '=https' --proto-redir '=https' --tlsv1.2 "$asset_url" -o "$archive" || return 81
   actual="$(sha256sum "$archive" | awk '{print $1}')"
   [ "$actual" = "$expected" ] || return 82
-  tar -xzf "$archive" -C "$stage" || return 83
+  # Validate every member before writing any data; never trust archive paths or links.
+  python3 - "$archive" "$stage" <<'ARCHIVE_GUARD' || return 83
+import os, shutil, sys, tarfile
+from pathlib import Path, PurePosixPath
+archive, destination = Path(sys.argv[1]), Path(sys.argv[2])
+if destination.is_symlink() or any(destination.iterdir()):
+    raise SystemExit("stage is not an empty private directory")
+if archive.stat().st_size > 256 * 1024 * 1024:
+    raise SystemExit("archive exceeds size limit")
+with tarfile.open(archive, "r:gz") as source:
+    members = []
+    seen = set()
+    total = 0
+    for member in source:
+        path = PurePosixPath(member.name)
+        if member.name in (".", "./") and member.isdir():
+            continue
+        if (len(members) >= 10000 or not member.name or path.is_absolute()
+                or ".." in path.parts or "\\" in member.name
+                or ":" in member.name or any(ord(char) < 32 for char in member.name)
+                or not path.parts or len(member.name) > 1024
+                or path.parts[0].startswith(".workbench-")
+                or not (member.isfile() or member.isdir()) or member.size < 0
+                or member.size > 128 * 1024 * 1024 or member.issparse()):
+            raise SystemExit("unsafe archive member")
+        key = path.as_posix()
+        if key in seen:
+            raise SystemExit("duplicate archive path")
+        seen.add(key)
+        total += member.size
+        if total > 512 * 1024 * 1024:
+            raise SystemExit("expanded archive exceeds size limit")
+        members.append((member, path))
+    if shutil.disk_usage(destination).free < total + 64 * 1024 * 1024:
+        raise SystemExit("insufficient staging space")
+    files = {path.as_posix() for member, path in members if member.isfile()}
+    for _, path in members:
+        if any(parent.as_posix() in files for parent in path.parents):
+            raise SystemExit("archive file/directory conflict")
+    for member, path in members:
+        target = destination.joinpath(*path.parts)
+        if member.isdir():
+            target.mkdir(mode=0o700, parents=True, exist_ok=True)
+        else:
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with source.extractfile(member) as stream:
+                fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, "wb") as output:
+                    shutil.copyfileobj(stream, output, length=65536)
+            target.chmod(0o755 if member.mode & 0o111 else 0o644)
+ARCHIVE_GUARD
   [ -x "$stage/bin/agentdock" ] || return 84
   reported="$(if [ "${AGENTDOCK_WORKBENCH_TEST_MODE:-0}" = 1 ]; then printf '%s' "$version"; else run_debian "/opt/agentdock-workbench/versions/.stage-$REQUEST_ID/bin/agentdock version --json" | jq -r '.version'; fi)"
   [ "$reported" = "$version" ] || return 85
+  jq '{version, platform, arch, sha256}' "$manifest" >"$stage/.workbench-release.json" || return 86
   target="$VERSIONS/$version"
-  rm -rf "$target"; mv "$stage" "$target"
+  [ ! -e "$target" ] && [ ! -L "$target" ] || return 86
+  mv "$stage" "$target" || return 86
   if [ -L "$CURRENT" ]; then
     old="$(readlink "$CURRENT")"
-    ln -sfn "$old" "$PREVIOUS"
+    ln -sfn "$old" "$PREVIOUS" || return 86
   fi
-  ln -sfn "$target" "$CURRENT"
+  ln -s "versions/$version" "$ROOT/.current-$REQUEST_ID" || return 86
+  mv -Tf "$ROOT/.current-$REQUEST_ID" "$CURRENT" || return 86
   rm -f "$archive" "$manifest" "$manifest.sig.$REQUEST_ID"
-  # Retain current plus one rollback generation.
-  keep_current="$(readlink "$CURRENT" 2>/dev/null || true)"; keep_previous="$(readlink "$PREVIOUS" 2>/dev/null || true)"
-  for directory in "$VERSIONS"/*; do
-    [ -d "$directory" ] || continue
-    [ "$directory" = "$keep_current" ] || [ "$directory" = "$keep_previous" ] || rm -rf "$directory"
-  done
+  # Retention cleanup is deferred until the transaction journal can protect every recovery reference.
   return 0
 }
 
 case "$OPERATION" in
   probe)
-    if ! have_termux_dependencies; then json_result "requires_user_action" "Termux 缺少 proot-distro/curl/jq/coreutils" "blocked"; exit 0; fi
+    if ! have_termux_dependencies; then json_result "requires_user_action" "Termux 缺少 proot-distro/curl/jq/coreutils/Python" "blocked"; exit 0; fi
     if ! debian_installed; then json_result "requires_user_action" "Debian PRoot 尚未安装" "blocked"; exit 0; fi
-    ensure_token
-    if health_ok; then json_result "healthy" "Core $(core_version) 正常" "complete" "$(cat "$TOKEN_FILE")"
-    elif [ -x "$CURRENT/bin/agentdock" ]; then json_result "stopped" "已发现受管 Core $(core_version)，当前未运行" "complete" "$(cat "$TOKEN_FILE")"
-    else json_result "requires_user_action" "Termux 与 Debian 已就绪；等待受信发布清单安装 Core" "blocked" "$(cat "$TOKEN_FILE")"; fi
+    if health_ok; then json_result "healthy" "Core $(core_version) 正常" "complete"
+    elif [ -e "$PIDFILE" ]; then json_result "requires_user_action" "已有进程记录尚未确认身份；未接管或停止该进程" "unknown"
+    elif [ -x "$CURRENT/bin/agentdock" ]; then json_result "stopped" "已发现受管 Core $(core_version)，当前未运行" "complete"
+    else json_result "requires_user_action" "Termux 与 Debian 已就绪；等待受信发布清单安装 Core" "blocked"; fi
     ;;
   bootstrap)
     have_termux_dependencies || { json_result "requires_user_action" "请先运行随 APK 提供的 Termux bootstrap 脚本" "blocked"; exit 0; }
     debian_installed || { json_result "requires_user_action" "请在 Termux 执行 proot-distro install debian" "blocked"; exit 0; }
-    ensure_token
+    ensure_token || fail "已有身份文件无效，未创建替代凭据" "requires_user_action"
     run_debian 'command -v curl >/dev/null && command -v tar >/dev/null && command -v jq >/dev/null' >/dev/null 2>&1 || {
       json_result "requires_user_action" "Debian 缺少 ca-certificates/curl/tar/jq，请运行 bootstrap 修复" "blocked"; exit 0;
     }
-    [ -s "$TRUST/release-ed25519-public.pem" ] || { json_result "pending_manifest" "节点已初始化；等待 WB05 提供正式发布签名公钥与清单" "blocked" "$(cat "$TOKEN_FILE")"; exit 0; }
-    json_result "ok" "节点初始化完成" "complete" "$(cat "$TOKEN_FILE")"
+    [ -s "$TRUST/release-ed25519-public.pem" ] || { json_result "pending_manifest" "节点已初始化；等待 WB05 提供正式发布签名公钥与清单" "blocked"; exit 0; }
+    json_result "ok" "节点初始化完成" "complete"
     ;;
   install|update)
     [ -s "$TRUST/release-ed25519-public.pem" ] || { json_result "pending_manifest" "缺少正式发布签名公钥；未下载或安装任何 Core" "blocked"; exit 0; }
@@ -250,7 +357,8 @@ case "$OPERATION" in
       *) fail "ARM64 载荷下载、SHA-256 或版本验证失败" "verification_failed" ;;
     esac
     if [ "$stop_was_running" = true ]; then
-      stop_core; if ! start_core; then
+      stop_core || fail "节点进程身份无法确认，停止升级" "requires_user_action"
+      if ! start_core; then
         if [ -L "$PREVIOUS" ]; then ln -sfn "$(readlink "$PREVIOUS")" "$CURRENT"; start_core || true; fi
         fail "新版本健康检查失败，已尝试回退" "health_failed"
       fi
@@ -259,6 +367,8 @@ case "$OPERATION" in
     ;;
   adopt)
     requested="$(jq -r '.existing_root // ""' "$PAYLOAD")"
+    [ -n "$requested" ] || fail "Existing root is required" "invalid_request"
+    requested="$(realpath -e -- "$requested")" || fail "Existing root is unavailable" "invalid_request"
     confirmed="$(jq -r '.confirm_adopt // false' "$PAYLOAD")"
     [ "$confirmed" = true ] || fail "Adoption requires explicit confirmation" "invalid_request"
     case "$requested" in "$HOME_ROOT"/*) ;; *) fail "Existing root must remain under Termux home" "invalid_request" ;; esac
@@ -271,18 +381,20 @@ case "$OPERATION" in
     desired="$(cat "$DESIRED" 2>/dev/null || printf stopped)"
     if health_ok; then json_result "running" "Core $(core_version) 正常；desired=$desired" "complete"
     elif pid_alive; then json_result "failed" "Core 进程存在但健康检查失败；desired=$desired" "degraded"
-    else json_result "stopped" "Core 未运行；desired=$desired" "complete"; fi
+    elif [ -e "$PIDFILE" ]; then json_result "requires_user_action" "进程身份未知；desired=$desired；未执行信号操作" "unknown"
+    else json_result "stopped" "没有受管进程记录；desired=$desired；未接管其他节点" "complete"; fi
     ;;
   start)
     start_core || fail "Core 启动或健康检查失败" "health_failed"
     json_result "running" "Core $(core_version) 已启动" "complete"
     ;;
   stop)
-    stop_core
+    stop_core || fail "节点进程身份无法确认，未向未知进程发信号；停止意图已保存" "requires_user_action"
     json_result "stopped" "Core 已停止；守护暂停状态不受影响" "complete"
     ;;
   restart)
-    stop_core; start_core || fail "Core 重启健康检查失败" "health_failed"
+    stop_core || fail "节点进程身份无法确认，未执行重启" "requires_user_action"
+    start_core || fail "Core 重启健康检查失败" "health_failed"
     json_result "running" "Core $(core_version) 已重启" "complete"
     ;;
   repair|guardian_check)
@@ -295,7 +407,8 @@ case "$OPERATION" in
   rollback)
     [ -L "$PREVIOUS" ] || { json_result "requires_user_action" "没有可回退版本" "blocked"; exit 0; }
     old_current="$(readlink "$CURRENT")"; rollback="$(readlink "$PREVIOUS")"
-    stop_core; ln -sfn "$rollback" "$CURRENT"; ln -sfn "$old_current" "$PREVIOUS"
+    stop_core || fail "节点进程身份无法确认，未执行回退" "requires_user_action"
+    ln -sfn "$rollback" "$CURRENT"; ln -sfn "$old_current" "$PREVIOUS"
     start_core || { ln -sfn "$old_current" "$CURRENT"; start_core || true; fail "回退版本未通过健康检查，已恢复原指针" "health_failed"; }
     json_result "rolled_back" "已回退到 Core $(core_version)" "complete"
     ;;

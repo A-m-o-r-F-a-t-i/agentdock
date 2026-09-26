@@ -1,13 +1,10 @@
 package dev.agentdock.workbench
 
 import android.content.Intent
-import android.graphics.Bitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
-import androidx.test.espresso.Espresso.pressBack
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.agentdock.workbench.model.WorkbenchScreen
@@ -18,7 +15,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
+import android.os.ParcelFileDescriptor
 
 @RunWith(AndroidJUnit4::class)
 class WorkbenchNavigationTest {
@@ -41,10 +38,10 @@ class WorkbenchNavigationTest {
     }
 
     @Test fun captureKeyPages() {
-        // The orchestrator clears target-app data between cases. Keep evidence in
-        // the instrumentation package, which is not the app under test.
-        val context = InstrumentationRegistry.getInstrumentation().context
-        val directory = File(context.getExternalFilesDir(null), "screenshots").apply { check(mkdirs() || isDirectory) }
+        // Instrumentation executes with the target UID, not the test APK's UID.
+        // Shell-owned CI evidence survives orchestrator app-data clearing.
+        val directory = "/sdcard/Download/agentdock-wb07-screenshots"
+        shell("mkdir -p $directory && echo ready").let { check(it.trim() == "ready") }
         WorkbenchScreen.entries.forEach { screen ->
             navigate(screen)
             capture(directory, screen, screen.route)
@@ -71,7 +68,10 @@ class WorkbenchNavigationTest {
         compose.onNodeWithTag("screen-tasks").assertIsDisplayed()
         compose.onNodeWithTag("tasks-search").assertTextContains("回执检查")
         navigate(WorkbenchScreen.Settings)
-        pressBack()
+        // Exercise the Activity's real Compose BackHandler dispatch without
+        // Espresso's focus-sensitive root selection after recreation.
+        scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntil(10000) { model.state.value.screen == WorkbenchScreen.Tasks }
         compose.onNodeWithTag("screen-tasks").assertIsDisplayed()
     }
 
@@ -105,9 +105,17 @@ class WorkbenchNavigationTest {
         compose.onNodeWithTag("screen-${screen.route}").assertIsDisplayed()
     }
 
-    private fun capture(directory: File, screen: WorkbenchScreen, name: String) {
+    private fun capture(directory: String, screen: WorkbenchScreen, name: String) {
+        require(Regex("[a-z-]+").matches(name))
         compose.waitForIdle()
-        val bitmap = compose.onNodeWithTag("screen-${screen.route}").captureToImage().asAndroidBitmap()
-        File(directory, "$name.png").outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        compose.onNodeWithTag("screen-${screen.route}").assertIsDisplayed()
+        val path = "$directory/$name.png"
+        val result = shell("screencap -p $path && test -s $path && echo captured")
+        check(result.trim() == "captured") { "Screenshot was not saved: $name" }
+    }
+
+    private fun shell(command: String): String {
+        val descriptor = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+        return ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText() }
     }
 }

@@ -25,9 +25,9 @@ class TermuxCommandDispatcher(
         }
         val intent = baseIntent()
         if (context.packageManager.resolveService(intent, PackageManager.MATCH_DEFAULT_ONLY) == null) {
-            return ActionOutcome(false, "service_missing", "Termux RUN_COMMAND 服务不可用；请启用 allow-external-apps")
+            return ActionOutcome(false, "service_missing", "Termux RUN_COMMAND 服务不可发现；请核对安装来源和版本")
         }
-        return ActionOutcome(true, "available", "Termux RUN_COMMAND 可用")
+        return ActionOutcome(true, "available", "Termux 服务可发现；桥配置与外部调用开关仍需探测")
     }
 
     fun dispatch(operation: String, payload: JSONObject = JSONObject()): BridgeOperation {
@@ -46,8 +46,6 @@ class TermuxCommandDispatcher(
             phase = "queued",
             createdAtEpochMs = now
         )
-        operations.create(pending)
-
         val payloadValue = JSONObject(payload.toString())
             .put("schema_version", 1)
             .put("operation_id", operationId)
@@ -56,6 +54,8 @@ class TermuxCommandDispatcher(
             .put("operation", operation)
         val payloadText = payloadValue.toString()
         require(payloadText.toByteArray().size <= TermuxContract.MAX_PAYLOAD_BYTES) { "Termux payload too large" }
+        require(!TermuxResultPolicy.containsSecretFields(payloadValue)) { "Credentials cannot be sent through RUN_COMMAND" }
+        operations.create(pending)
 
         val callbackIntent = Intent(context, TermuxResultService::class.java)
             .setAction(TermuxContract.CALLBACK_ACTION_PREFIX + requestId)
@@ -78,9 +78,10 @@ class TermuxCommandDispatcher(
             .putExtra(TermuxContract.EXTRA_PENDING_INTENT, callback)
         try {
             context.startService(intent)
-            operations.finish(pending, "running", "Termux 已接受命令，等待结构化回执", null, false, false)
+            operations.finish(pending, "running", "已发出 Termux 请求，等待结构化回执确认", null, false, false)
         } catch (error: Exception) {
-            operations.finish(pending, "failed", error.message ?: "无法启动 Termux RUN_COMMAND", null, false, false)
+            callback.cancel()
+            operations.finish(pending, "failed", "无法启动 Termux RUN_COMMAND（${error.javaClass.simpleName}）", null, false, false)
             throw error
         }
         return operations.get(operationId) ?: pending

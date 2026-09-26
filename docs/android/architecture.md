@@ -31,7 +31,7 @@ Android consumes existing Core routes for health, execution/sidebar, conversatio
 
 The APK uses an explicit package/component, fixed executable `~/.termux/tasker/agentdock-workbench`, five validated arguments, bounded JSON stdin and a one-shot mutable PendingIntent to a non-exported callback service. Tokens never enter command arguments. App-private atomic operation summaries survive Android process death.
 
-The Termux script verifies the same IDs and nonce before doing work and echoes them in its result. A mismatched callback fails even with exit code zero.
+The Termux script verifies the same IDs and nonce before doing work and echoes them in its result. Callbacks are bounded to 64 KiB UTF-8, expire after two hours and cannot overwrite a terminal operation. Secret-bearing responses and unstructured error output are not stored. Outstanding operations are not evicted to admit new requests.
 
 ## Managed PRoot layout
 
@@ -41,7 +41,7 @@ The Termux script verifies the same IDs and nonce before doing work and echoes t
   current -> versions/<version>
   previous -> versions/<version>
   runtime/ data/ workspace/ logs/
-  auth-token desired-state core.pid
+  auth-token desired-state core.pid core.identity
 ```
 
-An existing node is read-only until explicit adoption. Install/update verifies a signed manifest, platform, architecture, SHA-256, archive structure and Core-reported version before atomically switching `current`. Only current and one rollback generation are retained. Failed health validation attempts pointer rollback and reports failure.
+Probe/status do not initialize the node or generate credentials. Mutations require the bridge lock. Process records include boot identity, start time, group and session; unknown live identities require user review and are not signaled. Archive extraction rejects traversal, links, duplicate members, special files, file/directory conflicts and unbounded expansion. Version directories are not overwritten. Recovery-reference cleanup is deferred until the installation journal and schema-aware rollback are implemented. Their absence still blocks complete deployment acceptance.

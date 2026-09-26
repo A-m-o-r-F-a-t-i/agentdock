@@ -4,7 +4,7 @@
 
 Core Bearer, pairing and public-access secrets use an Android Keystore AES-GCM key with app-private ciphertext/IV storage. They are excluded from backup/device transfer and never written to DataStore, logs, operation summaries, Intent arguments or Termux command arguments.
 
-A local Bearer returned by Termux is imported only after operation ID, request ID, nonce, operation and schema validation, and only when it is exactly 64 hexadecimal characters.
+The bridge does not return a Bearer through Intent extras. Android rejects credential fields at any nesting depth, expired callbacks and replay after a terminal result. Pairing through a dedicated authenticated Core channel remains pending integration; the existing explicit connection editor stores user-entered credentials with Keystore. Invalid JSON, raw stderr and plugin error text are never copied into operation summaries.
 
 ## Network
 
@@ -16,7 +16,7 @@ A local Bearer returned by Termux is imported only after operation ID, request I
 
 ## Release trust
 
-A digest is not publisher authentication when its expected value is delivered beside the asset. WB07 therefore requires a trusted Ed25519 public key, signed manifest, signature verification before field use, Linux/ARM64 identity, archive SHA-256, structure validation, Core-reported version equality, health validation and rollback. Without this contract install/update returns `pending_manifest` and downloads no Core payload.
+A digest is not publisher authentication when its expected value is delivered beside the asset. WB07 therefore requires a trusted Ed25519 public key, signed manifest, signature verification before field use, Linux/ARM64 identity, archive SHA-256, structure validation, Core-reported version equality, health validation and rollback. Without this contract install/update returns `pending_manifest` and downloads no Core payload. Signature gates and guarded extraction are implemented, while complete transaction journaling, data-schema backup/rollback and one-fallback retention still require implementation and acceptance.
 
 ## Permissions
 

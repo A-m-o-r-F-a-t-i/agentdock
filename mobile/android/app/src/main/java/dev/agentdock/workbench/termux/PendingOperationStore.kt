@@ -13,8 +13,10 @@ class PendingOperationStore(context: Context) {
     @Synchronized
     fun create(value: BridgeOperation) {
         require(validId(value.operationId) && validId(value.requestId))
+        check(get(value.operationId) == null) { "Operation ID already exists" }
+        trim(reserve = 1)
+        check(list(MAX_FILES).size < MAX_FILES) { "Unresolved operation capacity reached" }
         write(value)
-        trim()
     }
 
     @Synchronized
@@ -42,11 +44,13 @@ class PendingOperationStore(context: Context) {
         stdoutTruncated: Boolean,
         stderrTruncated: Boolean
     ): BridgeOperation {
-        val current = get(expected.operationId) ?: expected
+        val current = checkNotNull(get(expected.operationId)) { "Unknown operation" }
         require(current.requestId == expected.requestId && current.nonce == expected.nonce)
+        if (current.phase in TermuxResultPolicy.terminalPhases) return current
+        require(phase in TermuxResultPolicy.pendingPhases || phase in TermuxResultPolicy.terminalPhases)
         val next = current.copy(
             phase = phase,
-            message = message.take(MAX_MESSAGE_CHARS),
+            message = TermuxResultPolicy.safeMessage(message).take(MAX_MESSAGE_CHARS),
             updatedAtEpochMs = System.currentTimeMillis(),
             exitCode = exitCode,
             stdoutTruncated = stdoutTruncated,
@@ -71,9 +75,12 @@ class PendingOperationStore(context: Context) {
         }
     }
 
-    private fun trim() {
-        val files = directory.listFiles().orEmpty().filter { it.isFile }.sortedByDescending { it.lastModified() }
-        files.drop(MAX_FILES).forEach { it.delete() }
+    private fun trim(reserve: Int) {
+        val records = list(MAX_FILES)
+        val removable = records.filter { it.phase in TermuxResultPolicy.terminalPhases }
+            .sortedBy { it.updatedAtEpochMs }
+        val count = (records.size + reserve - MAX_FILES).coerceAtLeast(0)
+        removable.take(count).forEach { AtomicFile(file(it.operationId)).delete() }
     }
 
     private fun file(operationId: String) = File(directory, "$operationId.json")

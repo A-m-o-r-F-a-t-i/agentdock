@@ -19,7 +19,7 @@ adb logcat -d -v threadtime >"$evidence/logcat.txt" 2>&1 || true
 adb shell getprop >"$evidence/device-properties.txt" 2>&1 || true
 adb shell getprop ro.build.version.sdk >"$evidence/actual-api.txt" 2>&1 || true
 adb shell pm list packages >"$evidence/packages.txt" 2>&1 || true
-adb pull "/sdcard/Android/data/dev.agentdock.workbench.candidate.test/files/screenshots/." \
+adb pull "/sdcard/Download/agentdock-wb07-screenshots/." \
   "$evidence/screenshots/" >"$evidence/adb-pull.txt" 2>&1 || true
 for relative in reports/androidTests/connected outputs/androidTest-results/connected; do
   source="$repo_root/mobile/android/app/build/$relative"
@@ -49,7 +49,7 @@ for path in (root / 'reports').rglob('TEST-*.xml'):
         parse_errors.append(f'{path.name}: {error}')
 actual_api = (root / 'actual-api.txt').read_text(errors='replace').strip()
 passed = sum(value == 'passed' for value in cases.values())
-valid = rc == 0 and passed >= 5 and all(value == 'passed' for value in cases.values()) and not missing and not parse_errors and actual_api == str(api)
+valid = rc == 0 and passed >= 7 and all(value == 'passed' for value in cases.values()) and not missing and not parse_errors and actual_api == str(api)
 result = {
     'schema_version': 2, 'lane': 'WB07', 'source_sha': os.environ['GITHUB_SHA'],
     'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],

@@ -9,7 +9,7 @@ BRIDGE="$SELF_DIR/agentdock-workbench"
 [ -f "$BRIDGE" ] || { printf 'Missing companion file: %s\n' "$BRIDGE" >&2; exit 1; }
 
 pkg update -y
-pkg install -y proot-distro curl jq coreutils util-linux procps openssl-tool tar
+pkg install -y proot-distro curl jq coreutils util-linux procps openssl-tool tar python
 mkdir -p "$HOME/.termux/tasker" "$HOME/.agentdock-workbench/trust"
 install -m 0700 "$BRIDGE" "$HOME/.termux/tasker/agentdock-workbench"
 properties="$HOME/.termux/termux.properties"
