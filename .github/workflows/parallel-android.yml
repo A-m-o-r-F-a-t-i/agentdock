@@ -86,6 +86,7 @@ jobs:
             bash -n "$script"
           done
           bash scripts/ci/parallel-android/test-termux-bridge.sh | tee evidence/contract/termux-contract.txt
+          bash scripts/ci/parallel-android/test-runner-sdk.sh | tee evidence/contract/runner-sdk-contract.txt
           git diff --check "$WB07_BASE_SHA" "$GITHUB_SHA"
           grep -F 'compileSdk = 37' mobile/android/app/build.gradle.kts
           grep -F 'targetSdk = 37' mobile/android/app/build.gradle.kts

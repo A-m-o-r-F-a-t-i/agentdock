@@ -21,6 +21,23 @@ cmdline_tools_version() {
   "$1" --version 2>/dev/null | awk '/^[0-9]+([.][0-9]+)*$/ { print; exit }'
 }
 
+api37_error() {
+  local message="$1"
+  printf '::error title=API 37 command-line tools::%s\n' "$message"
+  printf 'API 37 command-line tools: %s\n' "$message" >&2
+  return 1
+}
+
+remove_sdk_path() {
+  local path="$1"
+  rm -rf "$path" 2>/dev/null || sudo --non-interactive rm -rf "$path"
+}
+
+move_sdk_path() {
+  local source="$1" destination="$2"
+  mv "$source" "$destination" 2>/dev/null || sudo --non-interactive mv "$source" "$destination"
+}
+
 install_api37_cmdline_tools() {
   local required_major=22
   local current_version current_major
@@ -34,36 +51,76 @@ install_api37_cmdline_tools() {
   local archive_url='https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip'
   local archive_sha1='040d3996a65543d22ec4bf73e4c37aa37a8d4af4'
   local archive_size=181833628
-  local temporary_root archive extracted replacement backup
+  local temporary_root archive extracted replacement backup actual_size
   temporary_root="$(mktemp -d "${RUNNER_TEMP:-/tmp}/wb07-cmdline-tools.XXXXXX")"
   archive="$temporary_root/commandlinetools.zip"
   extracted="$temporary_root/extracted"
   replacement="$extracted/cmdline-tools"
   backup="$sdk_root/cmdline-tools/.wb07-latest-backup-$$"
 
-  curl --fail --location --retry 3 --retry-delay 2 --proto '=https' --tlsv1.2 \
-    "$archive_url" --output "$archive"
-  [[ "$(wc -c < "$archive")" -eq "$archive_size" ]]
-  printf '%s  %s\n' "$archive_sha1" "$archive" | sha1sum --check --status
+  if ! curl --fail --location --retry 3 --retry-delay 2 --proto '=https' --tlsv1.2 \
+    "$archive_url" --output "$archive"; then
+    remove_sdk_path "$temporary_root" || true
+    api37_error 'download failed'
+    return 1
+  fi
+  actual_size="$(wc -c < "$archive")"
+  if [[ "$actual_size" -ne "$archive_size" ]]; then
+    remove_sdk_path "$temporary_root" || true
+    api37_error "archive size mismatch: expected $archive_size, got $actual_size"
+    return 1
+  fi
+  if ! printf '%s  %s\n' "$archive_sha1" "$archive" | sha1sum --check --status; then
+    remove_sdk_path "$temporary_root" || true
+    api37_error 'archive checksum mismatch'
+    return 1
+  fi
   mkdir -p "$extracted"
-  unzip -q "$archive" -d "$extracted"
-  [[ -x "$replacement/bin/sdkmanager" && -x "$replacement/bin/avdmanager" ]]
+  if ! unzip -q "$archive" -d "$extracted"; then
+    remove_sdk_path "$temporary_root" || true
+    api37_error 'archive extraction failed'
+    return 1
+  fi
+  if [[ ! -x "$replacement/bin/sdkmanager" || ! -x "$replacement/bin/avdmanager" ]]; then
+    remove_sdk_path "$temporary_root" || true
+    api37_error 'archive does not contain executable sdkmanager and avdmanager'
+    return 1
+  fi
 
   local replacement_version replacement_major
   replacement_version="$(cmdline_tools_version "$replacement/bin/sdkmanager")"
   replacement_major="${replacement_version%%.*}"
-  [[ "$replacement_major" =~ ^[0-9]+$ ]]
-  (( replacement_major >= required_major ))
-
-  rm -rf "$backup"
-  if [[ -e "$sdk_root/cmdline-tools/latest" || -L "$sdk_root/cmdline-tools/latest" ]]; then
-    mv "$sdk_root/cmdline-tools/latest" "$backup"
-  fi
-  if ! mv "$replacement" "$sdk_root/cmdline-tools/latest"; then
-    [[ ! -e "$backup" && ! -L "$backup" ]] || mv "$backup" "$sdk_root/cmdline-tools/latest"
+  if [[ ! "$replacement_major" =~ ^[0-9]+$ ]] || (( replacement_major < required_major )); then
+    remove_sdk_path "$temporary_root" || true
+    api37_error "unexpected replacement version: ${replacement_version:-unknown}"
     return 1
   fi
-  rm -rf "$backup" "$temporary_root"
+
+  if ! remove_sdk_path "$backup"; then
+    remove_sdk_path "$temporary_root" || true
+    api37_error 'unable to clear stale command-line tools backup'
+    return 1
+  fi
+  if [[ -e "$sdk_root/cmdline-tools/latest" || -L "$sdk_root/cmdline-tools/latest" ]]; then
+    if ! move_sdk_path "$sdk_root/cmdline-tools/latest" "$backup"; then
+      remove_sdk_path "$temporary_root" || true
+      api37_error 'unable to back up existing command-line tools'
+      return 1
+    fi
+  fi
+  if ! move_sdk_path "$replacement" "$sdk_root/cmdline-tools/latest"; then
+    if [[ -e "$backup" || -L "$backup" ]]; then
+      move_sdk_path "$backup" "$sdk_root/cmdline-tools/latest" || true
+    fi
+    remove_sdk_path "$temporary_root" || true
+    api37_error 'unable to install command-line tools into Android SDK'
+    return 1
+  fi
+  if ! remove_sdk_path "$backup"; then
+    api37_error 'replacement installed, but backup cleanup failed'
+    return 1
+  fi
+  remove_sdk_path "$temporary_root" || true
   sdkmanager_path="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
   printf 'cmdline_tools=%s (installed for API 37 feature-drop images)\n' "$replacement_version"
 }
