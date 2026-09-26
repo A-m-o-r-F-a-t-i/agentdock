@@ -195,6 +195,8 @@ class WorkbenchRepository(
         Result.failure(error)
     }
 
+    internal suspend fun managementClient(): CoreClient = client(settingsStore.current())
+
     private suspend fun client(settings: WorkbenchSettings): CoreClient = withContext(Dispatchers.IO) {
         val origin = EndpointPolicy.resolve(settings.endpoint, settings.remoteEndpointEnabled)
         CoreClient(CoreEndpoint(origin, credentials.getCore(origin)))
