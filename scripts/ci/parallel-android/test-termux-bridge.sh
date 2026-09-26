@@ -29,6 +29,7 @@ jq -e '.status=="pending_manifest" or .status=="requires_user_action" or .status
 out="$(request install op_install req_install "$nonce")"
 jq -e '.status=="pending_manifest"' <<<"$out" >/dev/null
 [ ! -e "$AGENTDOCK_WORKBENCH_TEST_HOME/.agentdock-workbench/node/current" ]
+request cancel_operation op_cancel req_cancel "$nonce" '{"target_operation_id":"op_install","confirm_cancel":true}' >/dev/null
 
 set +e
 bad="$(printf '{}' | sh "$bridge" start 'bad/id' req_bad "$nonce" - 2>/dev/null)"
@@ -95,7 +96,8 @@ python3 - "$bridge" "$tmp" <<'PYTEST'
 import io, os, pathlib, subprocess, sys, tarfile
 bridge, root = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 text = bridge.read_text()
-code = text.split("<<'ARCHIVE_GUARD' || return 83\n", 1)[1].split("\nARCHIVE_GUARD", 1)[0]
+module = bridge.with_name('agentdock_workbench.py')
+code = "import importlib.util,sys; from pathlib import Path; spec=importlib.util.spec_from_file_location('bridge',sys.argv[1]); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); m.safe_extract(Path(sys.argv[2]),Path(sys.argv[3]))"
 cases = [
     ("good", [("bin/agentdock", tarfile.REGTYPE, b"fixture")], True),
     ("traversal", [("../escape", tarfile.REGTYPE, b"fixture")], False),
@@ -115,7 +117,7 @@ for name, entries, success in cases:
             member.size = len(payload) if kind == tarfile.REGTYPE else 0
             if kind in (tarfile.SYMTYPE, tarfile.LNKTYPE): member.linkname = "/tmp/escape"
             output.addfile(member, io.BytesIO(payload) if member.isfile() else None)
-    result = subprocess.run([sys.executable, "-c", code, str(archive), str(stage)], capture_output=True, text=True)
+    result = subprocess.run([sys.executable, "-c", code, str(module), str(archive), str(stage)], capture_output=True, text=True)
     assert (result.returncode == 0) == success, (name, result.stderr)
     if success:
         assert (stage / "bin/agentdock").read_bytes() == b"fixture"
@@ -125,4 +127,5 @@ for name, entries, success in cases:
 print("9 archive cases passed")
 PYTEST
 
-echo 'termux bridge contract tests passed'
+python3 "$root/scripts/ci/parallel-android/test_deployment.py"
+echo 'termux bridge contract and deployment tests passed'
