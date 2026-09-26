@@ -24,7 +24,12 @@ $baselineDirectory = Join-Path $architectureRoot 'baseline-self-contained'
 $splitDirectory = Join-Path $architectureRoot 'runtime-split-candidate'
 $reportDirectory = Join-Path $architectureRoot 'reports'
 
-Remove-Item -LiteralPath $architectureRoot -Recurse -Force -ErrorAction SilentlyContinue
+# This script owns only its two publish trees and runtime-split reports.
+# Preserve Core binaries, compiled tests and diagnostics produced by earlier
+# workflow steps under the same architecture root.
+foreach ($ownedPath in @($baselineDirectory, $splitDirectory, $reportDirectory)) {
+    Remove-Item -LiteralPath $ownedPath -Recurse -Force -ErrorAction SilentlyContinue
+}
 New-Item -ItemType Directory -Path $baselineDirectory, $splitDirectory, $reportDirectory -Force | Out-Null
 
 if ([string]::IsNullOrWhiteSpace($SourceCommit)) {

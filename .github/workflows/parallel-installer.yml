@@ -128,12 +128,84 @@ jobs:
             throw "Source identity mismatch: expected $env:EXPECTED_COMMIT, got $actual"
           }
 
-      - name: Run native Windows contracts
+      - name: Test Windows generation retention contracts
+        id: test_generation_retention
         if: matrix.architecture == 'amd64'
+        continue-on-error: true
         run: |
-          go test ./internal/generationretention ./internal/installer ./internal/selfupdate -count=1 -timeout=12m
-          if ($LASTEXITCODE -ne 0) { throw 'Windows contract tests failed.' }
-          & ./scripts/ci/parallel-installer/test-setup-archive.ps1
+          $directory = Join-Path $PWD 'artifacts\parallel-installer\amd64\diagnostics'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          go test ./internal/generationretention -count=1 -timeout=12m *>&1 |
+            Tee-Object -FilePath (Join-Path $directory 'generationretention.log')
+          exit $LASTEXITCODE
+
+      - name: Test Windows installer contracts
+        id: test_installer
+        if: matrix.architecture == 'amd64'
+        continue-on-error: true
+        run: |
+          $directory = Join-Path $PWD 'artifacts\parallel-installer\amd64\diagnostics'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          go test ./internal/installer -count=1 -timeout=12m *>&1 |
+            Tee-Object -FilePath (Join-Path $directory 'installer.log')
+          exit $LASTEXITCODE
+
+      - name: Test Windows self-update contracts
+        id: test_selfupdate
+        if: matrix.architecture == 'amd64'
+        continue-on-error: true
+        run: |
+          $directory = Join-Path $PWD 'artifacts\parallel-installer\amd64\diagnostics'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          go test ./internal/selfupdate -count=1 -timeout=12m *>&1 |
+            Tee-Object -FilePath (Join-Path $directory 'selfupdate.log')
+          exit $LASTEXITCODE
+
+      - name: Test Setup archive contracts
+        id: test_setup_archive
+        if: matrix.architecture == 'amd64'
+        continue-on-error: true
+        run: |
+          $directory = Join-Path $PWD 'artifacts\parallel-installer\amd64\diagnostics'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          $log = Join-Path $directory 'setup-archive.log'
+          try {
+            & ./scripts/ci/parallel-installer/test-setup-archive.ps1 *>&1 |
+              Tee-Object -FilePath $log
+          } catch {
+            ($_ | Out-String) | Add-Content -LiteralPath $log -Encoding UTF8
+            Write-Error -ErrorRecord $_
+          }
+
+      - name: Gate native Windows contracts
+        if: ${{ always() && matrix.architecture == 'amd64' }}
+        env:
+          GENERATION_RETENTION_OUTCOME: ${{ steps.test_generation_retention.outcome }}
+          INSTALLER_OUTCOME: ${{ steps.test_installer.outcome }}
+          SELFUPDATE_OUTCOME: ${{ steps.test_selfupdate.outcome }}
+          SETUP_ARCHIVE_OUTCOME: ${{ steps.test_setup_archive.outcome }}
+        run: |
+          $directory = Join-Path $PWD 'artifacts\parallel-installer\amd64\diagnostics'
+          $contracts = @(
+            [pscustomobject]@{ Name = 'generation retention'; Outcome = $env:GENERATION_RETENTION_OUTCOME; Log = 'generationretention.log' },
+            [pscustomobject]@{ Name = 'installer'; Outcome = $env:INSTALLER_OUTCOME; Log = 'installer.log' },
+            [pscustomobject]@{ Name = 'self-update'; Outcome = $env:SELFUPDATE_OUTCOME; Log = 'selfupdate.log' },
+            [pscustomobject]@{ Name = 'Setup archive'; Outcome = $env:SETUP_ARCHIVE_OUTCOME; Log = 'setup-archive.log' }
+          )
+          $failed = @($contracts | Where-Object Outcome -ne 'success')
+          foreach ($contract in $failed) {
+            $path = Join-Path $directory $contract.Log
+            $tail = if (Test-Path -LiteralPath $path -PathType Leaf) {
+              @(Get-Content -LiteralPath $path -Tail 60)
+            } else {
+              @('Diagnostic log was not created.')
+            }
+            $message = (($tail -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A'))
+            Write-Host "::error title=WB05 $($contract.Name) contracts::$message"
+          }
+          if ($failed.Count -gt 0) {
+            throw "Windows contract failures: $($failed.Name -join ', ')"
+          }
 
       - name: Cross-compile ARM64 contracts
         if: matrix.architecture == 'arm64'
@@ -162,9 +234,21 @@ jobs:
 
       - name: Build and measure WPF runtime-split candidate
         run: |
-          & ./scripts/ci/parallel-installer/build-runtime-split-candidate.ps1 `
-            -Architecture '${{ matrix.architecture }}' `
-            -SourceCommit '${{ github.sha }}'
+          $directory = Join-Path $PWD "artifacts\parallel-installer\${{ matrix.architecture }}\diagnostics"
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          $log = Join-Path $directory 'runtime-split.log'
+          try {
+            & ./scripts/ci/parallel-installer/build-runtime-split-candidate.ps1 `
+              -Architecture '${{ matrix.architecture }}' `
+              -SourceCommit '${{ github.sha }}' *>&1 |
+                Tee-Object -FilePath $log
+          } catch {
+            ($_ | Out-String) | Add-Content -LiteralPath $log -Encoding UTF8
+            $tail = @(Get-Content -LiteralPath $log -Tail 80)
+            $message = (($tail -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A'))
+            Write-Host "::error title=WB05 runtime-split ${{ matrix.architecture }}::$message"
+            throw
+          }
 
       - name: Record candidate policy evidence
         if: always()
