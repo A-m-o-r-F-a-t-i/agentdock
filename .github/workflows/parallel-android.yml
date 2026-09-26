@@ -112,7 +112,9 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           text = Path(".github/workflows/parallel-android.yml").read_text()
-          assert "contents: write" not in text
+          sensitive_permission = "contents" + ": " + "write"
+          if sensitive_permission in text:
+              raise SystemExit(f"forbidden workflow permission found: {sensitive_permission}")
           forbidden = ["gh" + " release", "git" + " tag", "npm" + " publish", "gradle" + " publish"]
           hits = [item for item in forbidden if item in text]
           if hits:
