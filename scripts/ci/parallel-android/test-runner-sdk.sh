@@ -17,6 +17,7 @@ make_sdk() {
 #!/usr/bin/env bash
 printf '%s\\n' '$version'
 EOF
+  printf 'Pkg.Revision=%s\n' "$version" > "$sdk/cmdline-tools/latest/source.properties"
   cat > "$sdk/platform-tools/adb" <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -105,6 +106,7 @@ cat > "$destination/cmdline-tools/bin/avdmanager" <<'INNER'
 #!/usr/bin/env bash
 exit 0
 INNER
+printf 'Pkg.Revision=22.0\n' > "$destination/cmdline-tools/source.properties"
 chmod +x "$destination/cmdline-tools/bin/sdkmanager" "$destination/cmdline-tools/bin/avdmanager"
 EOF
   cat > "$directory/mv" <<'EOF'

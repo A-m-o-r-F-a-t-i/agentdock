@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+
+report_unhandled_error() {
+  local status="$?" line command
+  set +e
+  if [[ "${ANDROID_SYSTEM_IMAGE_API_LEVEL:-}" == 37* ]]; then
+    line="${BASH_LINENO[0]:-${LINENO}}"
+    command="$BASH_COMMAND"
+    command="${command//'%'/'%25'}"
+    command="${command//$'\r'/'%0D'}"
+    command="${command//$'\n'/'%0A'}"
+    printf '::error title=API 37 SDK preparation failed::exit %s at line %s: %s\n' \
+      "$status" "$line" "$command"
+  fi
+  exit "$status"
+}
+trap report_unhandled_error ERR
 
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 [[ -n "$sdk_root" && -d "$sdk_root" ]]
@@ -18,7 +34,15 @@ fi
 [[ -x "$sdkmanager_path" ]]
 
 cmdline_tools_version() {
-  "$1" --version 2>/dev/null | awk '/^[0-9]+([.][0-9]+)*$/ { print; exit }'
+  local executable="$1" properties version
+  properties="$(cd "$(dirname "$executable")/.." && pwd)/source.properties"
+  if [[ -f "$properties" ]]; then
+    version="$(sed -n 's/^[[:space:]]*Pkg.Revision[[:space:]]*=[[:space:]]*//p' "$properties" | head -1)"
+  fi
+  if [[ -z "${version:-}" ]]; then
+    version="$("$executable" --version 2>/dev/null | awk '/^[0-9]+([.][0-9]+)*$/ { print; exit }' || true)"
+  fi
+  printf '%s\n' "$version"
 }
 
 api37_error() {
@@ -150,5 +174,7 @@ fi
 if [[ -n "${GITHUB_PATH:-}" ]]; then
   printf '%s\n' "$(dirname "$sdkmanager_path")" >> "$GITHUB_PATH"
 fi
-"$sdkmanager_path" --version
+resolved_version="$(cmdline_tools_version "$sdkmanager_path")"
+[[ -n "$resolved_version" ]]
+printf '%s\n' "$resolved_version"
 printf 'platform=%s\nbuild_tools=%s\n' "$platform" "$sdk_root/build-tools/$ANDROID_BUILD_TOOLS"

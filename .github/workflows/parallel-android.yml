@@ -108,6 +108,11 @@ jobs:
               raise SystemExit(f"forbidden workflow content: {hits}")
           PY
 
+      - name: Verify API 37 command-line tools bootstrap
+        env:
+          ANDROID_SYSTEM_IMAGE_API_LEVEL: "37.0"
+        run: bash scripts/ci/parallel-android/prepare-runner-sdk.sh
+
       - name: Upload contract evidence
         if: always()
         uses: actions/upload-artifact@v4
