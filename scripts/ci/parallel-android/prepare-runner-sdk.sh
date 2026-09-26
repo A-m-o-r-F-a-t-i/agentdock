@@ -20,9 +20,9 @@ trap report_unhandled_error ERR
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 if [[ -z "$sdk_root" || ! -d "$sdk_root" ]]; then
   for candidate in \
+    "$HOME/Android/Sdk" \
     /usr/local/lib/android/sdk \
-    /opt/android-sdk-linux \
-    "$HOME/Android/Sdk"; do
+    /opt/android-sdk-linux; do
     if [[ -d "$candidate" ]]; then
       sdk_root="$candidate"
       break
