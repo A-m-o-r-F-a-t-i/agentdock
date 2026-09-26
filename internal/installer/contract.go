@@ -60,6 +60,42 @@ const (
 	PhaseRollback Phase = "rollback"
 )
 
+// InstallStage is the stable, cross-layer timing vocabulary shared by Setup,
+// Installer Engine and candidate diagnostics. Stages may be absent when that
+// operation is not part of a request; callers must not fabricate zero-duration
+// samples for work they did not perform.
+type InstallStage string
+
+const (
+	InstallStageDownload             InstallStage = "download"
+	InstallStageVerify               InstallStage = "verify"
+	InstallStageExtract              InstallStage = "extract"
+	InstallStageInstallerStaging     InstallStage = "installer_staging"
+	InstallStageServiceStop          InstallStage = "service_stop"
+	InstallStagePayloadWrite         InstallStage = "payload_write"
+	InstallStageConfigSkillBootstrap InstallStage = "config_skill_bootstrap"
+	InstallStageServiceStart         InstallStage = "service_start"
+	InstallStageReadinessWait        InstallStage = "readiness_wait"
+)
+
+// StageTiming contains redaction-safe wall-clock evidence for one install
+// stage. CompletedAt remains nil while a durable transaction is in-flight.
+type StageTiming struct {
+	Stage       InstallStage `json:"stage"`
+	StartedAt   time.Time    `json:"started_at"`
+	CompletedAt *time.Time   `json:"completed_at,omitempty"`
+	DurationMS  int64        `json:"duration_ms,omitempty"`
+}
+
+// TimingSummary is optional for backward compatibility with existing result
+// readers. ReusedCachedPayload describes bundled/offline payload reuse only;
+// it never implies that verification or extraction was skipped.
+type TimingSummary struct {
+	WallDurationMS      int64         `json:"wall_duration_ms,omitempty"`
+	ReusedCachedPayload bool          `json:"reused_cached_payload,omitempty"`
+	Stages              []StageTiming `json:"stages,omitempty"`
+}
+
 // OptionalString 把“未指定”和“空值”分开。
 // 未指定：保留已有凭据，缺失且首次开启公网认证时才生成。
 // 已指定：必须使用该值，空字符串非法。
@@ -164,6 +200,7 @@ type Result struct {
 	TaskName    string                `json:"task_name,omitempty"`
 	Failure     *updateengine.Failure `json:"failure,omitempty"`
 	Warnings    []string              `json:"warnings,omitempty"`
+	Timing      *TimingSummary        `json:"timing,omitempty"`
 	StartedAt   time.Time             `json:"started_at"`
 	CompletedAt time.Time             `json:"completed_at"`
 }
@@ -193,6 +230,7 @@ type Transaction struct {
 	CompletedAt         *time.Time            `json:"completed_at,omitempty"`
 	Failure             *updateengine.Failure `json:"failure,omitempty"`
 	Warnings            []string              `json:"warnings,omitempty"`
+	Timing              *TimingSummary        `json:"timing,omitempty"`
 }
 
 // ensureUninstallIntentMatches 冻结 uninstall trial 的事务意图：retry 的

@@ -24,7 +24,8 @@ param(
     [string] $CloudflaredStartupValueName = 'AgentDockCloudflared',
     [string] $TrayStartupValueName = 'AgentDockTray',
     [ValidateSet('standard', 'elevated')]
-    [string] $CorePrivilegeMode = 'standard'
+    [string] $CorePrivilegeMode = 'standard',
+    [switch] $LibraryOnly
 )
 
 Set-StrictMode -Version Latest
@@ -1042,6 +1043,265 @@ function Set-RunValue {
     }
 }
 
+function Test-AgentDockReleasePayloadPath {
+    param([string] $Name)
+
+    if (@(
+        'agentdock.exe',
+        'agentdock-tray.exe',
+        'agentdock.ico',
+        'agentdock-arbiter.exe',
+        'agentdock-shim.exe',
+        'agentdock-tray-shim.exe'
+    ) -contains $Name) {
+        return $true
+    }
+    return $Name.StartsWith('share/agentdock/core-skills/', [StringComparison]::Ordinal) -or
+        $Name.StartsWith('wsl-helper/', [StringComparison]::Ordinal)
+}
+
+function Expand-AgentDockReleaseArchive {
+    param(
+        [Parameter(Mandatory = $true)][string] $ArchivePath,
+        [Parameter(Mandatory = $true)][string] $DestinationPath
+    )
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $maxEntries = 16384
+    $maxEntryBytes = [Int64] (256MB)
+    $maxTotalBytes = [Int64] (1GB)
+    $archive = $null
+    try {
+        $archive = [IO.Compression.ZipFile]::OpenRead($ArchivePath)
+        if ($archive.Entries.Count -lt 1 -or $archive.Entries.Count -gt $maxEntries) {
+            throw "Release archive entry count is invalid: $($archive.Entries.Count)"
+        }
+
+        # Validate the complete central directory before creating any output.
+        # The comparer mirrors Windows path semantics so case-folded duplicates
+        # cannot overwrite each other during extraction.
+        $kinds = [System.Collections.Generic.Dictionary[string, bool]]::new([StringComparer]::OrdinalIgnoreCase)
+        $records = [System.Collections.Generic.List[object]]::new()
+        $totalBytes = [Int64] 0
+        $selectedBytes = [Int64] 0
+        foreach ($entry in $archive.Entries) {
+            $rawName = [string] $entry.FullName
+            if ([string]::IsNullOrEmpty($rawName) -or
+                $rawName.IndexOf([char] 0) -ge 0 -or
+                $rawName.Contains('\') -or
+                $rawName.StartsWith('/', [StringComparison]::Ordinal) -or
+                $rawName.Contains(':') -or
+                $rawName.Length -gt 4096) {
+                throw "Release archive contains an unsafe path: $rawName"
+            }
+
+            $isDirectory = $rawName.EndsWith('/', [StringComparison]::Ordinal)
+            $trimmedName = if ($isDirectory) { $rawName.Substring(0, $rawName.Length - 1) } else { $rawName }
+            if ([string]::IsNullOrWhiteSpace($trimmedName)) {
+                throw "Release archive contains an empty path: $rawName"
+            }
+
+            $segments = $trimmedName.Split('/')
+            foreach ($segment in $segments) {
+                if ([string]::IsNullOrEmpty($segment) -or
+                    $segment -eq '.' -or
+                    $segment -eq '..' -or
+                    $segment.EndsWith('.', [StringComparison]::Ordinal) -or
+                    $segment.EndsWith(' ', [StringComparison]::Ordinal) -or
+                    $segment.IndexOfAny([char[]] '<>:"|?*') -ge 0 -or
+                    $segment.Length -gt 255) {
+                    throw "Release archive contains a non-canonical path: $rawName"
+                }
+                foreach ($character in $segment.ToCharArray()) {
+                    if ([char]::IsControl($character)) {
+                        throw "Release archive contains a control character in a path."
+                    }
+                }
+                $deviceBase = $segment.Split([char] '.')[0].ToUpperInvariant()
+                if ($deviceBase -match '^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$') {
+                    throw "Release archive contains a reserved Windows path: $rawName"
+                }
+            }
+
+            $canonicalName = [string]::Join('/', $segments)
+            if (-not [string]::Equals($canonicalName, $trimmedName, [StringComparison]::Ordinal)) {
+                throw "Release archive contains a non-canonical path: $rawName"
+            }
+            if ($kinds.ContainsKey($canonicalName)) {
+                throw "Release archive contains a duplicate path: $canonicalName"
+            }
+
+            $externalAttributes = [UInt32] (([Int64] $entry.ExternalAttributes) -band [Int64][UInt32]::MaxValue)
+            $unixType = (($externalAttributes -shr 16) -band 0xF000)
+            $dosAttributes = ($externalAttributes -band 0xFFFF)
+            if (($dosAttributes -band [UInt32][IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Release archive contains a reparse-point entry: $canonicalName"
+            }
+            if ($isDirectory) {
+                if ($entry.Length -ne 0 -or ($unixType -ne 0 -and $unixType -ne 0x4000)) {
+                    throw "Release archive directory type is invalid: $canonicalName"
+                }
+            } elseif ($unixType -ne 0 -and $unixType -ne 0x8000) {
+                throw "Release archive contains a non-regular file: $canonicalName"
+            }
+
+            $length = [Int64] $entry.Length
+            if ($length -lt 0 -or $length -gt $maxEntryBytes -or $length -gt ($maxTotalBytes - $totalBytes)) {
+                throw "Release archive expanded content exceeds limits: $canonicalName"
+            }
+            $totalBytes += $length
+            $selected = (-not $isDirectory) -and (Test-AgentDockReleasePayloadPath -Name $canonicalName)
+            if ($selected) { $selectedBytes += $length }
+            $kinds.Add($canonicalName, $isDirectory)
+            $records.Add([pscustomobject]@{
+                Entry = $entry
+                Name = $canonicalName
+                IsDirectory = $isDirectory
+                Selected = $selected
+                Length = $length
+            })
+        }
+
+        # Reject an explicit file that is also the parent of another entry.
+        foreach ($record in $records) {
+            $parts = $record.Name.Split('/')
+            for ($index = 1; $index -lt $parts.Length; $index++) {
+                $parent = [string]::Join('/', $parts[0..($index - 1)])
+                if ($kinds.ContainsKey($parent) -and -not $kinds[$parent]) {
+                    throw "Release archive contains a file/directory conflict: $parent"
+                }
+            }
+        }
+
+        $destinationRoot = [IO.Path]::GetFullPath($DestinationPath)
+        $destinationPrefix = $destinationRoot.TrimEnd([char[]] @('\', '/')) + [IO.Path]::DirectorySeparatorChar
+        New-Item -ItemType Directory -Path $destinationRoot -Force | Out-Null
+        $extractedEntries = 0
+        $extractedBytes = [Int64] 0
+        foreach ($record in $records) {
+            if (-not $record.Selected) { continue }
+
+            $relativePath = $record.Name.Replace('/', [IO.Path]::DirectorySeparatorChar)
+            $targetPath = [IO.Path]::GetFullPath((Join-Path $destinationRoot $relativePath))
+            if (-not $targetPath.StartsWith($destinationPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                throw "Release archive path escapes extraction root: $($record.Name)"
+            }
+            $targetDirectory = Split-Path -Parent $targetPath
+            New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+
+            $input = $null
+            $output = $null
+            $completed = $false
+            try {
+                $input = $record.Entry.Open()
+                $output = New-Object IO.FileStream(
+                    $targetPath,
+                    [IO.FileMode]::CreateNew,
+                    [IO.FileAccess]::Write,
+                    [IO.FileShare]::None,
+                    131072,
+                    [IO.FileOptions]::SequentialScan
+                )
+                $buffer = New-Object byte[] 131072
+                $written = [Int64] 0
+                while (($read = $input.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                    $written += $read
+                    if ($written -gt $record.Length -or $written -gt $maxEntryBytes) {
+                        throw "Release archive entry expanded beyond its declared size: $($record.Name)"
+                    }
+                    $output.Write($buffer, 0, $read)
+                }
+                $output.Flush($true)
+                if ($written -ne $record.Length) {
+                    throw "Release archive entry size mismatch: $($record.Name)"
+                }
+                $completed = $true
+                $extractedEntries++
+                $extractedBytes += $written
+            } finally {
+                if ($null -ne $output) { $output.Dispose() }
+                if ($null -ne $input) { $input.Dispose() }
+                if (-not $completed) {
+                    Remove-Item -LiteralPath $targetPath -Force -ErrorAction SilentlyContinue
+                }
+            }
+        }
+
+        return [pscustomobject]@{
+            entry_count = $records.Count
+            selected_entry_count = $extractedEntries
+            declared_bytes = $totalBytes
+            extracted_bytes = $extractedBytes
+            skipped_bytes = ($totalBytes - $selectedBytes)
+        }
+    } finally {
+        if ($null -ne $archive) { $archive.Dispose() }
+    }
+}
+
+function Invoke-SetupMeasuredStage {
+    param(
+        [Parameter(Mandatory = $true)] $Timing,
+        [Parameter(Mandatory = $true)][string] $Stage,
+        [Parameter(Mandatory = $true)][scriptblock] $Action
+    )
+
+    $startedAt = [DateTime]::UtcNow
+    $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        & $Action
+    } finally {
+        $stopwatch.Stop()
+        $completedAt = [DateTime]::UtcNow
+        [void] $Timing.Stages.Add([pscustomobject]@{
+            stage = $Stage
+            started_at = $startedAt.ToString('o')
+            completed_at = $completedAt.ToString('o')
+            duration_ms = [Int64] $stopwatch.ElapsedMilliseconds
+        })
+    }
+}
+
+function Write-SetupTimingSummary {
+    param(
+        [Parameter(Mandatory = $true)] $Timing,
+        [Parameter(Mandatory = $true)][string] $RuntimeRoot,
+        $InstallerTiming = $null
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RuntimeRoot)) { return }
+    $completedAt = [DateTime]::UtcNow
+    $summary = [ordered]@{
+        schema_version = 1
+        started_at = $Timing.StartedAt.ToString('o')
+        completed_at = $completedAt.ToString('o')
+        wall_duration_ms = [Int64] $Timing.Stopwatch.ElapsedMilliseconds
+        reused_cached_payload = [bool] $Timing.ReusedCachedPayload
+        stages = @($Timing.Stages)
+        installer_engine = $InstallerTiming
+    }
+    $directory = Join-Path $RuntimeRoot 'install'
+    New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    $path = Join-Path $directory 'setup-timing.json'
+    $temporaryPath = "$path.tmp.$PID"
+    $encoding = New-Object Text.UTF8Encoding($false)
+    [IO.File]::WriteAllText($temporaryPath, ($summary | ConvertTo-Json -Depth 12), $encoding)
+    Move-Item -LiteralPath $temporaryPath -Destination $path -Force
+}
+
+if ($LibraryOnly) {
+    return
+}
+
+$setupTiming = [pscustomobject]@{
+    StartedAt = [DateTime]::UtcNow
+    Stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    ReusedCachedPayload = $false
+    Stages = [System.Collections.Generic.List[object]]::new()
+}
+$engineTiming = $null
 $effectivePrivilegeMode = $CorePrivilegeMode
 $installWarningCode = ''
 $installWarningMessage = ''
@@ -1356,22 +1616,33 @@ try {
             throw "Offline AgentDock checksum file was not found: $OfflineChecksumFile"
         }
         Write-Host "Using bundled AgentDock payload: $OfflineArchive"
-        Copy-Item -LiteralPath $OfflineArchive -Destination $archivePath -Force
-        Copy-Item -LiteralPath $OfflineChecksumFile -Destination $checksumPath -Force
+        $setupTiming.ReusedCachedPayload = $true
+        Invoke-SetupMeasuredStage -Timing $setupTiming -Stage 'installer_staging' -Action {
+            Copy-Item -LiteralPath $OfflineArchive -Destination $archivePath -Force
+            Copy-Item -LiteralPath $OfflineChecksumFile -Destination $checksumPath -Force
+        } | Out-Null
     } else {
         $releaseBaseUrl = Get-ReleaseBaseUrl -RequestedVersion $Version
-        Invoke-WebRequest -UseBasicParsing -Uri "$releaseBaseUrl/$assetName" -OutFile $archivePath
-        Invoke-WebRequest -UseBasicParsing -Uri "$releaseBaseUrl/$assetName.sha256" -OutFile $checksumPath
+        Invoke-SetupMeasuredStage -Timing $setupTiming -Stage 'download' -Action {
+            Invoke-WebRequest -UseBasicParsing -Uri "$releaseBaseUrl/$assetName" -OutFile $archivePath
+            Invoke-WebRequest -UseBasicParsing -Uri "$releaseBaseUrl/$assetName.sha256" -OutFile $checksumPath
+        } | Out-Null
     }
 
     $expectedHash = ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
-    $actualHash = Get-Sha256Hex -Path $archivePath
+    $actualHash = Invoke-SetupMeasuredStage -Timing $setupTiming -Stage 'verify' -Action {
+        Get-Sha256Hex -Path $archivePath
+    }
     if ($actualHash -ne $expectedHash) {
         throw "SHA-256 mismatch for $assetName. Expected $expectedHash, got $actualHash."
     }
 
     $extractDir = Join-Path $tempRoot 'extract'
-    Expand-Archive -LiteralPath $archivePath -DestinationPath $extractDir -Force
+    $archiveExtraction = Invoke-SetupMeasuredStage -Timing $setupTiming -Stage 'extract' -Action {
+        Expand-AgentDockReleaseArchive -ArchivePath $archivePath -DestinationPath $extractDir
+    }
+    Write-Host ("Validated {0} archive entries and streamed {1} required payload entries ({2} bytes)." -f `
+        $archiveExtraction.entry_count, $archiveExtraction.selected_entry_count, $archiveExtraction.extracted_bytes)
     $sourceBinary = Join-Path $extractDir 'agentdock.exe'
     if (-not (Test-Path -LiteralPath $sourceBinary -PathType Leaf)) {
         throw "Release archive does not contain agentdock.exe: $assetName"
@@ -1679,34 +1950,46 @@ try {
             Write-Host "Prepared AgentDock scheduled task transaction: $taskAction"
         }
     }
-    $agentDockStopAttempted = $true
-    if ($generationLayoutDetected) {
-        [void] (Stop-AgentDockForUpgrade -BinaryPath $existingGenerationCore)
-        # Also stop a legacy stable Core left by a crash between source-pointer commit and shim install.
-        [void] (Stop-AgentDockForUpgrade -BinaryPath $destinationBinary)
-    } else {
-        [void] (Stop-AgentDockForUpgrade -BinaryPath $destinationBinary)
-    }
+    $serviceStopStartedAt = [DateTime]::UtcNow
+    $serviceStopWatch = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        $agentDockStopAttempted = $true
+        if ($generationLayoutDetected) {
+            [void] (Stop-AgentDockForUpgrade -BinaryPath $existingGenerationCore)
+            # Also stop a legacy stable Core left by a crash between source-pointer commit and shim install.
+            [void] (Stop-AgentDockForUpgrade -BinaryPath $destinationBinary)
+        } else {
+            [void] (Stop-AgentDockForUpgrade -BinaryPath $destinationBinary)
+        }
 
-    # Stable entries remain the rollback boundary for both legacy bootstrap and same-version repair.
-    # Preserve them before replacement even when active-version.json already exists.
-    if (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
-        Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force
-    }
-    if (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf) {
-        Copy-Item -LiteralPath $destinationTrayBinary -Destination $trayBackup -Force
-    }
+        # Stable entries remain the rollback boundary for both legacy bootstrap and same-version repair.
+        # Preserve them before replacement even when active-version.json already exists.
+        if (Test-Path -LiteralPath $destinationBinary -PathType Leaf) {
+            Copy-Item -LiteralPath $destinationBinary -Destination $binaryBackup -Force
+        }
+        if (Test-Path -LiteralPath $destinationTrayBinary -PathType Leaf) {
+            Copy-Item -LiteralPath $destinationTrayBinary -Destination $trayBackup -Force
+        }
 
-    if (-not $generationLayoutDetected) {
-        $trayProcessWasRunning = @(Get-AgentDockTrayProcesses -BinaryPath $destinationTrayBinary).Count -gt 0
-    }
+        if (-not $generationLayoutDetected) {
+            $trayProcessWasRunning = @(Get-AgentDockTrayProcesses -BinaryPath $destinationTrayBinary).Count -gt 0
+        }
 
-    $trayStopAttempted = $true
-    if ($generationLayoutDetected) {
-        [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $existingGenerationTray)
-        [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $destinationTrayBinary)
-    } else {
-        [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $destinationTrayBinary)
+        $trayStopAttempted = $true
+        if ($generationLayoutDetected) {
+            [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $existingGenerationTray)
+            [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $destinationTrayBinary)
+        } else {
+            [void] (Stop-AgentDockTrayForUpgrade -BinaryPath $destinationTrayBinary)
+        }
+    } finally {
+        $serviceStopWatch.Stop()
+        [void] $setupTiming.Stages.Add([pscustomobject]@{
+            stage = 'service_stop'
+            started_at = $serviceStopStartedAt.ToString('o')
+            completed_at = ([DateTime]::UtcNow).ToString('o')
+            duration_ms = [Int64] $serviceStopWatch.ElapsedMilliseconds
+        })
     }
     if (Test-Path -LiteralPath $destinationTrayIcon -PathType Leaf) {
         Copy-Item -LiteralPath $destinationTrayIcon -Destination $trayIconBackup -Force
@@ -1751,7 +2034,9 @@ try {
 
     $cloudflaredProcessWasRunning = @(Get-CloudflaredProcesses -BinaryPath $cloudflaredBinary).Count -gt 0
     $cloudflaredStopAttempted = $true
-    [void] (Stop-CloudflaredForUpgrade -BinaryPath $cloudflaredBinary)
+    Invoke-SetupMeasuredStage -Timing $setupTiming -Stage 'service_stop' -Action {
+        [void] (Stop-CloudflaredForUpgrade -BinaryPath $cloudflaredBinary)
+    } | Out-Null
     if (Test-Path -LiteralPath $cloudflaredBinary -PathType Leaf) {
         Copy-Item -LiteralPath $cloudflaredBinary -Destination $cloudflaredBackup -Force
     }
@@ -1938,23 +2223,34 @@ exit `$LASTEXITCODE
         $stableFilesMayBeReplaced = $true
         $engineInvoked = $true
         $engineInvocationStartedAt = [DateTime]::UtcNow
-        if ($InstallChannel -eq 'setup' -and $existingInstallDetected -and $RegisterStartup) {
-            # The upgrade Engine starts and verifies Core/Tunnel during its trial.
-            # Use the native GUI worker while retaining the Engine transaction
-            # identity and current user SID, with no interactive PowerShell task.
-            $engineJson = (Invoke-SetupRuntimeProcess -FilePath $sourceBinary `
-                -Arguments (ConvertTo-NativeArguments -Values $engineArgs) `
-                -WaitForExit -PassThruOutput -TimeoutSeconds 300 | Out-String).Trim()
-        } else {
-            $engineErrorPath = Join-Path $tempRoot 'installer-engine-error.log'
-            $engineJson = (& $sourceBinary @engineArgs 2>$engineErrorPath | Out-String).Trim()
-            if ($LASTEXITCODE -ne 0) {
-                $engineDetails = (Get-Content -LiteralPath $engineErrorPath -Raw -ErrorAction SilentlyContinue)
-                $engineFailureMessage = Get-InstallerEngineFailureMessage -RuntimeRoot $runtimeDir `
-                    -FallbackMessage "Installer Engine failed to write the runtime generation and manifest. $engineDetails" `
-                    -NotBeforeUtc $engineInvocationStartedAt
-                throw $engineFailureMessage
+        $engineStageWatch = [Diagnostics.Stopwatch]::StartNew()
+        try {
+            if ($InstallChannel -eq 'setup' -and $existingInstallDetected -and $RegisterStartup) {
+                # The upgrade Engine starts and verifies Core/Tunnel during its trial.
+                # Use the native GUI worker while retaining the Engine transaction
+                # identity and current user SID, with no interactive PowerShell task.
+                $engineJson = (Invoke-SetupRuntimeProcess -FilePath $sourceBinary `
+                    -Arguments (ConvertTo-NativeArguments -Values $engineArgs) `
+                    -WaitForExit -PassThruOutput -TimeoutSeconds 300 | Out-String).Trim()
+            } else {
+                $engineErrorPath = Join-Path $tempRoot 'installer-engine-error.log'
+                $engineJson = (& $sourceBinary @engineArgs 2>$engineErrorPath | Out-String).Trim()
+                if ($LASTEXITCODE -ne 0) {
+                    $engineDetails = (Get-Content -LiteralPath $engineErrorPath -Raw -ErrorAction SilentlyContinue)
+                    $engineFailureMessage = Get-InstallerEngineFailureMessage -RuntimeRoot $runtimeDir `
+                        -FallbackMessage "Installer Engine failed to write the runtime generation and manifest. $engineDetails" `
+                        -NotBeforeUtc $engineInvocationStartedAt
+                    throw $engineFailureMessage
+                }
             }
+        } finally {
+            $engineStageWatch.Stop()
+            [void] $setupTiming.Stages.Add([pscustomobject]@{
+                stage = 'payload_write'
+                started_at = $engineInvocationStartedAt.ToString('o')
+                completed_at = ([DateTime]::UtcNow).ToString('o')
+                duration_ms = [Int64] $engineStageWatch.ElapsedMilliseconds
+            })
         }
         # Engine already left a trial. Catch must abandon even if the JSON handshake is unreadable.
         $enginePrepared = $true
@@ -1965,6 +2261,9 @@ exit `$LASTEXITCODE
         }
         if (-not [string]::Equals([string] $engineResult.transaction_id, $engineTransactionId, [StringComparison]::Ordinal)) {
             throw 'Installer Engine did not acknowledge the requested transaction id.'
+        }
+        if ($null -ne $engineResult.PSObject.Properties['timing']) {
+            $engineTiming = $engineResult.timing
         }
 
     if (-not $RegisterStartup) {
@@ -2008,20 +2307,24 @@ exit `$LASTEXITCODE
                 $publicUrl = $ServerUrl
             }
         } elseif ($RegisterStartup) {
-            if ($effectivePrivilegeMode -eq 'elevated') {
-                Start-AgentDockTask -AgentDockBinary $destinationBinary -ExpectedUserSid $taskUser.Sid
-            } elseif ($InstallChannel -eq 'setup') {
-                Invoke-SetupRuntimeProcess `
-                    -FilePath $sourceBinary `
-                    -Arguments "service start --runtime-root `"$runtimeDir`"" `
-                    -WaitForExit
-            } else {
-                & $destinationBinary service start --runtime-root $runtimeDir
-                if ($LASTEXITCODE -ne 0) {
-                    throw "AgentDock native service start failed with exit code $LASTEXITCODE."
+            Invoke-SetupMeasuredStage -Timing $setupTiming -Stage 'service_start' -Action {
+                if ($effectivePrivilegeMode -eq 'elevated') {
+                    Start-AgentDockTask -AgentDockBinary $destinationBinary -ExpectedUserSid $taskUser.Sid
+                } elseif ($InstallChannel -eq 'setup') {
+                    Invoke-SetupRuntimeProcess `
+                        -FilePath $sourceBinary `
+                        -Arguments "service start --runtime-root `"$runtimeDir`"" `
+                        -WaitForExit
+                } else {
+                    & $destinationBinary service start --runtime-root $runtimeDir
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "AgentDock native service start failed with exit code $LASTEXITCODE."
+                    }
                 }
-            }
-            Wait-AgentDockHealth -HealthPort $Port
+            } | Out-Null
+            Invoke-SetupMeasuredStage -Timing $setupTiming -Stage 'readiness_wait' -Action {
+                Wait-AgentDockHealth -HealthPort $Port
+            } | Out-Null
             $healthStatus = 'healthy'
 
             if ($resolvedTunnelMode -eq 'quick') {
@@ -2030,18 +2333,22 @@ exit `$LASTEXITCODE
                 $publicUrl = $ServerUrl
             }
         } elseif ($mustRestartExistingProcess) {
-            if ($InstallChannel -eq 'setup') {
-                Invoke-SetupRuntimeProcess `
-                    -FilePath $sourceBinary `
-                    -Arguments "service start --runtime-root `"$runtimeDir`"" `
-                    -WaitForExit
-            } else {
-                & $destinationBinary service start --runtime-root $runtimeDir
-                if ($LASTEXITCODE -ne 0) {
-                    throw "AgentDock native service restart failed with exit code $LASTEXITCODE."
+            Invoke-SetupMeasuredStage -Timing $setupTiming -Stage 'service_start' -Action {
+                if ($InstallChannel -eq 'setup') {
+                    Invoke-SetupRuntimeProcess `
+                        -FilePath $sourceBinary `
+                        -Arguments "service start --runtime-root `"$runtimeDir`"" `
+                        -WaitForExit
+                } else {
+                    & $destinationBinary service start --runtime-root $runtimeDir
+                    if ($LASTEXITCODE -ne 0) {
+                        throw "AgentDock native service restart failed with exit code $LASTEXITCODE."
+                    }
                 }
-            }
-            Wait-AgentDockHealth -HealthPort $Port
+            } | Out-Null
+            Invoke-SetupMeasuredStage -Timing $setupTiming -Stage 'readiness_wait' -Action {
+                Wait-AgentDockHealth -HealthPort $Port
+            } | Out-Null
             $healthStatus = 'healthy'
         }
 
@@ -2130,6 +2437,11 @@ exit `$LASTEXITCODE
     $publicMCPUrl = ''
     if (-not [string]::IsNullOrWhiteSpace($publicUrl)) {
         $publicMCPUrl = "$publicUrl/mcp"
+    }
+    try {
+        Write-SetupTimingSummary -Timing $setupTiming -RuntimeRoot $runtimeDir -InstallerTiming $engineTiming
+    } catch {
+        Write-Warning "AgentDock installation completed, but the timing summary could not be written: $($_.Exception.Message)"
     }
     Write-InstallResult `
         -Path $ResultFile `
@@ -2419,6 +2731,12 @@ exit `$LASTEXITCODE
         $preserveRecoveryFiles = $true
         Write-Warning "Recovery files retained after incomplete rollback: $tempRoot"
         $resultMessage += " Recovery files: $tempRoot"
+    }
+
+    try {
+        Write-SetupTimingSummary -Timing $setupTiming -RuntimeRoot $runtimeDir -InstallerTiming $engineTiming
+    } catch {
+        Write-Warning "AgentDock failure timing summary could not be written: $($_.Exception.Message)"
     }
 
     Write-InstallResult `

@@ -231,24 +231,38 @@ func run(ctx context.Context, opts options) error {
 	defer os.RemoveAll(tempDir)
 
 	reportUpdateStage(opts.Progress, UpdateStageExtracting, currentVersion, targetVersion, archiveName)
-	binaryData, err := extractExecutable(archiveData, opts.GOOS, executableName)
-	if err != nil {
-		return fmt.Errorf("解压更新文件失败: %w", err)
-	}
-	stagedPath := filepath.Join(tempDir, executableName)
-	if err := os.WriteFile(stagedPath, binaryData, 0o755); err != nil {
-		return fmt.Errorf("写入新版本二进制失败: %w", err)
-	}
-	bundlePath, err := extractCoreSkillBundle(archiveData, opts.GOOS, tempDir)
-	if err != nil {
-		return fmt.Errorf("解压核心 Skill Bundle 失败: %w", err)
+	var stagedPath, bundlePath, desktopStagedPath string
+	sharedWindowsArchive := runtime.GOOS == "windows" && opts.GOOS == "windows" &&
+		inspection.DesktopArchiveAsset.Name != "" &&
+		inspection.DesktopArchiveAsset.Name == archiveAsset.Name &&
+		inspection.DesktopArchiveAsset.URL == archiveAsset.URL
+	if sharedWindowsArchive {
+		payload, extractErr := extractWindowsReleasePayload(archiveData, tempDir, executableName, targetVersion)
+		if extractErr != nil {
+			return fmt.Errorf("解压 Windows Release payload 失败: %w", extractErr)
+		}
+		stagedPath = payload.CorePath
+		bundlePath = payload.BundlePath
+		desktopStagedPath = payload.DesktopPath
+	} else {
+		binaryData, extractErr := extractExecutable(archiveData, opts.GOOS, executableName)
+		if extractErr != nil {
+			return fmt.Errorf("解压更新文件失败: %w", extractErr)
+		}
+		stagedPath = filepath.Join(tempDir, executableName)
+		if err := os.WriteFile(stagedPath, binaryData, 0o755); err != nil {
+			return fmt.Errorf("写入新版本二进制失败: %w", err)
+		}
+		bundlePath, extractErr = extractCoreSkillBundle(archiveData, opts.GOOS, tempDir)
+		if extractErr != nil {
+			return fmt.Errorf("解压核心 Skill Bundle 失败: %w", extractErr)
+		}
 	}
 	if err := opts.VerifyBinary(ctx, stagedPath, targetVersion); err != nil {
 		return fmt.Errorf("新版本二进制验证失败，当前版本未被修改: %w", err)
 	}
 
-	desktopStagedPath := ""
-	if inspection.DesktopArchiveAsset.Name != "" {
+	if inspection.DesktopArchiveAsset.Name != "" && desktopStagedPath == "" {
 		desktopArchiveData := archiveData
 		if inspection.DesktopArchiveAsset.Name != archiveAsset.Name || inspection.DesktopArchiveAsset.URL != archiveAsset.URL {
 			fmt.Fprintf(opts.Output, "正在下载 %s...\n", inspection.DesktopArchiveAsset.Name)

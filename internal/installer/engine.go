@@ -220,6 +220,9 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 			return Result{}, errors.New("install transaction-id has already been used or cannot be inspected")
 		}
 	}
+	timing := newInstallTimingRecorder(transaction.StartedAt)
+	timing.begin(InstallStageInstallerStaging)
+	transaction.Timing = timing.snapshot()
 	if err := store.WriteTransaction(transaction); err != nil {
 		return Result{}, err
 	}
@@ -232,8 +235,17 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 		Version:       request.Version,
 		StartedAt:     transaction.StartedAt,
 	}
+	syncTiming := func() {
+		summary := timing.snapshot()
+		transaction.Timing = cloneTimingSummary(summary)
+		result.Timing = cloneTimingSummary(summary)
+	}
+	timing.finishActive()
+	syncTiming()
 
 	fail := func(phase Phase, err error, staged stagedInstall) (Result, error) {
+		timing.finishActive()
+		syncTiming()
 		transaction.Phase = PhaseRollback
 		result.Failure = &updateengine.Failure{Code: string(phase) + "_failed", Message: err.Error(), At: time.Now().UTC()}
 		if staged.Journal != nil {
@@ -271,6 +283,8 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 	}
 
 	transaction.Phase = PhaseVerify
+	timing.begin(InstallStageVerify)
+	syncTiming()
 	if err := store.WriteTransaction(transaction); err != nil {
 		return fail(PhaseVerify, err, stagedInstall{})
 	}
@@ -280,8 +294,12 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 	if err := verifyRequest(request); err != nil {
 		return fail(PhaseVerify, err, stagedInstall{})
 	}
+	timing.finishActive()
+	syncTiming()
 
 	transaction.Phase = PhaseStage
+	timing.begin(InstallStagePayloadWrite)
+	syncTiming()
 	if err := store.WriteTransaction(transaction); err != nil {
 		return fail(PhaseStage, err, stagedInstall{})
 	}
@@ -289,9 +307,13 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 	if err != nil {
 		return fail(PhaseStage, err, stagedInstall{Journal: journal})
 	}
+	timing.finishActive()
+	syncTiming()
 
 	transaction.Phase = PhaseActivate
 	transaction.State = updateengine.StateTrial
+	timing.begin(InstallStageConfigSkillBootstrap)
+	syncTiming()
 	if err := store.WriteTransaction(transaction); err != nil {
 		return fail(PhaseActivate, err, staged)
 	}
@@ -308,18 +330,26 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 	if err := migrateInstalledPlugins(ctx, request, staged.Journal); err != nil {
 		return fail(PhaseActivate, err, staged)
 	}
+	timing.finishActive()
+	syncTiming()
 
 	if request.StartService {
 		transaction.Phase = PhaseStart
+		timing.begin(InstallStageServiceStart)
+		syncTiming()
 		if err := store.WriteTransaction(transaction); err != nil {
 			return fail(PhaseStart, err, staged)
 		}
 		if err := startPlatformServices(ctx, request, staged.Journal); err != nil {
 			return fail(PhaseStart, err, staged)
 		}
+		timing.finishActive()
+		syncTiming()
 
 		if !request.SkipHealth && shouldWaitForHealth(request) {
 			transaction.Phase = PhaseHealth
+			timing.begin(InstallStageReadinessWait)
+			syncTiming()
 			if err := store.WriteTransaction(transaction); err != nil {
 				return fail(PhaseHealth, err, staged)
 			}
@@ -339,21 +369,28 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 				return fail(PhaseHealth, waitErr, staged)
 			}
 			result.Healthy = true
+			timing.finishActive()
+			syncTiming()
 		}
 	}
 
 	if !request.SkipSkills && strings.TrimSpace(staged.SkillBundle) != "" {
 		transaction.Phase = PhaseSkills
+		timing.begin(InstallStageConfigSkillBootstrap)
+		syncTiming()
 		if err := store.WriteTransaction(transaction); err != nil {
 			return fail(PhaseSkills, err, staged)
 		}
 		if err := bootstrapSkills(ctx, request, staged.LiveBinary, staged.SkillBundle); err != nil {
 			return fail(PhaseSkills, err, staged)
 		}
+		timing.finishActive()
+		syncTiming()
 	}
 
 	if shouldStartTunnelInTransaction(request) {
 		transaction.Phase = PhaseTunnel
+		syncTiming()
 		if err := store.WriteTransaction(transaction); err != nil {
 			return fail(PhaseTunnel, err, staged)
 		}
@@ -368,6 +405,8 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 			}
 		}
 	}
+	timing.complete()
+	syncTiming()
 
 	if request.DeferCommit {
 		// 平台外部状态还没被 OS adapter 确认。现在只能停在 trial，
@@ -391,6 +430,7 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 	}
 
 	transaction.Phase = PhaseCommit
+	syncTiming()
 	if err := store.WriteTransaction(transaction); err != nil {
 		return fail(PhaseCommit, err, staged)
 	}
@@ -431,6 +471,14 @@ func commitPreparedInstallWithJournal(store *Store, transaction Transaction, res
 	completed, err := store.Complete(transaction, updateengine.StateCommitted, result)
 	if err != nil {
 		return result, err
+	}
+	if warnings := cleanupCommittedGenerations(transaction, completed); len(warnings) > 0 {
+		updated, warningErr := store.AppendTerminalWarnings(transaction.TransactionID, warnings...)
+		if warningErr != nil {
+			completed.Warnings = append(completed.Warnings, "generation cleanup warning persistence failed: "+warningErr.Error())
+		} else {
+			completed = updated
+		}
 	}
 	if !keepJournal {
 		discardJournal(store.Root(), transaction.TransactionID)
@@ -531,6 +579,14 @@ func (engine Engine) commit(ctx context.Context, store *Store, request Request) 
 			current, err = store.Complete(transaction, updateengine.StateCommitted, current)
 			if err != nil {
 				return current, err
+			}
+			if warnings := cleanupCommittedGenerations(transaction, current); len(warnings) > 0 {
+				updated, warningErr := store.AppendTerminalWarnings(transaction.TransactionID, warnings...)
+				if warningErr != nil {
+					current.Warnings = append(current.Warnings, "generation cleanup warning persistence failed: "+warningErr.Error())
+				} else {
+					current = updated
+				}
 			}
 		}
 		if !request.KeepJournal {

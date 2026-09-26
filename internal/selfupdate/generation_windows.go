@@ -17,6 +17,7 @@ import (
 
 	"github.com/uvwt/agentdock/internal/desktopruntime"
 	"github.com/uvwt/agentdock/internal/fs/atomicfile"
+	"github.com/uvwt/agentdock/internal/generationretention"
 	"github.com/uvwt/agentdock/internal/updateengine"
 )
 
@@ -148,7 +149,9 @@ func applyWindowsGenerationUpdate(ctx context.Context, request applyRequest) (ap
 	} else if err := finalizeLegacySkillMigration(ctx, targetCore, request.Output); err != nil {
 		fmt.Fprintf(request.Output, "警告：legacy Skill migration 暂未收口，旧目录将继续保留用于回滚: %v\n", err)
 	}
-	garbageCollectWindowsGenerations(layout, normalizeVersion(request.TargetVersion), sourceVersion)
+	for _, warning := range garbageCollectWindowsGenerations(root, layout) {
+		fmt.Fprintf(request.Output, "警告：%s\n", warning)
+	}
 	return applyResult{Restarted: coreWasRunning}, nil
 }
 
@@ -239,22 +242,11 @@ func windowsTunnelRunning(ctx context.Context, runtimeRoot string) (bool, error)
 	return status.Running, nil
 }
 
-func garbageCollectWindowsGenerations(layout updateengine.WindowsLayout, keepVersions ...string) {
-	keep := make(map[string]struct{}, len(keepVersions))
-	for _, version := range keepVersions {
-		keep[strings.ToLower(normalizeVersion(version))] = struct{}{}
-	}
-	entries, err := os.ReadDir(layout.VersionsDir())
+func garbageCollectWindowsGenerations(root string, layout updateengine.WindowsLayout) []string {
+	policy, err := generationretention.CollectPolicy(root, layout.VersionsDir())
 	if err != nil {
-		return
+		return []string{fmt.Sprintf("generation cleanup skipped: %v", err)}
 	}
-	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		if _, ok := keep[strings.ToLower(normalizeVersion(entry.Name()))]; ok {
-			continue
-		}
-		_ = os.RemoveAll(filepath.Join(layout.VersionsDir(), entry.Name()))
-	}
+	report := generationretention.Clean(policy)
+	return report.Warnings
 }
