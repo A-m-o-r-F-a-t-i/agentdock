@@ -54,7 +54,9 @@ function Add-TestEntry {
 
     $entry = $Archive.CreateEntry($Name, [IO.Compression.CompressionLevel]::Optimal)
     if ($null -ne $ExternalAttributes) {
-        $entry.ExternalAttributes = $ExternalAttributes.Value
+        # PowerShell unwraps Nullable[Int32] parameters to an Int32 value when
+        # supplied, so accessing .Value is not portable across pwsh versions.
+        $entry.ExternalAttributes = [Int32] $ExternalAttributes
     }
     $entryStream = $entry.Open()
     try {
