@@ -56,6 +56,21 @@ make_base_tools "$tools35"
 run_prepare "$sdk35" 35 "$tools35" "$temporary_root/api35.txt"
 grep -Fx '20.0' "$temporary_root/api35.txt" >/dev/null
 
+fallback_home="$temporary_root/fallback-home"
+fallback_sdk="$fallback_home/Android/Sdk"
+fallback_tools="$temporary_root/fallback-tools"
+make_sdk "$fallback_sdk" 20.0
+make_base_tools "$fallback_tools"
+env -u ANDROID_HOME -u ANDROID_SDK_ROOT \
+  HOME="$fallback_home" \
+  ANDROID_COMPILE_SDK=37 \
+  ANDROID_BUILD_TOOLS=37.0.0 \
+  ANDROID_SYSTEM_IMAGE_API_LEVEL=35 \
+  RUNNER_TEMP="$temporary_root/runner-temp" \
+  PATH="$fallback_tools:/usr/bin:/bin" \
+  bash "$script" > "$temporary_root/fallback.txt" 2>&1
+grep -F "platform=$fallback_sdk/platforms/android-37" "$temporary_root/fallback.txt" >/dev/null
+
 sdk37_compatible="$temporary_root/sdk37-compatible"
 tools37_compatible="$temporary_root/tools37-compatible"
 make_sdk "$sdk37_compatible" 22.0

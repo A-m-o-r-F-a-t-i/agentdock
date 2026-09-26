@@ -18,7 +18,20 @@ report_unhandled_error() {
 trap report_unhandled_error ERR
 
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+if [[ -z "$sdk_root" || ! -d "$sdk_root" ]]; then
+  for candidate in \
+    /usr/local/lib/android/sdk \
+    /opt/android-sdk-linux \
+    "$HOME/Android/Sdk"; do
+    if [[ -d "$candidate" ]]; then
+      sdk_root="$candidate"
+      break
+    fi
+  done
+fi
 [[ -n "$sdk_root" && -d "$sdk_root" ]]
+export ANDROID_HOME="$sdk_root"
+export ANDROID_SDK_ROOT="$sdk_root"
 sdkmanager_path="$(command -v sdkmanager || true)"
 if [[ -z "$sdkmanager_path" ]]; then
   for candidate in \
