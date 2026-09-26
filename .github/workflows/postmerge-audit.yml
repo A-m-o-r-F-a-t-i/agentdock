@@ -1,0 +1,72 @@
+name: Postmerge Boundary Audit
+on:
+  push:
+    branches: [integrate/20260926-postmerge-audit]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: postmerge-audit-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  go-boundaries:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Original boundary regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/postmerge-audit"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          go test ./cmd/agentdock ./internal/selfupdate ./internal/desktopruntime -run '^TestPostmerge' -count=1 -timeout=3m -v 2>&1 | tee "$RUNNER_TEMP/postmerge-audit/boundaries.log"
+      - name: Full Go and race regression after boundaries pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -p 1 ./... -count=1 -timeout=8m
+          go vet ./...
+          if [[ "$RUNNER_OS" == "Linux" ]]; then
+            go test -race ./cmd/agentdock ./internal/activity ./internal/permission ./internal/insertion -count=1 -timeout=8m
+          fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: boundary-audit-${{ matrix.os }}-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/postmerge-audit/*
+          if-no-files-found: warn
+          retention-days: 30
+  macos-boundaries:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: IPv6 loopback transport regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          mkdir -p "$RUNNER_TEMP/postmerge-audit"
+          swift test --package-path desktop/macos/AgentDockApp --scratch-path "$RUNNER_TEMP/audit-swiftpm" --filter PostmergeTransportBoundaryTests 2>&1 | tee "$RUNNER_TEMP/postmerge-audit/ipv6.log"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: boundary-audit-macos-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/postmerge-audit/*
+          if-no-files-found: warn
+          retention-days: 30

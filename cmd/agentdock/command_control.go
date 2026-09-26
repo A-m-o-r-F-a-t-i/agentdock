@@ -157,6 +157,15 @@ func commandExitCode(err error) int {
 	return 1
 }
 
+// Keep cancellation distinct from a wait deadline in both process exit status
+// and machine-readable output. Call only after the wait context has ended.
+func controlWaitContextError(ctx context.Context, timeoutMessage string) error {
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return &controlError{code: controlExitInterrupted, stableCode: "INTERRUPTED", message: "等待已中断", cause: ctx.Err()}
+	}
+	return &controlError{code: controlExitTimeout, stableCode: "WAIT_TIMEOUT", message: timeoutMessage, cause: ctx.Err()}
+}
+
 type controlOptions struct {
 	endpoint     string
 	tokenFile    string
@@ -442,7 +451,15 @@ func newControlClient(options resolvedControlOptions, stderr io.Writer) *control
 		token:    options.token,
 		verbose:  options.verbose,
 		stderr:   stderr,
-		http:     &http.Client{Timeout: options.timeout},
+		http: &http.Client{
+			Timeout: options.timeout,
+			// Core management authority must never follow a redirect, including
+			// another port on the same host or a 307 that replays a write body.
+			// SSE clients clone this policy and only remove the body timeout.
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 	}
 }
 

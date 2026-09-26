@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -178,8 +177,8 @@ func runCallControl(ctx context.Context, args []string, stdout, stderr io.Writer
 		for {
 			result, requestErr := client.request(waitCtx, http.MethodGet, base, nil, nil)
 			if requestErr != nil {
-				if errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
-					return &controlError{code: controlExitTimeout, stableCode: "WAIT_TIMEOUT", message: "等待调用终态超时"}
+				if waitCtx.Err() != nil {
+					return controlWaitContextError(waitCtx, "等待调用终态超时")
 				}
 				return requestErr
 			}
@@ -205,7 +204,7 @@ func runCallControl(ctx context.Context, args []string, stdout, stderr io.Writer
 			select {
 			case <-waitCtx.Done():
 				timer.Stop()
-				return &controlError{code: controlExitTimeout, stableCode: "WAIT_TIMEOUT", message: "等待调用终态超时"}
+				return controlWaitContextError(waitCtx, "等待调用终态超时")
 			case <-timer.C:
 			}
 		}
