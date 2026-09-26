@@ -119,7 +119,7 @@ final class WorkbenchManagementWindow: NSWindowController, NSWindowDelegate, NST
             (L10n.text("Move to Trash"), "trash"), (L10n.text("Restore"), "restore"), (L10n.text("Permanently delete"), "delete")]
         case .approvals: choices = [(L10n.text("View original request"), "detail"), (L10n.text("Approve this request"), "approve"), (L10n.text("Reject this request"), "reject")]
         case .skills: choices = [(L10n.text("View content"), "detail"), (L10n.text("Enable"), "enable"), (L10n.text("Disable"), "disable")]
-        case .plugins: choices = [(L10n.text("Details"), "detail"), (L10n.text("Validate package"), "validate"), (L10n.text("Install local package"), "install"), (L10n.text("Update local package"), "update"),
+        case .plugins: choices = [(L10n.text("Details"), "detail"), (L10n.text("Verify candidate package"), "validate"), (L10n.text("Install local package"), "install"), (L10n.text("Update local package"), "update"),
             (L10n.text("Enable"), "enable"), (L10n.text("Disable"), "disable"), (L10n.text("Load on demand"), "heavy_enable"), (L10n.text("Normal loading"), "heavy_disable"),
             (L10n.text("Enable member"), "member_enable"), (L10n.text("Disable member"), "member_disable"), (L10n.text("Remove"), "remove")]
         case .mcp: choices = [(L10n.text("Details"), "detail"), (L10n.text("Enable"), "enable"), (L10n.text("Disable"), "disable"),

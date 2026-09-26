@@ -84,14 +84,14 @@ final class WorkbenchCompletionPanel: NSWindowController, NSWindowDelegate {
         self.open = open
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 390, height: 140),
             styleMask: [.titled, .closable, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.title = L10n.text("Task completed")
+        panel.title = L10n.text("Completed")
         panel.isReleasedWhenClosed = false; panel.hidesOnDeactivate = false
         panel.level = .floating
         super.init(window: panel); panel.delegate = self
         let stack = WorkbenchUI.stack(.vertical, spacing: 10)
         stack.addArrangedSubview(WorkbenchUI.label(item.title, font: .systemFont(ofSize: 14, weight: .semibold), lines: 2))
         stack.addArrangedSubview(WorkbenchUI.label(item.taskID, font: .systemFont(ofSize: 11)))
-        stack.addArrangedSubview(WorkbenchUI.button(L10n.text("Open task"), target: self, action: #selector(openTask)))
+        stack.addArrangedSubview(WorkbenchUI.button(L10n.text("Open details"), target: self, action: #selector(openTask)))
         panel.contentView?.addSubview(stack)
         stack.pinEdges(to: panel.contentView!, insets: NSEdgeInsets(top: 12, left: 16, bottom: 12, right: 16))
         timeout = Task { [weak self] in
