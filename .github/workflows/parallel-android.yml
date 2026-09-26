@@ -225,7 +225,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: [33, 34, 35, 37]
+        include:
+          - api: 33
+            runner_api: "33"
+          - api: 34
+            runner_api: "34"
+          - api: 35
+            runner_api: "35"
+          - api: 37
+            runner_api: "37.0"
     steps:
       - uses: actions/checkout@v5
         with:
@@ -249,12 +257,39 @@ jobs:
       - name: Enable KVM
         run: '[[ ! -e /dev/kvm ]] || sudo chmod 666 /dev/kvm'
 
+      - name: Initialize emulator evidence
+        env:
+          ANDROID_API_LEVEL: ${{ matrix.api }}
+          ANDROID_SYSTEM_IMAGE_API_LEVEL: ${{ matrix.runner_api }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="evidence/emulator-api-${ANDROID_API_LEVEL}"
+          mkdir -p "$evidence"
+          python3 - <<'PY'
+          import json, os, pathlib
+          root = pathlib.Path(f"evidence/emulator-api-{os.environ['ANDROID_API_LEVEL']}")
+          (root / "setup.json").write_text(json.dumps({
+              "schema_version": 1,
+              "source_sha": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "reported_api_level": int(os.environ["ANDROID_API_LEVEL"]),
+              "system_image_api_level": os.environ["ANDROID_SYSTEM_IMAGE_API_LEVEL"],
+              "target": "google_apis",
+              "architecture": "x86_64",
+              "test_started": False
+          }, indent=2) + "\n")
+          PY
+
       - name: Run navigation and screenshot tests
         uses: ReactiveCircus/android-emulator-runner@v2
         env:
           ANDROID_API_LEVEL: ${{ matrix.api }}
+          ANDROID_SYSTEM_IMAGE_API_LEVEL: ${{ matrix.runner_api }}
         with:
-          api-level: ${{ matrix.api }}
+          api-level: ${{ matrix.runner_api }}
+          system-image-api-level: ${{ matrix.runner_api }}
           target: google_apis
           arch: x86_64
           profile: pixel_6

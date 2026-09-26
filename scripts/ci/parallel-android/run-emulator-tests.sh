@@ -3,6 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 api="${ANDROID_API_LEVEL:?ANDROID_API_LEVEL is required}"
+export ANDROID_SYSTEM_IMAGE_API_LEVEL="${ANDROID_SYSTEM_IMAGE_API_LEVEL:-$api}"
 evidence="$repo_root/evidence/emulator-api-$api"
 mkdir -p "$evidence/screenshots" "$evidence/reports"
 
@@ -44,6 +45,7 @@ path.write_text(json.dumps({
     "run_id": os.environ["GITHUB_RUN_ID"],
     "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
     "api_level": api,
+    "system_image_api_level": os.environ.get("ANDROID_SYSTEM_IMAGE_API_LEVEL", str(api)),
     "architecture": "x86_64 emulator",
     "connected_test_exit_code": rc,
     "screenshots": shots,
