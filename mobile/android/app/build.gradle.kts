@@ -110,6 +110,9 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test:rules:1.7.0")
+    // Compose UI Test 1.12.1 still declares Espresso 3.5.0 at runtime.
+    // Espresso 3.7.0 removes the reflective InputManager.getInstance path used on API 37.
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestUtil("androidx.test:orchestrator:1.6.1")
 }

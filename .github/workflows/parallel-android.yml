@@ -91,6 +91,7 @@ jobs:
           grep -F 'compileSdk = 37' mobile/android/app/build.gradle.kts
           grep -F 'targetSdk = 37' mobile/android/app/build.gradle.kts
           grep -F 'minSdk = 26' mobile/android/app/build.gradle.kts
+          grep -F 'androidx.test.espresso:espresso-core:3.7.0' mobile/android/app/build.gradle.kts
           grep -F 'customPermissionEnabled: Boolean = false' mobile/android/app/src/main/java/dev/agentdock/workbench/model/WorkbenchModels.kt
           grep -F 'desiredNodeState: String = "stopped"' mobile/android/app/src/main/java/dev/agentdock/workbench/model/WorkbenchModels.kt
           if grep -RInE --exclude='Pages.kt' \
@@ -232,6 +233,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - api: 26
+            runner_api: "26"
           - api: 33
             runner_api: "33"
           - api: 34
@@ -350,7 +353,7 @@ jobs:
               "jobs": {
                   "contract": os.environ.get("CONTRACT_RESULT", "unknown"),
                   "build": os.environ.get("BUILD_RESULT", "unknown"),
-                  "emulator_api_33_34_35_37_matrix": os.environ.get("EMULATOR_RESULT", "unknown")
+                  "emulator_api_26_33_34_35_37_matrix": os.environ.get("EMULATOR_RESULT", "unknown")
               },
               "candidate_artifact": os.environ.get("CANDIDATE_ARTIFACT", ""),
               "signing": "test-signed with Android debug key",
