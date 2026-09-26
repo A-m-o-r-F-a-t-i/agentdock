@@ -35,6 +35,20 @@
   <ItemGroup>
     <InternalsVisibleTo Include="AgentDock.ControlPanel.LayoutTests" />
     <InternalsVisibleTo Include="AgentDock.ControlPanel.NativeTests" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" GeneratePathProperty="true" />
   </ItemGroup>
+  <Target Name="EnsureAgentDockRuntimeSplitProtectedData"
+          AfterTargets="Publish"
+          Condition="'$(AgentDockRuntimeSplit)' == 'true'">
+    <PropertyGroup>
+      <_AgentDockProtectedDataSource>$(PkgSystem_Security_Cryptography_ProtectedData)\lib\net8.0\System.Security.Cryptography.ProtectedData.dll</_AgentDockProtectedDataSource>
+      <_AgentDockProtectedDataDestination>$(PublishDir)System.Security.Cryptography.ProtectedData.dll</_AgentDockProtectedDataDestination>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_AgentDockProtectedDataSource)')"
+           Text="Runtime-split ProtectedData source assembly was not restored: $(_AgentDockProtectedDataSource)" />
+    <Copy SourceFiles="$(_AgentDockProtectedDataSource)"
+          DestinationFiles="$(_AgentDockProtectedDataDestination)"
+          SkipUnchangedFiles="true"
+          Condition="!Exists('$(_AgentDockProtectedDataDestination)')" />
+  </Target>
 </Project>

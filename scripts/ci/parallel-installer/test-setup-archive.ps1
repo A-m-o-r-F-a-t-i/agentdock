@@ -123,7 +123,8 @@ Assert-ArchiveRejected -Name 'duplicate' -ExpectedMessage 'duplicate' -Mutate {
     Add-TestEntry -Archive $archive -Name 'AGENTDOCK.EXE' -Content 'duplicate'
 }
 
-$symlinkAttributes = [BitConverter]::ToInt32([BitConverter]::GetBytes([UInt32] 0xA1FF0000), 0)
+$symlinkMode = [UInt32]::Parse('A1FF0000', [Globalization.NumberStyles]::HexNumber)
+$symlinkAttributes = [BitConverter]::ToInt32([BitConverter]::GetBytes($symlinkMode), 0)
 Assert-ArchiveRejected -Name 'symlink' -ExpectedMessage 'non-regular' -Mutate {
     param($archive)
     Add-TestEntry -Archive $archive -Name 'unused-link' -Content 'agentdock.exe' -ExternalAttributes $symlinkAttributes
