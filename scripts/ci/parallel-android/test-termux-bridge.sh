@@ -74,6 +74,15 @@ fi
 exit 1
 MOCK_PROOT
 chmod 700 "$tmp/mock-bin/proot-distro"
+# Non-hex identity material must be rejected before any process is spawned.
+printf '%064d\n' 0 | tr '0' 'G' >"$node/auth-token"
+set +e
+out="$(PATH="$tmp/mock-bin:$PATH" request start op_invalid_token req_invalid_token "$nonce")"
+rc=$?
+set -e
+[ "$rc" -ne 0 ]
+[ ! -e "$AGENTDOCK_WORKBENCH_TEST_HOME/child-lock" ]
+printf '%064d\n' 0 >"$node/auth-token"
 set +e
 out="$(PATH="$tmp/mock-bin:$PATH" request start op_lock req_lock "$nonce")"
 rc=$?

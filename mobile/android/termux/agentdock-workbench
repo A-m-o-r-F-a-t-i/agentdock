@@ -200,7 +200,7 @@ start_core() {
   if health_ok; then return 0; fi
   if [ -e "$PIDFILE" ]; then stop_owned_process || return 3; fi
   [ -s "$TOKEN_FILE" ] && [ ! -L "$TOKEN_FILE" ] || return 2
-  grep -Eq '^[a-fA-f0-9]{64}$' "$TOKEN_FILE" || return 2
+  grep -Eq '^[a-fA-F0-9]{64}$' "$TOKEN_FILE" || return 2
   printf 'running\n' >"$DESIRED"
   command='export AGENTDOCK_HOME=/opt/agentdock-workbench/data; export AGENTDOCK_DEFAULT_DIR=/opt/agentdock-workbench/workspace; export AGENTDOCK_HOST=127.0.0.1; export AGENTDOCK_PORT=8765; export AGENTDOCK_AUTH_TOKEN="$(cat /opt/agentdock-workbench/auth-token)"; export AGENTDOCK_MCP_APPS_ENABLED=false; exec /opt/agentdock-workbench/current/bin/agentdock'
   setsid proot-distro login debian --bind "$ROOT:/opt/agentdock-workbench" -- /bin/sh -lc "$command" 9>&- >"$ROOT/logs/core.log" 2>&1 &
