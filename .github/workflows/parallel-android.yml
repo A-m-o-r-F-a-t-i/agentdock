@@ -82,10 +82,28 @@ jobs:
           for path in files:
               ET.parse(path)
           PY
-          for script in mobile/android/termux/* scripts/ci/parallel-android/*.sh; do
+          for script in mobile/android/termux/agentdock-workbench mobile/android/termux/*.sh scripts/ci/parallel-android/*.sh; do
             bash -n "$script"
           done
-          bash scripts/ci/parallel-android/test-termux-bridge.sh | tee evidence/contract/termux-contract.txt
+          python3 - <<'PY_CHECK'
+          import ast
+          from pathlib import Path
+          for path in list(Path("mobile/android/termux").glob("*.py")) + list(Path("scripts/ci/parallel-android").glob("*.py")):
+              ast.parse(path.read_text(), filename=str(path))
+          PY_CHECK
+          set +e
+          bash scripts/ci/parallel-android/test-termux-bridge.sh 2>&1 | tee evidence/contract/termux-contract.txt
+          bridge_rc=${PIPESTATUS[0]}
+          set -e
+          if [[ "$bridge_rc" != 0 ]]; then
+            python3 - <<'PY_ERROR'
+          from pathlib import Path
+          text = Path("evidence/contract/termux-contract.txt").read_text(errors="replace")[-24000:]
+          escaped = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print("::error title=Termux deployment regressions::" + escaped)
+          PY_ERROR
+            exit "$bridge_rc"
+          fi
           bash scripts/ci/parallel-android/test-runner-sdk.sh | tee evidence/contract/runner-sdk-contract.txt
           git diff --check "$WB07_BASE_SHA" "$GITHUB_SHA"
           grep -F 'compileSdk = 37' mobile/android/app/build.gradle.kts
