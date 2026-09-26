@@ -96,6 +96,11 @@ jobs:
           if ((go env GOARCH) -ne 'arm64') { throw 'ARM64 native runner required' }
           & ./scripts/test/verify-windows-release-assets.ps1 -ReleaseDirectory dist/windows-package/release -BuildReport dist/windows-package/build-report.json -ExpectedVersion '${{ needs.resolve-source.outputs.version }}' -ExpectedCommit '${{ needs.resolve-source.outputs.commit }}' -ExpectedChannel release -ExpectedAuthenticode unsigned -Architecture arm64 -Architectures amd64,arm64
           if ($LASTEXITCODE -ne 0) { throw 'Native ARM64 payload verification failed' }
+      - name: Native ARM64 receipt sharing and corruption regression
+        run: |
+          $ErrorActionPreference='Stop'
+          go test ./internal/desktopruntime -run '^TestPostmergeSetupReceipt' -count=3 -timeout=90s -v
+          if ($LASTEXITCODE -ne 0) { throw 'Native ARM64 receipt recovery regression failed' }
       - name: Isolated ARM64 install repair and uninstall
         run: |
           $ErrorActionPreference='Stop'
