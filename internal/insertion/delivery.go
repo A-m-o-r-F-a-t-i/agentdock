@@ -96,6 +96,7 @@ func (s *Store) Receipt(ctx context.Context, target Target, receipts []Receipt, 
 			} else {
 				item.Status, item.AcknowledgedAt, item.AcknowledgedBy = "acknowledged", &now, by
 				item.DeliveryReason = ""
+				item.RetryRequested, item.RetryAfter = false, nil
 			}
 			if outerID != "" {
 				item.OuterCallID = outerID

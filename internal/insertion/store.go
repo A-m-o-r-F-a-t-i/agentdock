@@ -178,14 +178,16 @@ func expire(state *diskState, now time.Time) bool {
 	for index := range state.Items {
 		item := &state.Items[index]
 		if unconfirmed(item.Status) && !now.Before(item.ExpiresAt) && item.DeliveryReason != "legacy_inner_response_without_receipt" {
-			if item.Status != "delivery_unknown" || item.DeliveryReason != "receipt_missing_deadline_elapsed" {
+			if item.Status != "delivery_unknown" || item.DeliveryReason != "receipt_missing_deadline_elapsed" || item.RetryRequested || item.RetryAfter != nil {
 				item.Status, item.DeliveryReason, item.UpdatedAt = "delivery_unknown", "receipt_missing_deadline_elapsed", now
+				item.RetryRequested, item.RetryAfter = false, nil
 				dirty = true
 			}
 		}
 		if waiting(item.Status) && !now.Before(item.ExpiresAt) {
 			item.ExpiredFrom = item.Status
 			item.Status = "expired"
+			item.RetryRequested, item.RetryAfter = false, nil
 			item.UpdatedAt = now
 			dirty = true
 		}
@@ -275,6 +277,7 @@ func (s *Store) Reserve(ctx context.Context, target Target, callID string, recei
 			}
 			if !sameTarget(item.Target, target) {
 				item.Status = "target_changed"
+				item.RetryRequested, item.RetryAfter = false, nil
 				item.UpdatedAt = now
 				dirty = true
 				continue
@@ -312,6 +315,7 @@ func (s *Store) VerifyTarget(ctx context.Context, callID string, target Target) 
 				item.Status = "target_changed"
 				item.CallID = ""
 				item.RunID = ""
+				item.RetryRequested, item.RetryAfter = false, nil
 				item.UpdatedAt = now
 				dirty = true
 			}
@@ -337,15 +341,16 @@ func (s *Store) FinishForHost(ctx context.Context, callID string, attached bool,
 			}
 			if attached {
 				item.InnerAppendedAt = &now
-				item.Status, item.DeliveryReason = "delivery_unknown", "host_receipt_not_negotiated"
+				item.Status, item.DeliveryReason = "inner_appended", "awaiting_receiver_receipt"
 				item.HostType, item.OuterCallID = host.HostType, host.OuterCallID
+				after := now.Add(ReceiptWait)
+				item.RetryAfter = &after
 				if host.Passthrough {
-					item.Status, item.DeliveryReason = "inner_appended", "awaiting_host_receipt"
-					after := now.Add(ReceiptWait)
-					item.RetryAfter = &after
+					item.DeliveryReason = "awaiting_host_receipt"
 				}
 			} else {
 				item.Status, item.DeliveryReason = "delivery_unknown", "inner_response_not_committed"
+				item.RetryAfter = nil
 			}
 			item.UpdatedAt = now
 			if attached {
@@ -387,6 +392,7 @@ func (s *Store) Cancel(ctx context.Context, owner, conversation, id string, incl
 			}
 			if waiting(item.Status) || unconfirmed(item.Status) || includeReserved && item.Status == "reserved" || item.Status == "expired" && item.ExpiredFrom == "pending" {
 				item.Status = "cancelled"
+				item.RetryRequested, item.RetryAfter = false, nil
 				item.UpdatedAt = now
 				dirty = true
 			}

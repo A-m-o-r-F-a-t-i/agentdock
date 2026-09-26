@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -17,15 +18,29 @@ func TestUnconfirmedSupplementRetriesSameIDWithinBoundedWindow(t *testing.T) {
 	original := enqueue(t, s, target, "bounded")
 	var token string
 	for attempt := 1; attempt <= MaxTotalDeliveries; attempt++ {
-		*now = now.Add(time.Second)
-		if attempt > MaxAutomaticDeliveries {
-			if items, err := s.Reserve(context.Background(), target, "not-automatic", *now); err != nil || len(items) != 0 {
-				t.Fatal("automatic retry exceeded its budget")
+		switch {
+		case attempt == 1:
+			*now = now.Add(time.Second)
+		case attempt <= MaxAutomaticDeliveries:
+			appendedAt := *now
+			*now = appendedAt.Add(ReceiptWait - time.Nanosecond)
+			if items, err := s.Reserve(context.Background(), target, fmt.Sprintf("too_early_%d", attempt), *now); err != nil || len(items) != 0 {
+				t.Fatalf("attempt %d ignored the receipt wait: %v %v", attempt, items, err)
 			}
-			if _, err := s.Retry(context.Background(), target, original.ID); err != nil {
-				t.Fatal(err)
+			*now = appendedAt.Add(ReceiptWait)
+		default:
+			*now = now.Add(time.Second)
+			if items, err := s.Reserve(context.Background(), target, fmt.Sprintf("automatic_blocked_%d", attempt), *now); err != nil || len(items) != 0 {
+				t.Fatalf("attempt %d exceeded the automatic budget: %v %v", attempt, items, err)
 			}
-			*now = now.Add(time.Millisecond)
+			retried, err := s.Retry(context.Background(), target, original.ID)
+			if err != nil || !retried.RetryRequested || retried.DeliveryAttempts != attempt-1 || !retried.ExpiresAt.Equal(original.ExpiresAt) {
+				t.Fatalf("attempt %d manual retry: %+v %v", attempt, retried, err)
+			}
+			if items, err := s.Reserve(context.Background(), target, fmt.Sprintf("same_root_%d", attempt), *now); err != nil || len(items) != 0 {
+				t.Fatal("manual retry was consumed by the request that created it")
+			}
+			*now = now.Add(time.Nanosecond)
 		}
 		call := fmt.Sprintf("call_%d", attempt)
 		items, err := s.Reserve(context.Background(), target, call, *now)
@@ -39,17 +54,124 @@ func TestUnconfirmedSupplementRetriesSameIDWithinBoundedWindow(t *testing.T) {
 			t.Fatal("retry changed identity, receipt or deadline")
 		}
 		finished, err := s.Finish(context.Background(), call, true)
-		if err != nil || len(finished) != 1 || finished[0].Status != "delivery_unknown" || finished[0].AcknowledgedAt != nil {
+		if err != nil || len(finished) != 1 || finished[0].Status != "inner_appended" || finished[0].DeliveryReason != "awaiting_receiver_receipt" || finished[0].AcknowledgedAt != nil {
 			t.Fatal("inner response was mistaken for acknowledgement")
+		}
+		if finished[0].RetryAfter == nil || !finished[0].RetryAfter.Equal(now.Add(ReceiptWait)) {
+			t.Fatal("successful direct attachment did not start the receipt wait")
 		}
 	}
 	*now = now.Add(time.Second)
 	if _, err := s.Retry(context.Background(), target, original.ID); err == nil {
 		t.Fatal("manual retry exceeded total cap")
 	}
-	items, err := s.Reserve(context.Background(), target, "never-replayed", *now)
+	items, err := s.Reserve(context.Background(), target, "never_replayed", *now)
 	if err != nil || len(items) != 0 {
 		t.Fatal("total cap ignored")
+	}
+}
+
+func TestReceiptWaitBoundaryAppliesToDirectAndHostAttachments(t *testing.T) {
+	for _, hosted := range []bool{false, true} {
+		t.Run(map[bool]string{false: "receiver", true: "host"}[hosted], func(t *testing.T) {
+			s, now, target := fixture(t)
+			enqueue(t, s, target, "wait_boundary")
+			*now = now.Add(time.Second)
+			items, err := s.Reserve(context.Background(), target, "call_first", *now)
+			if err != nil || len(items) != 1 {
+				t.Fatal(err)
+			}
+			host := Transport{}
+			wantReason := "awaiting_receiver_receipt"
+			if hosted {
+				host = Transport{HostType: "fixture", OuterCallID: "outer_1", Passthrough: true, ContextAcknowledgement: true}
+				wantReason = "awaiting_host_receipt"
+			}
+			finished, err := s.FinishForHost(context.Background(), "call_first", true, host)
+			if err != nil || len(finished) != 1 || finished[0].DeliveryReason != wantReason || finished[0].RetryAfter == nil {
+				t.Fatalf("finish: %+v %v", finished, err)
+			}
+			appendedAt := *now
+			*now = appendedAt.Add(ReceiptWait - time.Nanosecond)
+			if repeated, err := s.Reserve(context.Background(), target, "before_boundary", *now); err != nil || len(repeated) != 0 {
+				t.Fatal("receipt wait opened early")
+			}
+			*now = appendedAt.Add(ReceiptWait)
+			if repeated, err := s.Reserve(context.Background(), target, "at_boundary", *now); err != nil || len(repeated) != 1 || repeated[0].DeliveryAttempts != 2 {
+				t.Fatalf("exact receipt boundary was not eligible: %+v %v", repeated, err)
+			}
+		})
+	}
+}
+
+func TestReceiptAndManualRetryRaceEndsAcknowledged(t *testing.T) {
+	s, now, target := fixture(t)
+	original := enqueue(t, s, target, "receipt_retry_race")
+	*now = now.Add(time.Second)
+	items, err := s.Reserve(context.Background(), target, "call_race", *now)
+	if err != nil || len(items) != 1 {
+		t.Fatal(err)
+	}
+	receipt := Receipt{InsertionID: original.ID, Token: items[0].ReceiptToken}
+	if _, err = s.Finish(context.Background(), "call_race", true); err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(time.Second)
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	var receiptErr error
+	workers.Add(2)
+	go func() {
+		defer workers.Done()
+		<-start
+		_, _ = s.Retry(context.Background(), target, original.ID)
+	}()
+	go func() {
+		defer workers.Done()
+		<-start
+		_, receiptErr = s.Receipt(context.Background(), target, []Receipt{receipt}, "receiver_receipt", "")
+	}()
+	close(start)
+	workers.Wait()
+	if receiptErr != nil {
+		t.Fatal(receiptErr)
+	}
+	listed, err := s.List(context.Background(), target.Owner, target.Conversation)
+	if err != nil || len(listed) != 1 || listed[0].Status != "acknowledged" || listed[0].RetryRequested || listed[0].RetryAfter != nil {
+		t.Fatalf("receipt did not atomically terminate retry state: %+v %v", listed, err)
+	}
+	*now = now.Add(time.Minute)
+	if repeated, err := s.Reserve(context.Background(), target, "after_ack", *now); err != nil || len(repeated) != 0 {
+		t.Fatal("acknowledged supplement was resurrected")
+	}
+}
+
+func TestLateReceiverReceiptAcceptedButCancelledReceiptRejected(t *testing.T) {
+	s, now, target := fixture(t)
+	original := enqueue(t, s, target, "late_receiver")
+	*now = now.Add(time.Second)
+	items, _ := s.Reserve(context.Background(), target, "call_late", *now)
+	receipt := Receipt{InsertionID: original.ID, Token: items[0].ReceiptToken}
+	_, _ = s.Finish(context.Background(), "call_late", true)
+	*now = original.ExpiresAt.Add(time.Second)
+	if listed, err := s.List(context.Background(), target.Owner, target.Conversation); err != nil || listed[0].DeliveryReason != "receipt_missing_deadline_elapsed" {
+		t.Fatal("deadline state not recorded")
+	}
+	if confirmed, err := s.Receipt(context.Background(), target, []Receipt{receipt}, "receiver_receipt", ""); err != nil || confirmed[0].Status != "acknowledged" {
+		t.Fatalf("legal late receipt was lost: %+v %v", confirmed, err)
+	}
+
+	s, now, target = fixture(t)
+	original = enqueue(t, s, target, "cancelled_receiver")
+	*now = now.Add(time.Second)
+	items, _ = s.Reserve(context.Background(), target, "call_cancelled", *now)
+	receipt = Receipt{InsertionID: original.ID, Token: items[0].ReceiptToken}
+	_, _ = s.Finish(context.Background(), "call_cancelled", true)
+	if err := s.Cancel(context.Background(), target.Owner, target.Conversation, original.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Receipt(context.Background(), target, []Receipt{receipt}, "receiver_receipt", ""); !errors.Is(err, ErrReceipt) {
+		t.Fatal("cancelled supplement accepted a receipt")
 	}
 }
 
@@ -86,8 +208,8 @@ func TestReceiptRequiresActualDeliveryOwnershipAndCurrentScope(t *testing.T) {
 		t.Fatal("mixed invalid batch accepted")
 	}
 	view, _ := s.List(context.Background(), target.Owner, target.Conversation)
-	if view[0].Status != "delivery_unknown" || view[0].ReceiptToken != "" {
-		t.Fatal("failed batch committed or token leaked into public view")
+	if view[0].Status != "inner_appended" || view[0].DeliveryReason != "awaiting_receiver_receipt" || view[0].ReceiptToken != "" {
+		t.Fatal("failed batch changed delivery state or leaked a token")
 	}
 	*now = now.Add(time.Second)
 	if _, err = s.Reserve(context.Background(), target, "call_new", *now); err != nil {

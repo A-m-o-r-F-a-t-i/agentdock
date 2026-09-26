@@ -55,18 +55,18 @@ func TestSDKInitializedHostReceiptsAndCapabilityRefusal(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			id := queued["insertion"].(insertion.Item).ID
+			id := queued["insertion"].(insertion.PublicItem).ID
 			delivered, err := call("session_observe", map[string]any{"action": "list"}, "delivery-outer", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			assertResponseSupplement(t, delivered, id, "你好，我是帅哥")
 			item := insertionQueueItem(t, h, conversation)
-			expected := "delivery_unknown"
+			expectedReason := "awaiting_receiver_receipt"
 			if supported {
-				expected = "inner_appended"
+				expectedReason = "awaiting_host_receipt"
 			}
-			if item.Status != expected || item.AcknowledgedAt != nil {
+			if item.Status != "inner_appended" || item.DeliveryReason != expectedReason || item.AcknowledgedAt != nil || item.NextRetryAt == nil {
 				t.Fatalf("wrong initialized stage: %+v", item)
 			}
 			receipt := map[string]any{"stage": "outer_forwarded", "outer_call_id": "delivery-outer", "receipts": supplementReceipts(t, delivered)["receipts"]}
@@ -75,7 +75,7 @@ func TestSDKInitializedHostReceiptsAndCapabilityRefusal(t *testing.T) {
 				if err == nil {
 					t.Fatalf("uninitialized capability was accepted: %v", forwarded)
 				}
-				if item = insertionQueueItem(t, h, conversation); item.Status != "delivery_unknown" || item.AcknowledgedAt != nil {
+				if item = insertionQueueItem(t, h, conversation); item.Status != "inner_appended" || item.DeliveryReason != "awaiting_receiver_receipt" || item.AcknowledgedAt != nil {
 					t.Fatal("rejected metadata changed delivery state")
 				}
 				return
@@ -121,7 +121,7 @@ func TestBusinessArgumentsCannotDeclareReceiptCapability(t *testing.T) {
 	if err == nil && invalid["isError"] != true {
 		t.Fatal("business argument could choose its evidence authority")
 	}
-	if item := insertionQueueItem(t, h, conversation); item.Status != "delivery_unknown" || item.AcknowledgedAt != nil {
+	if item := insertionQueueItem(t, h, conversation); item.Status != "inner_appended" || item.DeliveryReason != "awaiting_receiver_receipt" || item.AcknowledgedAt != nil {
 		t.Fatal("invalid receiver request acknowledged message")
 	}
 }

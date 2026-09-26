@@ -149,7 +149,16 @@ func (r *Runtime) RuntimeRetryInsertion(ctx context.Context, conversation, id st
 		return nil, err
 	}
 	r.recordInsertionStage(ctx, item, "retry_requested")
-	return Result{"insertion": item, "server_now": time.Now().UTC()}, nil
+	items, err := r.insertions.Views(ctx, owner, conversation)
+	if err != nil {
+		return nil, err
+	}
+	for _, view := range items {
+		if view.ID == id {
+			return Result{"insertion": view, "server_now": time.Now().UTC()}, nil
+		}
+	}
+	return nil, insertion.ErrNotFound
 }
 
 // The queue is the delivery record of truth. Observation contains IDs and
