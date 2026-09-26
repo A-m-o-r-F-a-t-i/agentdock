@@ -6,6 +6,40 @@
 review_threshold_lines: 300
 
 scripts:
+  - path: scripts/ci/parallel-core-cli/index_candidates.py
+    class: ci
+    owner: WB01
+    public_contract: false
+    deletable: true
+    notes: 校验同一候选提交的 amd64/arm64 非发布产物清单、摘要和平台集合，并生成跨架构候选索引。
+
+  - path: scripts/ci/parallel-core-cli/mock_core.py
+    class: test
+    owner: WB01
+    public_contract: false
+    deletable: true
+    notes: 仅在 GitHub Actions 隔离 runner 内提供带认证的本机 mock Core，供真实 CLI 子进程验收。
+
+  - path: scripts/ci/parallel-core-cli/smoke_cli.sh
+    class: test
+    owner: WB01
+    public_contract: false
+    deletable: true
+    notes: 对候选 CLI 的认证、JSON/JSONL、分页、流式恢复、安全写入和不支持能力退出码执行真实进程冒烟测试。
+
+  - path: scripts/ci/parallel-core-cli/verify_candidate.py
+    class: ci
+    owner: WB01
+    public_contract: false
+    deletable: true
+    notes: 校验 Linux tar、DEB、RPM 的摘要、身份、安装卸载结果与既有用户目录保留证据，禁止发布。
+
+  - path: scripts/ci/parallel-core-cli/verify_contract.py
+    class: ci
+    owner: WB01
+    public_contract: false
+    deletable: true
+    notes: 校验 Workbench v1 契约、fixtures、CLI 命令矩阵、专属工作流只读权限与无发布步骤。
   - path: scripts/test/test-linux-native-packages.py
     class: test
     owner: release

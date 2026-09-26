@@ -1,0 +1,6 @@
+{
+  "ok": false,
+  "code": "UNAUTHORIZED",
+  "error": "token required",
+  "exit_code": 4
+}

@@ -56,6 +56,19 @@ func RunServiceCommand(ctx context.Context, args []string, stdout, stderr io.Wri
 			return err
 		}
 		return json.NewEncoder(stdout).Encode(serviceCommandResult{Action: action, Completed: true})
+	case "logs":
+		flags := flag.NewFlagSet("agentdock service logs", flag.ContinueOnError)
+		flags.SetOutput(stderr)
+		runtimeRoot := flags.String("runtime-root", "", "AgentDock 桌面运行目录")
+		lines := flags.Int("lines", 200, "返回最近日志行数（1-10000）")
+		follow := flags.Bool("follow", false, "持续输出新增日志，按 Ctrl+C 停止")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 || strings.TrimSpace(*runtimeRoot) == "" || *lines < 1 || *lines > 10000 {
+			return errors.New("用法：agentdock service logs --runtime-root <目录> [--lines 1-10000] [--follow]")
+		}
+		return platformServiceLogs(ctx, *runtimeRoot, *lines, *follow, stdout, stderr)
 	case "autostart":
 		flags := flag.NewFlagSet("agentdock service autostart", flag.ContinueOnError)
 		flags.SetOutput(stderr)
@@ -125,5 +138,5 @@ func parseRuntimeRoot(name string, args []string, stderr io.Writer) (string, err
 }
 
 func serviceCommandUsageError() error {
-	return errors.New("用法：agentdock service <status|start|stop|restart|autostart|task-start> ...")
+	return errors.New("用法：agentdock service <status|start|stop|restart|logs|autostart|task-start> ...")
 }
