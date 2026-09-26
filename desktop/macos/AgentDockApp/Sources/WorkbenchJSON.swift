@@ -83,8 +83,8 @@ enum WorkbenchJSON: Codable, Equatable, Sendable {
     var int64Value: Int64? {
         switch self {
         case let .integer(value): return value
-        case let .number(value) where value.rounded(.towardZero) == value && value <= Double(Int64.max) && value >= Double(Int64.min):
-            return Int64(value)
+        case let .number(value):
+            return Int64(exactly: value)
         default: return nil
         }
     }

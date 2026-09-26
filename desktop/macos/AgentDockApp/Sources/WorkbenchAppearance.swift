@@ -1,5 +1,8 @@
 import AppKit
 import Foundation
+import ObjectiveC
+
+private var workbenchLayerColorKey: UInt8 = 0
 
 @MainActor
 final class WorkbenchAppearance {
@@ -37,6 +40,7 @@ final class WorkbenchAppearance {
         case .dark:
             NSApp.appearance = NSAppearance(named: .darkAqua)
         }
+        for window in NSApp.windows { window.contentView?.refreshWorkbenchPalette() }
     }
 }
 
@@ -82,9 +86,18 @@ extension NSView {
 
     func enableLayerBackground(_ color: NSColor, radius: CGFloat = 0) {
         wantsLayer = true
-        layer?.backgroundColor = color.cgColor
+        objc_setAssociatedObject(self, &workbenchLayerColorKey, color, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        effectiveAppearance.performAsCurrentDrawingAppearance { layer?.backgroundColor = color.cgColor }
         layer?.cornerRadius = radius
         layer?.masksToBounds = radius > 0
+    }
+
+    func refreshWorkbenchPalette() {
+        if let color = objc_getAssociatedObject(self, &workbenchLayerColorKey) as? NSColor {
+            effectiveAppearance.performAsCurrentDrawingAppearance { layer?.backgroundColor = color.cgColor }
+        }
+        for child in subviews { child.refreshWorkbenchPalette() }
+        needsDisplay = true
     }
 }
 
@@ -128,6 +141,13 @@ enum WorkbenchUI {
         text.font = monospaced ? .monospacedSystemFont(ofSize: 12, weight: .regular) : .systemFont(ofSize: 13)
         text.textContainerInset = NSSize(width: 10, height: 10)
         text.isRichText = false
+        text.minSize = NSSize(width: 0, height: 0)
+        text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        text.isVerticallyResizable = true
+        text.isHorizontallyResizable = false
+        text.autoresizingMask = [.width]
+        text.textContainer?.widthTracksTextView = true
+        text.textContainer?.containerSize = NSSize(width: scroll.contentSize.width, height: CGFloat.greatestFiniteMagnitude)
         text.isAutomaticQuoteSubstitutionEnabled = false
         text.isAutomaticDashSubstitutionEnabled = false
         text.isAutomaticTextReplacementEnabled = false

@@ -6,6 +6,12 @@ final class WorkbenchSidebarViewController: NSViewController, NSOutlineViewDataS
     var onViewChanged: ((WorkbenchListView) -> Void)?
     var onConversationSelected: ((String) -> Void)?
     var onLoadMore: ((String) -> Void)?
+    var onHistory: (() -> Void)?
+    var onAddWorkspace: (() -> Void)?
+    private var collapsed = Set(UserDefaults.standard.stringArray(forKey: "WorkbenchCollapsedGroups") ?? [])
+    private var expanded = Set<String>()
+    private var lastGroups = [WorkbenchWorkspaceGroup]()
+    private weak var renderedModel: WorkbenchViewModel?
 
     private let segmented = NSSegmentedControl(
         labels: WorkbenchListView.allCases.map(\.title),
@@ -68,6 +74,11 @@ final class WorkbenchSidebarViewController: NSViewController, NSOutlineViewDataS
         let stack = WorkbenchUI.stack(.vertical, spacing: 10)
         stack.alignment = .leading
         stack.addArrangedSubview(titleStack)
+        let actions = WorkbenchUI.stack(.horizontal, spacing: 4)
+        actions.addArrangedSubview(WorkbenchUI.button("折叠全部", target: self, action: #selector(collapseAll)))
+        actions.addArrangedSubview(WorkbenchUI.button("历史", target: self, action: #selector(openHistory)))
+        actions.addArrangedSubview(WorkbenchUI.button("＋", target: self, action: #selector(addWorkspace)))
+        stack.addArrangedSubview(actions)
         stack.addArrangedSubview(segmented)
         stack.addArrangedSubview(searchField)
         stack.addArrangedSubview(scroll)
@@ -88,14 +99,31 @@ final class WorkbenchSidebarViewController: NSViewController, NSOutlineViewDataS
     func render(_ model: WorkbenchViewModel) {
         segmented.selectedSegment = WorkbenchListView.allCases.firstIndex(of: model.listView) ?? 0
         if searchField.stringValue != model.searchText { searchField.stringValue = model.searchText }
-        selectedConversationID = model.selectedConversationID
-        roots = model.snapshot.sidebar.groups.map(WorkspaceNode.init)
+        renderedModel = model
+        let selectionChanged = selectedConversationID != model.selectedNavigationID
+        selectedConversationID = model.selectedNavigationID
+        var groups = model.snapshot.sidebar.groups
+        for index in groups.indices {
+            let original = groups[index]
+            groups[index].conversations = WorkbenchSidebarPolicy.rows(original,
+                expanded: expanded.contains(original.id), selected: selectedConversationID,
+                now: model.snapshot.sidebar.serverNow,
+                fullHistory: model.listView != .active || !model.searchText.isEmpty)
+            groups[index].shown = groups[index].conversations.count
+            groups[index].hasMore = original.hasMore || original.total > groups[index].shown
+        }
+        let changed = groups != lastGroups
+        if changed { lastGroups = groups; roots = groups.map(WorkspaceNode.init) }
         footer.stringValue = model.snapshot.sidebar.groups.isEmpty
             ? (model.snapshot.stale ? "Core 离线；保留最近一次快照。" : "没有匹配的对话。")
             : "\(model.snapshot.sidebar.total) 个对话 · 列表顺序由 Core 管理"
-        outline.reloadData()
-        for root in roots { outline.expandItem(root) }
-        restoreSelection()
+        if changed {
+            suppressSelection = true
+            outline.reloadData()
+            for root in roots where !collapsed.contains(root.group.id) { outline.expandItem(root) }
+            suppressSelection = false
+        }
+        if changed || selectionChanged { restoreSelection() }
     }
 
     func controlTextDidChange(_ notification: Notification) {
@@ -177,15 +205,36 @@ final class WorkbenchSidebarViewController: NSViewController, NSOutlineViewDataS
         let row = outline.selectedRow
         guard row >= 0, let item = outline.item(atRow: row) else { return }
         if let node = item as? ConversationNode {
-            onConversationSelected?(node.conversation.id)
+            onConversationSelected?(node.conversation.navigationID)
         } else if let node = item as? LoadMoreNode {
             suppressSelection = true
             outline.deselectRow(row)
             suppressSelection = false
-            onLoadMore?(node.workspaceID)
+            if expanded.contains(node.workspaceID) { onHistory?() }
+            else {
+                expanded.insert(node.workspaceID)
+                if let model = renderedModel { render(model) }
+            }
         }
     }
 
+    @objc private func collapseAll() {
+        collapsed = Set(roots.map { $0.group.id })
+        outline.collapseItem(nil, collapseChildren: true)
+        UserDefaults.standard.set(Array(collapsed), forKey: "WorkbenchCollapsedGroups")
+    }
+    @objc private func openHistory() { onHistory?() }
+    @objc private func addWorkspace() { onAddWorkspace?() }
+    func outlineViewItemDidCollapse(_ notification: Notification) {
+        guard !suppressSelection, let node = notification.userInfo?["NSObject"] as? WorkspaceNode else { return }
+        collapsed.insert(node.group.id)
+        UserDefaults.standard.set(Array(collapsed), forKey: "WorkbenchCollapsedGroups")
+    }
+    func outlineViewItemDidExpand(_ notification: Notification) {
+        guard !suppressSelection, let node = notification.userInfo?["NSObject"] as? WorkspaceNode else { return }
+        collapsed.remove(node.group.id)
+        UserDefaults.standard.set(Array(collapsed), forKey: "WorkbenchCollapsedGroups")
+    }
     private func restoreSelection() {
         guard !selectedConversationID.isEmpty else {
             suppressSelection = true
@@ -195,7 +244,7 @@ final class WorkbenchSidebarViewController: NSViewController, NSOutlineViewDataS
         }
         for row in 0..<outline.numberOfRows {
             guard let node = outline.item(atRow: row) as? ConversationNode else { continue }
-            if node.conversation.id == selectedConversationID {
+            if node.conversation.navigationID == selectedConversationID {
                 suppressSelection = true
                 outline.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 outline.scrollRowToVisible(row)

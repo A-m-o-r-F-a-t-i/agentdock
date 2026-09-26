@@ -17,6 +17,7 @@ struct WorkbenchSSEParser {
     private var eventID = ""
     private var dataLines = [Data]()
     private var eventBytes = 0
+    private var previousWasCR = false
 
     init(maximumLineBytes: Int, maximumEventBytes: Int) {
         self.maximumLineBytes = maximumLineBytes
@@ -24,8 +25,12 @@ struct WorkbenchSSEParser {
     }
 
     mutating func feed(_ byte: UInt8) throws -> [WorkbenchStreamEvent] {
-        if byte == 0x0A {
-            if line.last == 0x0D { line.removeLast() }
+        if byte == 0x0A && previousWasCR {
+            previousWasCR = false
+            return []
+        }
+        previousWasCR = byte == 0x0D
+        if byte == 0x0A || byte == 0x0D {
             let completed = try consume(line)
             line.removeAll(keepingCapacity: true)
             return completed
@@ -63,7 +68,7 @@ struct WorkbenchSSEParser {
         case "id":
             // The most recent ID applies to later events even when an event has
             // no data, matching the SSE specification's Last-Event-ID model.
-            eventID = String(value.prefix(256))
+            if !value.contains("\0") { eventID = String(value.prefix(256)) }
         case "data":
             guard let encoded = value.data(using: .utf8) else {
                 throw WorkbenchClientError.invalidJSON("活动流 data 字段不是 UTF-8。")

@@ -3,6 +3,8 @@
 Comparison source: Windows control panel and execution center at `b367eaab95202873fb213b8713440bf7822878c4`.
 Target: native Swift/AppKit, no Electron/WebView shell, no duplicated Core state machine.
 
+Validation note: this matrix records implementation targets and intended evidence. All evidence below remains pending until a matching-SHA Actions run is recorded in workbench-acceptance.md. The word “verified” in the original architecture targets is not a claim that a candidate has already been built.
+
 Status vocabulary: **Existing** = present before WB06; **WB06** = implemented in this lane; **Dependency** = UI/client included but final semantics come from another lane; **Manual** = requires a signed/notarized or physical-machine check unavailable in branch CI.
 
 ## Product shell and service management

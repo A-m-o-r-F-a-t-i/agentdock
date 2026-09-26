@@ -70,6 +70,8 @@ struct WorkbenchConversation: Equatable, Identifiable, Sendable {
     var unattributed: Bool
     var inFlight: Bool
     var lastActivityAt: Date?
+    var lastInteractionAt: Date?
+    var interactionExpiresAt: Date?
     var lastToolCallAt: Date?
     var recentlyActive: Bool
     var runningCount: Int
@@ -101,7 +103,7 @@ struct WorkbenchConversation: Equatable, Identifiable, Sendable {
         archived = !json["archived_at"].isNull
         trashed = !json["trashed_at"].isNull
         terminated = !json["terminated_at"].isNull
-        unattributed = json.flag("is_unattributed") || id.isEmpty
+        unattributed = json.flag("is_unattributed")
         inFlight = json.flag("in_flight")
         let statistics = json["statistics"]
         lastToolCallAt = statistics.date("last_tool_call_at")
@@ -110,7 +112,13 @@ struct WorkbenchConversation: Equatable, Identifiable, Sendable {
             ?? lastToolCallAt
         runningCount = Int(statistics.integer("running"))
         pendingCount = Int(statistics.integer("pending"))
-        recentlyActive = Self.isRecentlyActive(lastActivityAt: lastActivityAt, serverNow: serverNow, inFlight: inFlight)
+        // WB04: process output is not a new user/model interaction. A live
+        // execution is displayed independently and never extends the 120s dot.
+        lastInteractionAt = json.date("last_interaction_at") ?? lastToolCallAt
+        interactionExpiresAt = json.date("interaction_expires_at")
+            ?? lastInteractionAt?.addingTimeInterval(120)
+        recentlyActive = json.optionalFlag("recently_active")
+            ?? Self.isRecentlyActive(lastActivityAt: lastInteractionAt, serverNow: serverNow, inFlight: false)
         let explicitInsertionEligibility = json.firstField([
             "insertion_eligible",
             "can_insert",
@@ -143,9 +151,24 @@ struct WorkbenchConversation: Equatable, Identifiable, Sendable {
     }
 
     static func isRecentlyActive(lastActivityAt: Date?, serverNow: Date?, inFlight: Bool) -> Bool {
-        if inFlight { return true }
         guard let lastActivityAt, let serverNow, lastActivityAt <= serverNow else { return false }
         return serverNow.timeIntervalSince(lastActivityAt) < 120
+    }
+
+    /// Navigation identity is not a Runtime conversation ID.
+    var navigationID: String { unattributed ? "unattributed" : id }
+
+    mutating func advancePresentation(serverNow: Date) {
+        if let expiry = interactionExpiresAt, let interaction = lastInteractionAt {
+            recentlyActive = interaction <= serverNow && serverNow < expiry
+        } else {
+            recentlyActive = false
+        }
+        if let request = lastToolCallAt {
+            insertionEligible = !terminated && !trashed && !unattributed
+                && request <= serverNow && serverNow.timeIntervalSince(request) < 180
+                && raw.firstField(["insertion_eligible", "can_insert"]).boolValue != false
+        }
     }
 
     var stateText: String {
@@ -423,6 +446,8 @@ struct WorkbenchPermissionState: Equatable, Sendable {
     var revision: UInt64
     var customSettingsEnabled: Bool?
     var settings: WorkbenchJSON
+    var configuredSettings: WorkbenchJSON
+    var settingsSource: String
     var workspaces: [String]
     var raw: WorkbenchJSON
 
@@ -433,7 +458,10 @@ struct WorkbenchPermissionState: Equatable, Sendable {
         scopeID = effective.text("scope_id")
         revision = max(effective.unsigned("revision"), json["policy"].unsigned("revision"))
         settings = effective["settings"]
+        configuredSettings = effective["configured_settings"].isNull ? settings : effective["configured_settings"]
+        settingsSource = effective.text("settings_source", fallback: "legacy")
         customSettingsEnabled = effective.firstField([
+            "custom_permissions_enabled",
             "custom_settings_enabled",
             "settings.custom_enabled",
             "settings.enabled"
@@ -445,7 +473,7 @@ struct WorkbenchPermissionState: Equatable, Sendable {
     var summaryText: String {
         var values = ["模式：\(WorkbenchFormatting.permissionMode(mode))", "范围：\(scope)"]
         if !scopeID.isEmpty { values.append("对象：\(scopeID)") }
-        values.append("修订：\(revision)")
+        values.append("修订：\(revision) · 来源：\(settingsSource)")
         if let customSettingsEnabled { values.append("自定义权限设置：\(customSettingsEnabled ? "已启用" : "未启用")") }
         return values.joined(separator: "\n")
     }
@@ -457,6 +485,11 @@ struct WorkbenchInsertion: Equatable, Identifiable, Sendable {
     var status: String
     var attempts: Int
     var receiptState: String
+    var receiptType: String
+    var manualRetryAvailable: Bool
+    var automaticAttemptsRemaining: Int?
+    var totalAttemptsRemaining: Int?
+    var nextRetryAt: Date?
     var terminalReason: String
     var createdAt: Date?
     var expiresAt: Date?
@@ -468,16 +501,38 @@ struct WorkbenchInsertion: Equatable, Identifiable, Sendable {
         status = json.text("status", fallback: "unknown")
         attempts = Int(max(json.integer("attempts"), json.integer("delivery_attempts")))
         receiptState = json.firstText("receipt_state", "ack_state", "delivery_state")
-        terminalReason = json.firstText("terminal_reason", "reason", "error")
+        receiptType = json.text("receipt_type")
+        manualRetryAvailable = json.flag("manual_retry_available")
+        automaticAttemptsRemaining = json["automatic_attempts_remaining"].int64Value.map(Int.init)
+        totalAttemptsRemaining = json["total_attempts_remaining"].int64Value.map(Int.init)
+        nextRetryAt = json.date("next_retry_at")
+        terminalReason = json.firstText("delivery_reason", "terminal_reason", "reason", "error")
         createdAt = json.date("created_at")
         expiresAt = json.date("expires_at") ?? json.date("deadline")
         raw = json
     }
 
+    var terminal: Bool {
+        ["acknowledged", "failed", "expired", "cancelled", "canceled"].contains(status)
+    }
+
+    var receiptDescription: String {
+        switch receiptType {
+        case "receiver_receipt": return "接收方回执（不等同模型上下文确认）"
+        case "outer_forwarded": return "宿主已转发（未确认模型上下文）"
+        case "host_context_committed": return "宿主已确认写入模型上下文（不代表执行完成）"
+        case "": return "回执待确认"
+        default: return "未知回执类型：\(receiptType)"
+        }
+    }
+
     var detailText: String {
-        var values = [WorkbenchFormatting.state(status)]
+        var values = [WorkbenchFormatting.state(status), receiptDescription]
         if !receiptState.isEmpty { values.append("回执：\(receiptState)") }
         if attempts > 0 { values.append("尝试：\(attempts)") }
+        if let automaticAttemptsRemaining { values.append("自动余量：\(automaticAttemptsRemaining)") }
+        if let totalAttemptsRemaining { values.append("总余量：\(totalAttemptsRemaining)") }
+        if let nextRetryAt { values.append("可重投时间：\(WorkbenchFormatting.clock(nextRetryAt))") }
         if let expiresAt { values.append("到期：\(WorkbenchFormatting.clock(expiresAt))") }
         if !terminalReason.isEmpty { values.append(terminalReason) }
         return values.joined(separator: " · ")

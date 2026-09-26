@@ -20,7 +20,7 @@ struct WorkbenchModelTests {
             serverNow: server,
             inFlight: false
         ))
-        precondition(WorkbenchConversation.isRecentlyActive(
+        precondition(!WorkbenchConversation.isRecentlyActive(
             lastActivityAt: nil,
             serverNow: server,
             inFlight: true

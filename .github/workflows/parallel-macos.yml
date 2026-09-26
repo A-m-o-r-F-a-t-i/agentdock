@@ -31,6 +31,9 @@ jobs:
             runner: macos-15-intel
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -81,6 +84,9 @@ jobs:
               'lane': '06-macos',
               'source_sha': os.environ['GITHUB_SHA'],
               'run_id': os.environ['GITHUB_RUN_ID'],
+              'attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'branch': os.environ['GITHUB_REF_NAME'],
               'runner_label': os.environ['MATRIX_RUNNER'],
               'requested_architecture': arch,
               'native_architecture': subprocess.check_output(['uname','-m'], text=True).strip(),
@@ -97,6 +103,7 @@ jobs:
           MATRIX_ARCH: ${{ matrix.arch }}
           MATRIX_RUNNER: ${{ matrix.runner }}
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: wb06-native-${{ matrix.arch }}-${{ steps.meta.outputs.short_sha }}-${{ github.run_id }}
           path: evidence/${{ matrix.arch }}
@@ -118,6 +125,9 @@ jobs:
             runner: macos-15-intel
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -140,6 +150,7 @@ jobs:
             --commit "$GITHUB_SHA" \
             --output dist/payload
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: wb06-payload-darwin-${{ matrix.arch }}-${{ steps.meta.outputs.short_sha }}-${{ github.run_id }}
           path: dist/payload/*
@@ -153,6 +164,9 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -245,6 +259,9 @@ jobs:
               'lane': '06-macos',
               'source_sha': os.environ['GITHUB_SHA'],
               'run_id': os.environ['GITHUB_RUN_ID'],
+              'attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'branch': os.environ['GITHUB_REF_NAME'],
               'version': os.environ['CANDIDATE_VERSION'],
               'candidate_only': True,
               'published': False,
@@ -286,6 +303,7 @@ jobs:
           Publication: not performed
           EOF
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: wb06-macos-candidate-${{ steps.meta.outputs.short_sha }}-${{ github.run_id }}
           path: dist/candidate/*

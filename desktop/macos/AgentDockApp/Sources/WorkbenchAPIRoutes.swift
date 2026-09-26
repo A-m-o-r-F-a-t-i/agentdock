@@ -6,7 +6,9 @@ extension WorkbenchAPIClient {
     }
 
     func sidebar(_ input: WorkbenchSidebarRequest) async throws -> WorkbenchSidebarPage {
-        WorkbenchSidebarPage(json: try await post("/internal/runtime/execution/sidebar", body: input.json))
+        let value = try await post("/internal/runtime/execution/sidebar", body: input.json)
+        try WorkbenchValidation.sidebar(value)
+        return WorkbenchSidebarPage(json: value)
     }
 
     func conversation(_ id: String) async throws -> WorkbenchJSON {
@@ -56,14 +58,14 @@ extension WorkbenchAPIClient {
         ]))
     }
 
-    func callPayload(_ id: String, source: String, offset: Int = 0, limit: Int = 64 * 1024) async throws -> WorkbenchJSON {
+    func callPayload(_ id: String, source: String, offset: Int = 0, limit: Int = 10000) async throws -> WorkbenchJSON {
         guard source == "request" || source == "response" else {
             throw WorkbenchClientError.configuration("未知调用载荷来源：\(source)")
         }
         let path = "/internal/runtime/calls/\(try encodedPathComponent(id))/payload/\(source)"
         return try await get(queryPath(path, query: [
             URLQueryItem(name: "offset", value: String(max(0, offset))),
-            URLQueryItem(name: "limit", value: String(min(max(limit, 1), 256 * 1024)))
+            URLQueryItem(name: "limit_chars", value: String(min(max(limit, 1), 100000)))
         ]))
     }
 
@@ -230,7 +232,8 @@ extension WorkbenchAPIClient {
         includeOutput: Bool
     ) -> String {
         var items = [URLQueryItem(name: "limit", value: String(min(max(limit, 1), 200)))]
-        if !conversationID.isEmpty { items.append(URLQueryItem(name: "conversation_id", value: conversationID)) }
+        if !unattributed && !conversationID.isEmpty { items.append(URLQueryItem(name: "conversation_id", value: conversationID)) }
+        items.append(URLQueryItem(name: "top_level", value: "true"))
         if unattributed { items.append(URLQueryItem(name: "unattributed", value: "true")) }
         if before > 0 { items.append(URLQueryItem(name: "before", value: String(before))) }
         if let after { items.append(URLQueryItem(name: "after", value: String(after))) }

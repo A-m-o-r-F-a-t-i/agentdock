@@ -34,7 +34,9 @@ struct WorkbenchConnection: Equatable, Sendable {
               ["127.0.0.1", "::1", "localhost"].contains(host) else {
             throw WorkbenchClientError.configuration("测试或运行连接必须是直接 HTTP 回环地址。")
         }
-        guard !bearerToken.isEmpty else {
+        guard baseURL.user == nil, baseURL.password == nil, baseURL.query == nil, baseURL.fragment == nil,
+              !bearerToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !bearerToken.contains("\r"), !bearerToken.contains("\n") else {
             throw WorkbenchClientError.configuration("Bearer Token 不能为空。")
         }
         self.baseURL = baseURL
@@ -75,6 +77,7 @@ final class WorkbenchAPIClient {
     private let ownsSession: Bool
     private let connectionProvider: ConnectionProvider
     private let maximumResponseBytes: Int
+    private let redirectGuard = WorkbenchRedirectGuard()
 
     init(
         session: URLSession? = nil,
@@ -111,11 +114,11 @@ final class WorkbenchAPIClient {
     }
 
     func post(_ path: String, body: WorkbenchJSON) async throws -> WorkbenchJSON {
-        try await request(method: "POST", path: path, body: body)
+        try WorkbenchValidation.mutation(await request(method: "POST", path: path, body: body))
     }
 
     func eventStream(path streamPath: String, lastEventID: String = "") -> AsyncThrowingStream<WorkbenchStreamEvent, Error> {
-        AsyncThrowingStream { continuation in
+        AsyncThrowingStream(bufferingPolicy: .bufferingOldest(256)) { continuation in
             let task = Task {
                 do {
                     let connection = try connectionProvider()
@@ -123,7 +126,8 @@ final class WorkbenchAPIClient {
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
                     if !lastEventID.isEmpty { request.setValue(lastEventID, forHTTPHeaderField: "Last-Event-ID") }
-                    let (bytes, response) = try await session.bytes(for: request)
+                    let (bytes, response) = try await session.bytes(for: request, delegate: redirectGuard)
+                    defer { bytes.task.cancel() }
                     guard let http = response as? HTTPURLResponse else {
                         throw WorkbenchClientError.invalidResponse("Core 活动流没有返回 HTTP 响应。")
                     }
@@ -141,7 +145,11 @@ final class WorkbenchAPIClient {
                     )
                     for try await byte in bytes {
                         try Task.checkCancellation()
-                        for event in try parser.feed(byte) { continuation.yield(event) }
+                        for event in try parser.feed(byte) {
+                            if case .dropped = continuation.yield(event) {
+                                throw WorkbenchClientError.transport("活动流消费滞后，已关闭连接以便按游标重新同步。")
+                            }
+                        }
                     }
                     for event in try parser.finish() { continuation.yield(event) }
                     continuation.finish()
@@ -161,7 +169,8 @@ final class WorkbenchAPIClient {
         do {
             let connection = try connectionProvider()
             let request = try makeRequest(connection: connection, method: method, path: path, body: body)
-            let (bytes, response) = try await session.bytes(for: request)
+            let (bytes, response) = try await session.bytes(for: request, delegate: redirectGuard)
+            defer { bytes.task.cancel() }
             guard let http = response as? HTTPURLResponse else {
                 throw WorkbenchClientError.invalidResponse("Core 没有返回 HTTP 响应。")
             }
@@ -239,7 +248,7 @@ final class WorkbenchAPIClient {
         let value = try? WorkbenchJSON.decode(data)
         let nested = value?["error"] ?? .null
         let rootCode = value?.firstText("code") ?? ""
-        let rootMessage = value?.firstText("message", "error_description") ?? ""
+        let rootMessage = value?.firstText("message", "error_description", "error") ?? ""
         let code = rootCode.isEmpty ? nested.firstText("code") : rootCode
         let message = rootMessage.isEmpty ? nested.firstText("message", "detail") : rootMessage
         return .http(
@@ -259,10 +268,22 @@ final class WorkbenchAPIClient {
 
     func encodedPathComponent(_ value: String) throws -> String {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-        guard !value.isEmpty, value.count <= 256,
+        guard !value.isEmpty, value.count <= 256, value != ".", value != "..",
+              !value.contains("/"), !value.contains("\\"), !value.contains("%"),
               let encoded = value.addingPercentEncoding(withAllowedCharacters: allowed) else {
             throw WorkbenchClientError.configuration("无效的 Runtime 对象 ID。")
         }
         return encoded
+    }
+}
+
+/// Apply to every task, including tests using an injected session. Never follow
+/// a redirect carrying local management authority, even to another loopback port.
+private final class WorkbenchRedirectGuard: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 }

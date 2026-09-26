@@ -140,6 +140,11 @@ enum DesktopPermissionChecker {
 
     private static func openPrivacySettings(pane: String) {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else { return }
-        NSWorkspace.shared.open(url)
+        if !NSWorkspace.shared.open(url) {
+            let alert = NSAlert()
+            alert.messageText = "无法打开系统设置"
+            alert.informativeText = "请手动打开 系统设置 → 隐私与安全性 → 对应权限项（\(pane)）。本页检测对象是管理 App；Core、helper 与 Skill 进程需按实际调用验证。"
+            alert.runModal()
+        }
     }
 }

@@ -81,6 +81,7 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
         sendButton.title = "插入对话"
         sendButton.bezelStyle = .rounded
         sendButton.keyEquivalent = "\r"
+        sendButton.keyEquivalentModifierMask = [.command]
         sendButton.target = self
         sendButton.action = #selector(sendInsertion(_:))
         sendButton.setAccessibilityIdentifier("workbench.insertion.send")
@@ -148,15 +149,15 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
 
         let canCompose: Bool
         if let conversation {
-            canCompose = !conversation.terminated && !conversation.trashed && conversation.insertionEligible != false
+            canCompose = !conversation.terminated && !conversation.trashed && !conversation.id.isEmpty && conversation.insertionEligible == true && !snapshot.stale
             if conversation.insertionEligible == true {
-                composerHint.stringValue = "180 秒插入窗口有效；未领取补充 300 秒后到期，30 秒内等待持久化回执。"
+                composerHint.stringValue = "插入窗口有效；原始有效期 300 秒，成功附加后等待回执 30 秒。"
             } else if conversation.insertionEligible == false {
                 composerHint.stringValue = conversation.insertionEligibilityReason.isEmpty
                     ? "当前不在 180 秒插入窗口内。"
                     : conversation.insertionEligibilityReason
             } else {
-                composerHint.stringValue = "Core 未发布资格字段；提交时由 Core 按独立的 180 秒窗口校验。"
+                composerHint.stringValue = "Core 尚未确认插入资格；刷新后再提交。"
             }
         } else {
             canCompose = false
@@ -195,8 +196,7 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
         let value = composer.string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return }
         onSendInsertion?(value)
-        composer.string = ""
-        sendButton.isEnabled = false
+        // Preserve the draft while the submission outcome is unknown.
     }
 
     @objc private func loadOlder(_ sender: Any?) { onLoadOlder?() }
@@ -217,7 +217,9 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
     }
 
     private static func timeline(calls: [WorkbenchCall], insertions: [WorkbenchInsertion]) -> [WorkbenchTimelineEntry] {
-        var values = calls.map { WorkbenchTimelineEntry(kind: .call($0)) }
+        let insertionIDs = Set(insertions.map(\.id))
+        var values = calls.filter { !($0.isInsertion && insertionIDs.contains($0.id)) }
+            .map { WorkbenchTimelineEntry(kind: .call($0)) }
         values.append(contentsOf: insertions.map { WorkbenchTimelineEntry(kind: .insertion($0)) })
         values.sort {
             if $0.date == $1.date { return $0.identity > $1.identity }

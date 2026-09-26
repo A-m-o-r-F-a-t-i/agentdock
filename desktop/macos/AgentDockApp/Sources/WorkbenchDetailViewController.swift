@@ -8,6 +8,12 @@ final class WorkbenchDetailViewController: NSViewController {
     var onConversationAction: ((String) -> Void)?
     var onPermissionMode: ((String) -> Void)?
     var onInsertionAction: ((String, String) -> Void)?
+    var onReadPayload: ((String) -> Void)?
+    var onOpenPolicy: (() -> Void)?
+    private let readRequestButton = NSButton()
+    private let readOutputButton = NSButton()
+    private let payloadCaption = WorkbenchUI.label("输出默认隐藏", font: .systemFont(ofSize: 11), lines: 3)
+    private var loadedOutput = ""
 
     private let titleLabel = WorkbenchUI.label("详情", font: .systemFont(ofSize: 16, weight: .semibold), lines: 2)
     private let subtitleLabel = WorkbenchUI.label("选择调用或用户补充。", font: .systemFont(ofSize: 11), color: WorkbenchPalette.secondaryText, lines: 2)
@@ -77,12 +83,12 @@ final class WorkbenchDetailViewController: NSViewController {
         for button in [stopButton, approveButton, rejectButton, copyButton, exportButton] {
             headerActions.addArrangedSubview(button)
         }
-        headerActions.addArrangedSubview(conversationMenu)
 
         let header = WorkbenchUI.stack(.vertical, spacing: 5)
         header.addArrangedSubview(titleLabel)
         header.addArrangedSubview(subtitleLabel)
         header.addArrangedSubview(headerActions)
+        header.addArrangedSubview(conversationMenu)
 
         tabs.addTabViewItem(tab(label: "调用与输出", view: executionView()))
         tabs.addTabViewItem(tab(label: "任务", view: textTab(taskText, identifier: "workbench.detail.task")))
@@ -151,6 +157,18 @@ final class WorkbenchDetailViewController: NSViewController {
         }
 
         technicalText.string = technicalDetail(snapshot: snapshot, selectedInsertion: selectedInsertion)
+        if let slice = model.payloadSlices["request"] { requestText.string = slice.text }
+        if let slice = model.payloadSlices["response"] {
+            loadedOutput = slice.text
+            outputText.string = slice.text
+            payloadCaption.stringValue = slice.caption
+        } else {
+            loadedOutput = ""
+            outputText.string = "输出尚未展开；点击读取后按 Unicode 字符分段加载。"
+            payloadCaption.stringValue = "未展开输出时不读取载荷；每段最多 10000 个 Unicode 字符。"
+        }
+        readRequestButton.isEnabled = currentCall != nil && !model.isReadingPayload && model.payloadSlices["request"]?.hasMore != false
+        readOutputButton.isEnabled = currentCall != nil && !model.isReadingPayload && model.payloadSlices["response"]?.hasMore != false
         updateActions(model)
     }
 
@@ -179,18 +197,25 @@ final class WorkbenchDetailViewController: NSViewController {
 
         let left = WorkbenchUI.stack(.vertical, spacing: 6)
         left.addArrangedSubview(WorkbenchUI.label("调用参数", font: .systemFont(ofSize: 12, weight: .semibold)))
+        configureButton(readRequestButton, title: "读取参数 / 下一段", action: #selector(readRequest))
+        left.addArrangedSubview(readRequestButton)
         left.addArrangedSubview(requestScroll)
         let right = WorkbenchUI.stack(.vertical, spacing: 6)
         right.addArrangedSubview(WorkbenchUI.label("真实工具输出", font: .systemFont(ofSize: 12, weight: .semibold)))
+        configureButton(readOutputButton, title: "展开输出 / 下一段", action: #selector(readOutput))
+        readOutputButton.setAccessibilityIdentifier("workbench.output.load")
+        right.addArrangedSubview(readOutputButton)
+        right.addArrangedSubview(WorkbenchUI.button("复制当前输出段", target: self, action: #selector(copyOutput)))
+        right.addArrangedSubview(payloadCaption)
         right.addArrangedSubview(outputScroll)
 
         let split = NSSplitView()
-        split.isVertical = true
+        split.isVertical = false
         split.dividerStyle = .thin
         split.addArrangedSubview(left)
         split.addArrangedSubview(right)
-        left.widthAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
-        right.widthAnchor.constraint(greaterThanOrEqualToConstant: 220).isActive = true
+        left.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
+        right.heightAnchor.constraint(greaterThanOrEqualToConstant: 180).isActive = true
         return split
     }
 
@@ -215,6 +240,7 @@ final class WorkbenchDetailViewController: NSViewController {
         let stack = WorkbenchUI.stack(.vertical, spacing: 8)
         stack.addArrangedSubview(controls)
         stack.addArrangedSubview(note)
+        stack.addArrangedSubview(WorkbenchUI.button("完整权限设置…", target: self, action: #selector(openPolicy)))
         stack.addArrangedSubview(scroll)
         return stack
     }
@@ -280,10 +306,10 @@ final class WorkbenchDetailViewController: NSViewController {
         rejectButton.isHidden = call?.needsApproval != true
         copyButton.isEnabled = currentCall != nil || currentInsertion != nil
         exportButton.isEnabled = currentCall != nil || currentInsertion != nil
-        conversationMenu.isEnabled = model.snapshot.selectedConversation != nil && !model.isOperating
-        applyPermissionButton.isEnabled = currentPermission != nil && !model.isOperating
-        retryInsertionButton.isEnabled = currentInsertion != nil && !model.isOperating
-        cancelInsertionButton.isEnabled = currentInsertion != nil && !model.isOperating
+        conversationMenu.isEnabled = !model.selectedConversationID.isEmpty && !model.isOperating && !model.snapshot.stale
+        applyPermissionButton.isEnabled = currentPermission != nil && !model.selectedConversationID.isEmpty && !model.isOperating && !model.snapshot.stale
+        retryInsertionButton.isEnabled = currentInsertion?.manualRetryAvailable == true && currentInsertion?.terminal == false && !model.isOperating
+        cancelInsertionButton.isEnabled = currentInsertion?.terminal == false && !model.isOperating
     }
 
     private func technicalDetail(snapshot: WorkbenchSnapshot, selectedInsertion: WorkbenchInsertion?) -> String {
@@ -317,6 +343,14 @@ final class WorkbenchDetailViewController: NSViewController {
     }
 
     @objc private func stopCall(_ sender: Any?) { onStopCall?() }
+    @objc private func readRequest() { onReadPayload?("request") }
+    @objc private func readOutput() { onReadPayload?("response") }
+    @objc private func openPolicy() { onOpenPolicy?() }
+    @objc private func copyOutput() {
+        guard !loadedOutput.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(loadedOutput, forType: .string)
+    }
     @objc private func approve(_ sender: Any?) { onApprovalDecision?(true) }
     @objc private func reject(_ sender: Any?) { onApprovalDecision?(false) }
     @objc private func applyPermission(_ sender: Any?) { onPermissionMode?(selectedMode()) }

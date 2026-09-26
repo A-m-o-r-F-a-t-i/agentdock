@@ -1,675 +1,488 @@
 import Foundation
 
+/// Window-scoped presentation. All durable business decisions belong to Core.
 @MainActor
 final class WorkbenchViewModel {
     private(set) var snapshot: WorkbenchSnapshot
     private(set) var listView: WorkbenchListView = .active
     private(set) var searchText = ""
-    private(set) var selectedConversationID = ""
+    private(set) var selectedNavigationID = ""
+    var selectedConversationID: String { snapshot.selectedConversation?.id ?? "" }
     private(set) var selectedCallID = ""
     private(set) var isRefreshing = false
     private(set) var isOperating = false
-
+    private(set) var payloadSlices = [String: WorkbenchPayloadSlice]()
+    private(set) var isReadingPayload = false
     var onChange: ((WorkbenchViewModel) -> Void)?
-
-    private let client: WorkbenchAPIClient
-    private let fixtureMode: Bool
-    private var workspaceModes = [String: String]()
-    private var workspaceLimits = [String: Int]()
-    private var workspaceCursors = [String: String]()
+    let client: WorkbenchAPIClient
+    let fixtureMode: Bool
+    static let maximumCalls = 1000
+    private var modes = [String: String]()
+    private var limits = [String: Int]()
+    private var cursors = [String: String]()
+    private var epoch = 0
     private var refreshGeneration = 0
-    private var refreshTask: Task<Void, Never>?
-    private var searchTask: Task<Void, Never>?
-    private var detailTask: Task<Void, Never>?
-    private var streamTask: Task<Void, Never>?
-    private var receiptTask: Task<Void, Never>?
-    private var lastStreamEventID = ""
-    private var streamBackoffSeconds: UInt64 = 1
     private var started = false
+    private var refreshTask: Task<Void, Never>?
+    private var selectionTask: Task<Void, Never>?
+    private var detailTask: Task<Void, Never>?
+    private var payloadTask: Task<Void, Never>?
+    private var searchTask: Task<Void, Never>?
+    private var streamTask: Task<Void, Never>?
+    private var timerTask: Task<Void, Never>?
+    private var receiptTask: Task<Void, Never>?
+    private var operationTask: Task<Void, Never>?
+    private var notificationTask: Task<Void, Never>?
+    private var serverAnchor: Date?
+    private var uptimeAnchor = ProcessInfo.processInfo.systemUptime
+    private var streamCursor: UInt64 = 0
+    private var submissionKeys = [String: (text: String, id: String)]()
 
     init(client: WorkbenchAPIClient = WorkbenchAPIClient(), fixtureMode: Bool = false) {
         self.client = client
         self.fixtureMode = fixtureMode
         snapshot = fixtureMode ? .fixture() : WorkbenchSnapshot()
-        selectedConversationID = snapshot.selectedConversation?.id ?? ""
+        selectedNavigationID = snapshot.selectedConversation?.navigationID ?? ""
         selectedCallID = snapshot.selectedCall?.id ?? ""
     }
-
     deinit {
-        refreshTask?.cancel()
-        searchTask?.cancel()
-        detailTask?.cancel()
-        streamTask?.cancel()
-        receiptTask?.cancel()
+        refreshTask?.cancel(); selectionTask?.cancel(); detailTask?.cancel()
+        payloadTask?.cancel(); searchTask?.cancel(); streamTask?.cancel()
+        timerTask?.cancel(); receiptTask?.cancel(); operationTask?.cancel(); notificationTask?.cancel()
     }
-
     func start() {
-        guard !started else {
-            notify()
-            return
-        }
+        guard !started else { notify(); return }
         started = true
-        if fixtureMode {
-            notify()
-            return
+        guard !fixtureMode else { notify(); return }
+        refresh()
+        timerTask = Task { [weak self] in
+            var tick = 0
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+                guard let self, self.started else { return }
+                tick += 1
+                self.advanceClock()
+                if tick % 15 == 0, !self.isRefreshing { self.refresh(reason: "poll") }
+            }
         }
-        refresh(reason: "initial")
     }
-
     func stop() {
         started = false
-        refreshTask?.cancel()
-        searchTask?.cancel()
-        detailTask?.cancel()
-        streamTask?.cancel()
-        receiptTask?.cancel()
+        epoch += 1; refreshGeneration += 1
+        refreshTask?.cancel(); selectionTask?.cancel(); detailTask?.cancel()
+        payloadTask?.cancel(); searchTask?.cancel(); streamTask?.cancel()
+        timerTask?.cancel(); receiptTask?.cancel(); operationTask?.cancel(); notificationTask?.cancel()
+        streamTask = nil; notificationTask = nil
+        isRefreshing = false; isReadingPayload = false; isOperating = false
     }
-
     func refresh(reason: String = "manual") {
-        guard !fixtureMode else {
-            snapshot = .fixture()
-            notify()
-            return
-        }
+        guard !fixtureMode else { notify(); return }
         refreshTask?.cancel()
         refreshGeneration += 1
         let generation = refreshGeneration
-        isRefreshing = true
-        snapshot.message = reason == "manual" ? "正在刷新…" : "正在连接 AgentDock Core…"
-        notify()
-
         let request = sidebarRequest()
+        isRefreshing = true
+        if reason != "poll" { snapshot.message = "正在读取 Core…" }
+        notify()
         refreshTask = Task { [weak self] in
             guard let self else { return }
             do {
                 async let overview = client.overview()
-                async let page = client.sidebar(request)
-                var (loadedOverview, loadedSidebar) = try await (overview, page)
+                async let sidebar = client.sidebar(request)
+                let (newOverview, initialSidebar) = try await (overview, sidebar)
                 try Task.checkCancellation()
                 guard generation == refreshGeneration else { return }
-
-                // The shared sidebar accepts 5 as the compact history size.
-                // Bootstrap known workspaces once, then ask Core for its stable
-                // history ordering instead of sorting or filtering locally.
-                if listView == .active,
-                   searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                   workspaceModes.isEmpty,
-                   !loadedSidebar.groups.isEmpty {
-                    for group in loadedSidebar.groups {
-                        workspaceModes[group.id] = "history"
-                        workspaceLimits[group.id] = 5
-                        if !group.historyCursor.isEmpty { workspaceCursors[group.id] = group.historyCursor }
-                    }
-                    loadedSidebar = try await client.sidebar(sidebarRequest())
+                var newSidebar = initialSidebar
+                // Load only summaries. Presentation applies 3-day/5/15 rules;
+                // complete history is available through the paged manager.
+                var discovered = false
+                for group in newSidebar.groups where modes[group.id] == nil {
+                    modes[group.id] = "history"; limits[group.id] = 20; discovered = true
+                }
+                if discovered {
+                    newSidebar = try await client.sidebar(sidebarRequest())
                     try Task.checkCancellation()
                     guard generation == refreshGeneration else { return }
                 }
-
-                snapshot.overview = loadedOverview
-                snapshot.sidebar = loadedSidebar
-                snapshot.stale = false
-                snapshot.lastLoadedAt = Date()
-                snapshot.message = connectedSummary(loadedSidebar)
-                reconcileSelection(preferred: selectedConversationID)
+                snapshot.overview = newOverview
+                snapshot.sidebar = newSidebar
+                serverAnchor = newSidebar.serverNow ?? newOverview.serverNow
+                uptimeAnchor = ProcessInfo.processInfo.systemUptime
+                for group in newSidebar.groups { cursors[group.id] = group.historyCursor }
+                snapshot.stale = false; snapshot.lastLoadedAt = Date()
+                snapshot.message = "已连接 · \(newSidebar.total) 个对话"
                 isRefreshing = false
-                notify()
-                if !selectedConversationID.isEmpty {
-                    loadSelection(generation: generation)
-                }
-            } catch is CancellationError {
-                return
-            } catch let error as WorkbenchClientError {
-                guard generation == refreshGeneration else { return }
-                isRefreshing = false
-                snapshot.stale = snapshot.lastLoadedAt != nil
-                snapshot.message = error.localizedDescription
+                let all = newSidebar.groups.flatMap(\.conversations)
+                let selected = all.first { $0.navigationID == selectedNavigationID }
+                    ?? (newSidebar.selected?.navigationID == selectedNavigationID ? newSidebar.selected : nil)
+                    ?? all.first
+                let changed = selected?.navigationID != selectedNavigationID
+                if changed { selectConversation(selected?.navigationID ?? "") }
+                else if let selected { snapshot.selectedConversation = selected }
+                if !changed, reason != "poll" || snapshot.calls.calls.isEmpty { loadSelection() }
+                if streamTask == nil { startStream(after: newSidebar.latestSequence) }
                 notify()
             } catch {
-                guard generation == refreshGeneration else { return }
-                isRefreshing = false
-                snapshot.stale = snapshot.lastLoadedAt != nil
-                snapshot.message = error.localizedDescription
-                notify()
+                guard generation == refreshGeneration, !Task.isCancelled else { return }
+                isRefreshing = false; snapshot.stale = true
+                snapshot.message = "读取失败；原快照已保留：\(error.localizedDescription)"; notify()
             }
         }
     }
-
     func setListView(_ value: WorkbenchListView) {
         guard value != listView else { return }
-        listView = value
-        workspaceCursors.removeAll()
-        selectedConversationID = ""
-        selectedCallID = ""
-        snapshot.selectedConversation = nil
-        snapshot.selectedCall = nil
-        snapshot.calls = .empty
+        listView = value; cursors.removeAll()
+        invalidateSelection(); selectedNavigationID = ""
         refresh(reason: "view")
     }
-
     func setSearchText(_ value: String) {
-        let normalized = String(value.prefix(512))
-        guard normalized != searchText else { return }
-        searchText = normalized
+        let value = String(value.prefix(512))
+        guard value != searchText else { return }
+        searchText = value
+        refreshGeneration += 1; refreshTask?.cancel(); isRefreshing = false
         searchTask?.cancel()
         searchTask = Task { [weak self] in
-            do {
-                try await Task.sleep(nanoseconds: 250_000_000)
-                guard let self, !Task.isCancelled else { return }
-                self.workspaceCursors.removeAll()
-                self.refresh(reason: "search")
-            } catch {
-                return
-            }
+            do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
+            guard let self, !Task.isCancelled else { return }
+            cursors.removeAll(); refresh(reason: "search")
         }
     }
-
-    func toggleWorkspace(_ id: String) {
-        let current = workspaceModes[id] ?? "history"
-        if current == "collapsed" {
-            workspaceModes[id] = "history"
-            workspaceLimits[id] = max(5, workspaceLimits[id] ?? 5)
-        } else {
-            workspaceModes[id] = "collapsed"
-            workspaceLimits[id] = 0
-        }
-        refresh(reason: "workspace")
-    }
-
     func loadMoreWorkspace(_ id: String) {
-        workspaceModes[id] = "history"
-        let current = workspaceLimits[id] ?? 5
-        workspaceLimits[id] = current <= 5 ? 20 : min(200, current + 20)
+        modes[id] = "history"
+        limits[id] = min(1000, (limits[id] ?? 20) + 20)
         refresh(reason: "workspace-history")
     }
-
-    func selectConversation(_ id: String) {
-        guard id != selectedConversationID else { return }
-        selectedConversationID = id
-        selectedCallID = ""
-        snapshot.selectedCall = nil
-        reconcileSelection(preferred: id)
-        notify()
-        if !fixtureMode {
-            loadSelection(generation: refreshGeneration)
+    func selectConversation(_ navigationID: String) {
+        guard navigationID != selectedNavigationID else { return }
+        invalidateSelection()
+        selectedNavigationID = navigationID
+        snapshot.selectedConversation = snapshot.sidebar.groups.flatMap(\.conversations)
+            .first { $0.navigationID == navigationID }
+            ?? (snapshot.sidebar.selected?.navigationID == navigationID ? snapshot.sidebar.selected : nil)
+        notify(); loadSelection()
+    }
+    private func invalidateSelection() {
+        epoch += 1
+        selectionTask?.cancel(); detailTask?.cancel(); payloadTask?.cancel(); receiptTask?.cancel()
+        selectedCallID = ""; payloadSlices.removeAll(); isReadingPayload = false
+        snapshot.selectedConversation = nil; snapshot.selectedCall = nil
+        snapshot.calls = .empty; snapshot.task = nil; snapshot.permission = nil; snapshot.insertions = .empty
+    }
+    private func loadSelection() {
+        selectionTask?.cancel()
+        guard !fixtureMode, let selected = snapshot.selectedConversation else { return }
+        let currentEpoch = epoch
+        selectionTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let calls = try await client.calls(conversationID: selected.id, unattributed: selected.unattributed)
+                var detailed = selected
+                var permission: WorkbenchPermissionState?
+                var insertions = WorkbenchInsertionPage.empty
+                var task: WorkbenchTaskSummary?
+                var warnings = [String]()
+                if !selected.unattributed {
+                    let json = try await client.conversation(selected.id)
+                    let value = json["conversation"].isNull ? json : json["conversation"]
+                    let merged = (selected.raw.objectValue ?? [:]).merging(value.objectValue ?? [:]) { _, new in new }
+                    detailed = WorkbenchConversation(json: .object(merged), serverNow: snapshot.sidebar.serverNow)
+                    do { permission = try await client.permission(conversationID: selected.id, workspaceID: detailed.workspaceID) }
+                    catch { warnings.append("权限读取不可用：\(error.localizedDescription)") }
+                    do { insertions = try await client.insertions(conversationID: selected.id) }
+                    catch { warnings.append("用户补充读取不可用：\(error.localizedDescription)") }
+                    if !detailed.activeTaskID.isEmpty {
+                        do {
+                            let data = try await client.task(detailed.activeTaskID)
+                            let threads = (try? await client.taskThreads(detailed.activeTaskID)) ?? .null
+                            task = WorkbenchTaskSummary(json: data, threads: threads)
+                        } catch { warnings.append("任务读取不可用：\(error.localizedDescription)") }
+                    }
+                }
+                try Task.checkCancellation()
+                guard currentEpoch == epoch, selected.navigationID == selectedNavigationID else { return }
+                snapshot.selectedConversation = detailed; snapshot.permission = permission
+                snapshot.insertions = insertions; snapshot.task = task
+                var page = calls
+                page.calls = Self.mergeCalls(calls.calls, snapshot.calls.calls)
+                snapshot.calls = page
+                if !page.calls.contains(where: { $0.id == selectedCallID }) { selectedCallID = page.calls.first?.id ?? "" }
+                snapshot.selectedCall = page.calls.first { $0.id == selectedCallID }
+                snapshot.message = warnings.isEmpty ? "已同步对话详情" : warnings.joined(separator: " · ")
+                notify()
+            } catch {
+                guard currentEpoch == epoch, !Task.isCancelled else { return }
+                snapshot.message = "详情读取失败：\(error.localizedDescription)"; snapshot.stale = true; notify()
+            }
         }
     }
-
     func selectCall(_ id: String) {
         guard id != selectedCallID else { return }
-        selectedCallID = id
-        if let summary = snapshot.calls.calls.first(where: { $0.id == id }) {
-            snapshot.selectedCall = summary
-        }
-        notify()
+        detailTask?.cancel(); payloadTask?.cancel()
+        selectedCallID = id; payloadSlices.removeAll(); isReadingPayload = false
+        snapshot.selectedCall = snapshot.calls.calls.first { $0.id == id }; notify()
         guard !fixtureMode, !id.isEmpty else { return }
-        let conversationAtStart = selectedConversationID
-        detailTask?.cancel()
+        let currentEpoch = epoch
         detailTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let detail = try await client.call(id)
+                let value = try await client.call(id)
                 try Task.checkCancellation()
-                guard conversationAtStart == selectedConversationID, id == selectedCallID else { return }
-                snapshot.selectedCall = detail
-                upsertCall(detail)
-                notify()
-            } catch is CancellationError {
-                return
+                guard currentEpoch == epoch, id == selectedCallID else { return }
+                snapshot.selectedCall = value
+                snapshot.calls.calls = Self.mergeCalls(snapshot.calls.calls, [value]); notify()
             } catch {
-                guard conversationAtStart == selectedConversationID, id == selectedCallID else { return }
-                snapshot.message = "调用详情读取失败：\(error.localizedDescription)"
-                notify()
+                guard currentEpoch == epoch, id == selectedCallID, !Task.isCancelled else { return }
+                snapshot.message = "调用详情不可用：\(error.localizedDescription)"; notify()
             }
         }
     }
-
+    func loadPayload(source: String, restart: Bool = false) {
+        guard !fixtureMode, !selectedCallID.isEmpty, !isReadingPayload else { return }
+        let id = selectedCallID, currentEpoch = epoch
+        let offset = restart ? 0 : (payloadSlices[source]?.nextOffset ?? 0)
+        guard restart || payloadSlices[source]?.hasMore != false else { return }
+        isReadingPayload = true; notify()
+        payloadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let json = try await client.callPayload(id, source: source, offset: offset)
+                let slice = try WorkbenchPayloadSlice(json: json)
+                try Task.checkCancellation()
+                guard currentEpoch == epoch, id == selectedCallID else { return }
+                guard !slice.hasMore || slice.nextOffset > offset else {
+                    throw WorkbenchClientError.invalidResponse("输出游标未前进；已停止重复读取。")
+                }
+                payloadSlices[source] = slice; isReadingPayload = false; notify()
+            } catch {
+                guard currentEpoch == epoch, id == selectedCallID, !Task.isCancelled else { return }
+                isReadingPayload = false
+                snapshot.message = "分块输出读取失败：\(error.localizedDescription)"; notify()
+            }
+        }
+    }
     func loadOlderCalls() {
-        guard !fixtureMode,
-              !selectedConversationID.isEmpty,
-              snapshot.calls.hasMore,
+        guard let selected = snapshot.selectedConversation, snapshot.calls.hasMore,
               snapshot.calls.nextBefore > 0 else { return }
-        let conversation = selectedConversationID
-        let before = snapshot.calls.nextBefore
-        performOperation(successMessage: "已加载更早的执行记录", refreshAfter: false) { [weak self] in
-            guard let self else { return }
-            let older = try await client.calls(
-                conversationID: conversation,
-                unattributed: snapshot.selectedConversation?.unattributed ?? false,
-                before: before,
-                limit: 100
-            )
-            guard conversation == selectedConversationID else { return }
-            var merged = snapshot.calls.calls
-            let known = Set(merged.map(\.id))
-            merged.append(contentsOf: older.calls.filter { !known.contains($0.id) })
-            snapshot.calls.calls = merged
-            snapshot.calls.hasMore = older.hasMore
-            snapshot.calls.nextBefore = older.nextBefore
-            snapshot.calls.latestSequence = max(snapshot.calls.latestSequence, older.latestSequence)
-            notify()
-        }
-    }
-
-    func manageSelectedConversation(
-        action: String,
-        title: String = "",
-        tags: [String] = [],
-        retentionDays: Int = 0,
-        confirmPermanent: Bool = false
-    ) {
-        guard !selectedConversationID.isEmpty else { return }
-        let id = selectedConversationID
-        performOperation(successMessage: "对话操作已提交") { [weak self] in
-            guard let self else { return }
-            _ = try await client.manage(
-                kind: "conversation",
-                ids: [id],
-                action: action,
-                title: title,
-                tags: tags,
-                retentionDays: retentionDays,
-                confirmPermanent: confirmPermanent
-            )
-        }
-    }
-
-    func setConversationTerminated(_ terminated: Bool) {
-        guard !selectedConversationID.isEmpty else { return }
-        let id = selectedConversationID
-        performOperation(successMessage: terminated ? "已请求终止对话" : "已恢复对话") { [weak self] in
-            guard let self else { return }
-            _ = try await client.conversationLifecycle(id: id, action: terminated ? "terminate" : "resume")
-        }
-    }
-
-    func linkSelectedConversation(to taskID: String) {
-        guard !selectedConversationID.isEmpty, !taskID.isEmpty else { return }
-        let conversation = selectedConversationID
-        performOperation(successMessage: "任务已关联") { [weak self] in
-            guard let self else { return }
-            _ = try await client.linkConversation(id: conversation, taskID: taskID)
-        }
-    }
-
-    func setSelectedCurrentTask(taskID: String, threadID: String = "main") {
-        guard !selectedConversationID.isEmpty, !taskID.isEmpty else { return }
-        guard let bindingRevision = snapshot.selectedConversation?.bindingRevision else {
-            snapshot.message = "Core 未返回 binding_revision；为避免覆盖更新，当前任务修改已禁用。"
-            notify()
-            return
-        }
-        let conversation = selectedConversationID
-        performOperation(successMessage: "当前任务已更新") { [weak self] in
-            guard let self else { return }
-            _ = try await client.setCurrentTask(
-                conversationID: conversation,
-                taskID: taskID,
-                threadID: threadID.isEmpty ? "main" : threadID,
-                bindingRevision: bindingRevision
-            )
-        }
-    }
-
-    func stopSelectedCall() {
-        guard let call = snapshot.selectedCall, call.canStop else { return }
-        performOperation(successMessage: "停止请求已提交") { [weak self] in
-            guard let self else { return }
-            _ = try await client.stopCall(call.id)
-        }
-    }
-
-    func decideSelectedApproval(approve: Bool, allowWorkspace: Bool = false) {
-        guard let call = snapshot.selectedCall, !call.approvalID.isEmpty else { return }
-        performOperation(successMessage: approve ? "审批已通过" : "审批已拒绝") { [weak self] in
-            guard let self else { return }
-            _ = try await client.decideApproval(call.approvalID, action: approve ? "approve" : "reject", allowWorkspace: allowWorkspace)
-        }
-    }
-
-    func updatePermissionMode(_ mode: String) {
-        guard let permission = snapshot.permission else { return }
-        var fields: [String: WorkbenchJSON] = [
-            "scope": .string(permission.scope),
-            "scope_id": .string(permission.scopeID),
-            "mode": .string(mode),
-            "expected_revision": .integer(Int64(permission.revision))
-        ]
-        if mode == "full" { fields["confirm_full"] = .bool(true) }
-        performOperation(successMessage: "权限配置已更新") { [weak self] in
-            guard let self else { return }
-            _ = try await client.updatePermission(.object(fields))
-        }
-    }
-
-    func submitInsertion(_ text: String) {
-        guard let conversation = snapshot.selectedConversation,
-              !conversation.id.isEmpty,
-              conversation.insertionEligible != false else {
-            snapshot.message = snapshot.selectedConversation?.insertionEligibilityReason.isEmpty == false
-                ? snapshot.selectedConversation!.insertionEligibilityReason
-                : "当前对话不在 180 秒插入窗口内。"
-            notify()
-            return
-        }
-        let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return }
-        let submissionID = "macos-\(UUID().uuidString.lowercased())"
-        let conversationID = conversation.id
-        receiptTask?.cancel()
-        isOperating = true
-        snapshot.message = "正在提交用户补充…"
-        notify()
-        receiptTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                let response = try await client.enqueueInsertion(conversationID: conversationID, submissionID: submissionID, text: normalized)
-                guard conversationID == selectedConversationID else { return }
-                let returned = response["insertion"]
-                let returnedID = returned.firstText("insertion_id", "id")
-                isOperating = false
-                snapshot.message = returnedID.isEmpty ? "补充已提交，正在等待持久化回执…" : "补充已进入队列，等待模型回执…"
-                notify()
-                await waitForInsertionReceipt(conversationID: conversationID, submissionID: submissionID, insertionID: returnedID)
-            } catch is CancellationError {
-                return
-            } catch {
-                guard conversationID == selectedConversationID else { return }
-                isOperating = false
-                snapshot.message = "补充提交失败：\(error.localizedDescription)"
-                notify()
+        let before = snapshot.calls.nextBefore, currentEpoch = epoch
+        performOperation { [weak self] in
+            guard let self else { return .object([:]) }
+            let older = try await client.calls(conversationID: selected.id, unattributed: selected.unattributed, before: before)
+            guard currentEpoch == epoch else { return .object([:]) }
+            var page = older
+            if snapshot.calls.calls.count + older.calls.count <= Self.maximumCalls {
+                page.calls = Self.mergeCalls(snapshot.calls.calls, older.calls)
             }
+            snapshot.calls = page
+            return .object(["message": .string("已读取更早记录；显示窗口最多 1000 条。")])
         }
     }
-
-    func insertionAction(_ insertionID: String, action: String) {
-        guard !selectedConversationID.isEmpty else { return }
-        let conversation = selectedConversationID
-        performOperation(successMessage: action == "retry" ? "重投请求已提交" : "补充已取消") { [weak self] in
-            guard let self else { return }
-            _ = try await client.insertionAction(conversationID: conversation, insertionID: insertionID, action: action)
+    static func mergeCalls(_ old: [WorkbenchCall], _ incoming: [WorkbenchCall]) -> [WorkbenchCall] {
+        var byID = Dictionary(old.filter { !$0.id.isEmpty }.map { ($0.id, $0) },
+                              uniquingKeysWith: { a, b in a.sequence >= b.sequence ? a : b })
+        for item in incoming where !item.id.isEmpty {
+            if let previous = byID[item.id], previous.sequence > item.sequence { continue }
+            byID[item.id] = item
         }
+        return Array(byID.values.sorted { a, b in
+            a.sequence == b.sequence ? a.id > b.id : a.sequence > b.sequence
+        }.prefix(maximumCalls))
     }
-
-    func exportSelectedCall() -> String {
-        snapshot.selectedCall?.raw.prettyPrinted ?? ""
-    }
-
-    private func sidebarRequest() -> WorkbenchSidebarRequest {
-        WorkbenchSidebarRequest(
-            view: listView,
-            search: searchText,
-            limits: workspaceLimits,
-            modes: workspaceModes,
-            cursors: workspaceCursors,
-            defaultMode: "auto",
-            selectedConversationID: selectedConversationID
-        )
-    }
-
-    private func connectedSummary(_ page: WorkbenchSidebarPage) -> String {
-        let active = page.groups.reduce(0) { $0 + $1.recentCount }
-        return "已连接 · \(page.total) 个对话 · \(active) 个活动中"
-    }
-
-    private func reconcileSelection(preferred: String) {
-        let all = snapshot.sidebar.groups.flatMap(\.conversations)
-        let preferredItem = all.first(where: { $0.id == preferred })
-            ?? snapshot.sidebar.selected
-            ?? all.first
-        snapshot.selectedConversation = preferredItem
-        selectedConversationID = preferredItem?.id ?? ""
-        if selectedConversationID.isEmpty {
-            snapshot.calls = .empty
-            snapshot.selectedCall = nil
-            selectedCallID = ""
-        }
-        for group in snapshot.sidebar.groups where !group.historyCursor.isEmpty {
-            workspaceCursors[group.id] = group.historyCursor
-        }
-    }
-
-    private func loadSelection(generation: Int) {
-        detailTask?.cancel()
-        streamTask?.cancel()
-        receiptTask?.cancel()
-        guard let selected = snapshot.selectedConversation, !selected.id.isEmpty else {
-            snapshot.calls = .empty
-            snapshot.selectedCall = nil
-            notify()
-            return
-        }
-        let conversationID = selected.id
-        snapshot.message = "正在读取对话详情…"
-        notify()
-
-        detailTask = Task { [weak self] in
-            guard let self else { return }
-            var warnings = [String]()
-            do {
-                async let conversationResult = client.conversation(conversationID)
-                async let callsResult = client.calls(
-                    conversationID: conversationID,
-                    unattributed: selected.unattributed,
-                    limit: 100
-                )
-                let (conversationJSON, callPage) = try await (conversationResult, callsResult)
-                try Task.checkCancellation()
-                guard generation == refreshGeneration, conversationID == selectedConversationID else { return }
-
-                let conversationValue = conversationJSON["conversation"].isNull ? conversationJSON : conversationJSON["conversation"]
-                var detailed = WorkbenchConversation(json: conversationValue, serverNow: snapshot.sidebar.serverNow)
-                // List projections carry counters that detail objects may omit.
-                if detailed.runningCount == 0 { detailed.runningCount = selected.runningCount }
-                if detailed.pendingCount == 0 { detailed.pendingCount = selected.pendingCount }
-                if detailed.lastActivityAt == nil { detailed.lastActivityAt = selected.lastActivityAt }
-                if detailed.lastToolCallAt == nil { detailed.lastToolCallAt = selected.lastToolCallAt }
-                if detailed.insertionEligible == nil { detailed.insertionEligible = selected.insertionEligible }
-                snapshot.selectedConversation = detailed
-                snapshot.calls = callPage
-                if let existing = callPage.calls.first(where: { $0.id == selectedCallID }) ?? callPage.calls.first {
-                    selectedCallID = existing.id
-                    snapshot.selectedCall = existing
-                } else {
-                    selectedCallID = ""
-                    snapshot.selectedCall = nil
-                }
-
-                do {
-                    snapshot.permission = try await client.permission(
-                        conversationID: conversationID,
-                        workspaceID: detailed.workspaceID
-                    )
-                } catch let error as WorkbenchClientError where error.capabilityUnavailable {
-                    snapshot.permission = nil
-                    warnings.append("权限接口不可用")
-                } catch {
-                    warnings.append("权限读取失败")
-                }
-
-                do {
-                    snapshot.insertions = try await client.insertions(conversationID: conversationID)
-                } catch let error as WorkbenchClientError where error.capabilityUnavailable {
-                    snapshot.insertions = .empty
-                    warnings.append("插入接口不可用")
-                } catch {
-                    warnings.append("插入队列读取失败")
-                }
-
-                if !detailed.activeTaskID.isEmpty {
-                    do {
-                        async let taskJSON = client.task(detailed.activeTaskID)
-                        async let threadJSON = client.taskThreads(detailed.activeTaskID)
-                        let (task, threads) = try await (taskJSON, threadJSON)
-                        snapshot.task = WorkbenchTaskSummary(json: task, threads: threads)
-                    } catch let error as WorkbenchClientError where error.capabilityUnavailable {
-                        snapshot.task = nil
-                        warnings.append("任务详情接口不可用")
-                    } catch {
-                        snapshot.task = nil
-                        warnings.append("任务详情读取失败")
-                    }
-                } else {
-                    snapshot.task = nil
-                }
-
-                guard generation == refreshGeneration, conversationID == selectedConversationID else { return }
-                snapshot.stale = false
-                snapshot.lastLoadedAt = Date()
-                snapshot.message = warnings.isEmpty ? connectedSummary(snapshot.sidebar) : warnings.joined(separator: " · ")
-                notify()
-                if !selectedCallID.isEmpty {
-                    let callID = selectedCallID
-                    selectedCallID = ""
-                    selectCall(callID)
-                }
-                startStream(conversationID: conversationID, unattributed: detailed.unattributed)
-            } catch is CancellationError {
-                return
-            } catch {
-                guard generation == refreshGeneration, conversationID == selectedConversationID else { return }
-                snapshot.stale = snapshot.lastLoadedAt != nil
-                snapshot.message = "对话详情读取失败：\(error.localizedDescription)"
-                notify()
-            }
-        }
-    }
-
-    private func startStream(conversationID: String, unattributed: Bool) {
-        streamTask?.cancel()
-        lastStreamEventID = snapshot.calls.latestSequence > 0 ? String(snapshot.calls.latestSequence) : ""
-        streamBackoffSeconds = 1
+    private func startStream(after: UInt64) {
+        streamCursor = after
         streamTask = Task { [weak self] in
-            guard let self else { return }
-            while !Task.isCancelled, conversationID == selectedConversationID {
-                let path = client.callStreamPath(
-                    conversationID: conversationID,
-                    unattributed: unattributed,
-                    after: UInt64(lastStreamEventID)
-                )
+            var backoff: UInt64 = 1
+            while !Task.isCancelled {
+                guard let self, started else { return }
                 do {
-                    for try await event in client.eventStream(path: path, lastEventID: lastStreamEventID) {
+                    let path = client.callStreamPath(conversationID: "", after: streamCursor)
+                    for try await event in client.eventStream(path: path, lastEventID: String(streamCursor)) {
                         try Task.checkCancellation()
-                        guard conversationID == selectedConversationID else { return }
-                        if !event.id.isEmpty { lastStreamEventID = event.id }
                         switch event.name {
                         case "call":
                             let call = WorkbenchCall(json: event.data)
-                            upsertCall(call)
-                            streamBackoffSeconds = 1
-                            notify()
-                        case "cursor":
-                            let sequence = event.data.unsigned("seq")
-                            snapshot.calls.latestSequence = max(snapshot.calls.latestSequence, sequence)
+                            let selected = snapshot.selectedConversation
+                            let matches = selected?.unattributed == true ? call.conversationID.isEmpty :
+                                (!selectedConversationID.isEmpty && call.conversationID == selectedConversationID)
+                            if matches {
+                                snapshot.calls.calls = Self.mergeCalls(snapshot.calls.calls, [call])
+                                if call.id == selectedCallID {
+                                    snapshot.selectedCall = snapshot.calls.calls.first { $0.id == call.id }
+                                }
+                            }
+                            if !call.conversationID.isEmpty,
+                               !snapshot.sidebar.groups.flatMap(\.conversations).contains(where: { $0.id == call.conversationID }),
+                               !isRefreshing { refresh(reason: "arrival") }
+                            backoff = 1; scheduleNotification()
                         case "reset", "gap":
-                            snapshot.message = event.name == "reset" ? "活动流游标已重置，正在重新同步…" : "活动历史存在保留缺口，正在重新同步…"
-                            notify()
-                            refresh(reason: "stream-reset")
-                            return
+                            streamTask = nil; refresh(reason: "stream-reset"); return
                         case "warning":
-                            snapshot.message = event.data.firstText("reason", "message")
-                            notify()
-                        default:
-                            break
+                            snapshot.message = event.data.firstText("reason", "message"); scheduleNotification()
+                        default: break
                         }
+                        streamCursor = max(streamCursor, UInt64(event.id) ?? event.data.unsigned("seq"))
                     }
-                    if Task.isCancelled { return }
-                } catch is CancellationError {
-                    return
-                } catch let error as WorkbenchClientError where !error.retryable {
-                    snapshot.message = "活动流不可用：\(error.localizedDescription)"
-                    notify()
-                    return
                 } catch {
+                    guard !Task.isCancelled else { return }
                     snapshot.stale = true
-                    snapshot.message = "活动流已断开，\(streamBackoffSeconds) 秒后重连：\(error.localizedDescription)"
-                    notify()
+                    snapshot.message = "活动流断开：\(error.localizedDescription)"; notify()
+                    if let error = error as? WorkbenchClientError, !error.retryable {
+                        streamTask = nil; return
+                    }
                 }
-                do {
-                    try await Task.sleep(nanoseconds: streamBackoffSeconds * 1_000_000_000)
-                } catch {
-                    return
-                }
-                streamBackoffSeconds = min(16, streamBackoffSeconds * 2)
+                do { try await Task.sleep(nanoseconds: backoff * 1_000_000_000) } catch { return }
+                backoff = min(16, backoff * 2)
             }
         }
     }
-
-    private func upsertCall(_ call: WorkbenchCall) {
-        guard call.conversationID.isEmpty || call.conversationID == selectedConversationID else { return }
-        if let index = snapshot.calls.calls.firstIndex(where: { $0.id == call.id }) {
-            snapshot.calls.calls[index] = call
-        } else {
-            snapshot.calls.calls.insert(call, at: 0)
+    private func advanceClock() {
+        guard !fixtureMode, let serverAnchor else { return }
+        let now = serverAnchor.addingTimeInterval(max(0, ProcessInfo.processInfo.systemUptime - uptimeAnchor))
+        for g in snapshot.sidebar.groups.indices {
+            for c in snapshot.sidebar.groups[g].conversations.indices {
+                snapshot.sidebar.groups[g].conversations[c].advancePresentation(serverNow: now)
+            }
         }
-        snapshot.calls.calls.sort {
-            if $0.sequence == $1.sequence { return $0.id > $1.id }
-            return $0.sequence > $1.sequence
-        }
-        snapshot.calls.latestSequence = max(snapshot.calls.latestSequence, call.sequence)
-        if call.id == selectedCallID { snapshot.selectedCall = call }
+        snapshot.selectedConversation?.advancePresentation(serverNow: now); scheduleNotification()
     }
-
-    private func performOperation(
-        successMessage: String,
-        refreshAfter: Bool = true,
-        operation: @escaping @MainActor () async throws -> Void
-    ) {
-        guard !isOperating else { return }
-        isOperating = true
-        snapshot.message = "正在执行操作…"
-        notify()
-        Task { [weak self] in
+    private func scheduleNotification() {
+        guard notificationTask == nil else { return }
+        notificationTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
             guard let self else { return }
+            notificationTask = nil; notify()
+        }
+    }
+    private func sidebarRequest() -> WorkbenchSidebarRequest {
+        WorkbenchSidebarRequest(view: listView, search: searchText, limits: limits,
+            modes: modes, cursors: cursors, defaultMode: "auto", selectedConversationID: selectedConversationID)
+    }
+    func manageSelectedConversation(action: String, title: String = "", tags: [String] = [],
+                                    retentionDays: Int = 0, confirmPermanent: Bool = false) {
+        let id = selectedConversationID
+        guard !id.isEmpty else { return }
+        performOperation(refreshAfter: true) { [client] in
+            try await client.manage(kind: "conversation", ids: [id], action: action,
+                                    title: title, tags: tags, retentionDays: retentionDays, confirmPermanent: confirmPermanent)
+        }
+    }
+    func setConversationTerminated(_ terminated: Bool) {
+        let id = selectedConversationID
+        guard !id.isEmpty else { return }
+        performOperation(refreshAfter: true) { [client] in
+            try await client.conversationLifecycle(id: id, action: terminated ? "terminate" : "resume")
+        }
+    }
+    func linkSelectedConversation(to taskID: String) {
+        let id = selectedConversationID
+        guard !id.isEmpty, !taskID.isEmpty else { return }
+        performOperation(refreshAfter: true) { [client] in try await client.linkConversation(id: id, taskID: taskID) }
+    }
+    func setSelectedCurrentTask(taskID: String, threadID: String = "main") {
+        let id = selectedConversationID
+        guard !id.isEmpty, let revision = snapshot.selectedConversation?.bindingRevision else { return }
+        performOperation(refreshAfter: true) { [client] in
+            try await client.setCurrentTask(conversationID: id, taskID: taskID, threadID: threadID, bindingRevision: revision)
+        }
+    }
+    func stopSelectedCall() {
+        guard let call = snapshot.selectedCall, call.canStop else { return }
+        performOperation(refreshAfter: true) { [client] in try await client.stopCall(call.id) }
+    }
+    func decideSelectedApproval(approve: Bool, allowWorkspace: Bool = false) {
+        guard let call = snapshot.selectedCall, call.needsApproval else { return }
+        performOperation(refreshAfter: true) { [client] in
+            try await client.decideApproval(call.approvalID, action: approve ? "approve" : "reject", allowWorkspace: allowWorkspace)
+        }
+    }
+    func updatePermissionMode(_ mode: String) {
+        guard let permission = snapshot.permission, !selectedConversationID.isEmpty,
+              permission.revision > 0, permission.revision <= UInt64(Int64.max) else { return }
+        let change: WorkbenchJSON = .object([
+            "scope": .string("conversation"), "scope_id": .string(selectedConversationID),
+            "mode": .string(mode), "expected_revision": .integer(Int64(permission.revision)),
+            "confirm_full": .bool(mode == "full")])
+        performOperation(refreshAfter: true) { [client] in try await client.updatePermission(change) }
+    }
+    func submitInsertion(_ text: String) {
+        guard !fixtureMode, !isOperating, !snapshot.stale,
+              let conversation = snapshot.selectedConversation, !conversation.id.isEmpty,
+              conversation.insertionEligible == true else {
+            snapshot.message = "插入资格未确认；请刷新 Core 状态。"; notify(); return
+        }
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.utf8.count <= 16384 else { return }
+        let key = submissionKeys[conversation.id]
+        let submission = key?.text == text ? key!.id : "macos-\(UUID().uuidString.lowercased())"
+        if submissionKeys.count >= 100 { submissionKeys.removeAll() }
+        submissionKeys[conversation.id] = (text, submission)
+        let currentEpoch = epoch
+        performOperation { [weak self] in
+            guard let self else { return .object([:]) }
             do {
-                try await operation()
-                isOperating = false
-                snapshot.message = successMessage
-                notify()
+                let result = try await client.enqueueInsertion(conversationID: conversation.id, submissionID: submission, text: text)
+                if currentEpoch == epoch { observeInsertion(conversation.id, submission: submission) }
+                return result
+            } catch {
+                if currentEpoch == epoch { observeInsertion(conversation.id, submission: submission) }
+                throw error
+            }
+        }
+    }
+    private func observeInsertion(_ conversationID: String, submission: String) {
+        receiptTask?.cancel()
+        let currentEpoch = epoch
+        receiptTask = Task { [weak self] in
+            guard let self else { return }
+            for _ in 0..<20 {
+                do {
+                    let page = try await client.insertions(conversationID: conversationID)
+                    try Task.checkCancellation()
+                    guard currentEpoch == epoch else { return }
+                    snapshot.insertions = page
+                    if let item = page.items.first(where: { $0.raw.text("submission_id") == submission }) {
+                        snapshot.message = item.detailText; notify()
+                        if item.terminal { return }
+                    }
+                } catch {
+                    guard currentEpoch == epoch, !Task.isCancelled else { return }
+                    snapshot.message = "写入结果待核对，未自动重试：\(error.localizedDescription)"; notify()
+                }
+                do { try await Task.sleep(nanoseconds: 1_500_000_000) } catch { return }
+            }
+            guard currentEpoch == epoch else { return }
+            snapshot.message = "回执仍待确认；重投与到期时间以 Core 返回值为准。"; notify()
+        }
+    }
+    func insertionAction(_ insertionID: String, action: String) {
+        let id = selectedConversationID
+        guard !id.isEmpty, let item = snapshot.insertions.items.first(where: { $0.id == insertionID }),
+              !item.terminal, action != "retry" || item.manualRetryAvailable else { return }
+        performOperation(refreshAfter: true) { [client] in
+            try await client.insertionAction(conversationID: id, insertionID: insertionID, action: action)
+        }
+    }
+    private func performOperation(refreshAfter: Bool = false,
+                                  operation: @escaping @MainActor () async throws -> WorkbenchJSON) {
+        guard !fixtureMode, !isOperating, !snapshot.stale else { return }
+        isOperating = true
+        let currentEpoch = epoch
+        snapshot.message = "正在提交操作…"; notify()
+        operationTask = Task { [weak self] in
+            guard let self else { return }
+            defer { isOperating = false; notify() }
+            do {
+                let result = try await operation()
+                guard currentEpoch == epoch, !Task.isCancelled else { return }
+                snapshot.message = result.firstText("message").isEmpty ?
+                    "Core 已返回操作结果；不等同工具或任务执行完成。" : result.text("message")
                 if refreshAfter { refresh(reason: "operation") }
-            } catch is CancellationError {
-                isOperating = false
-                notify()
             } catch {
-                isOperating = false
-                snapshot.message = "操作失败：\(error.localizedDescription)"
-                notify()
+                guard currentEpoch == epoch, !Task.isCancelled else { return }
+                snapshot.message = "操作结果待核对，未自动重试：\(error.localizedDescription)"
+                loadSelection()
             }
         }
     }
-
-    private func waitForInsertionReceipt(conversationID: String, submissionID: String, insertionID: String) async {
-        let deadline = Date().addingTimeInterval(30)
-        while Date() < deadline, !Task.isCancelled, conversationID == selectedConversationID {
-            do {
-                let page = try await client.insertions(conversationID: conversationID)
-                snapshot.insertions = page
-                let item = page.items.first {
-                    (!insertionID.isEmpty && $0.id == insertionID)
-                        || $0.raw.text("submission_id") == submissionID
-                }
-                if let item {
-                    let terminal = ["acknowledged", "received", "completed", "failed", "expired", "cancelled", "canceled"].contains(item.status)
-                        || ["acknowledged", "received", "confirmed", "committed"].contains(item.receiptState)
-                    snapshot.message = terminal ? "补充状态：\(item.detailText)" : "补充仍在等待回执：\(item.detailText)"
-                    notify()
-                    if terminal { return }
-                }
-            } catch {
-                snapshot.message = "补充已提交，但回执查询失败：\(error.localizedDescription)"
-                notify()
-            }
-            do {
-                try await Task.sleep(nanoseconds: 1_500_000_000)
-            } catch {
-                return
-            }
-        }
-        guard conversationID == selectedConversationID, !Task.isCancelled else { return }
-        snapshot.message = "30 秒内未取得持久化回执；状态保持待确认，不视为送达。"
-        notify()
-    }
-
-    private func notify() {
-        onChange?(self)
-    }
+    func exportSelectedCall() -> String { snapshot.selectedCall?.raw.prettyPrinted ?? "" }
+    private func notify() { onChange?(self) }
 }

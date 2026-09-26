@@ -11,6 +11,8 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
     private let detail = WorkbenchDetailViewController()
     private var selectedInsertionID: String?
     private let fixtureMode: Bool
+    private lazy var manager = WorkbenchManagementWindow(client: model.client)
+    private lazy var policyEditor = WorkbenchPermissionEditor(client: model.client)
 
     init(fixtureMode: Bool = false, client: WorkbenchAPIClient = WorkbenchAPIClient()) {
         self.fixtureMode = fixtureMode
@@ -19,6 +21,7 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
         let split = NSSplitViewController()
         split.splitView.dividerStyle = .thin
         split.splitView.isVertical = true
+        split.splitView.autosaveName = "WorkbenchSplitPositions"
 
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
         sidebarItem.minimumThickness = 230
@@ -109,14 +112,16 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
 
     func windowWillClose(_ notification: Notification) {
         model.stop()
+        manager.close()
+        policyEditor.close()
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.refresh, .theme, .settings, .permissions, .flexibleSpace]
+        [.refresh, .manager, .policy, .theme, .settings, .permissions, .flexibleSpace]
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.refresh, .flexibleSpace, .permissions, .theme, .settings]
+        [.refresh, .manager, .policy, .flexibleSpace, .permissions, .theme, .settings]
     }
 
     func toolbar(
@@ -133,6 +138,16 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
             item.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "刷新")
             item.target = self
             item.action = #selector(refreshToolbar(_:))
+        case .manager:
+            item.label = "管理中心"
+            item.image = NSImage(systemSymbolName: "list.bullet.rectangle", accessibilityDescription: "管理中心")
+            item.target = self
+            item.action = #selector(openManager)
+        case .policy:
+            item.label = "权限设置"
+            item.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "权限设置")
+            item.target = self
+            item.action = #selector(openPolicy)
         case .theme:
             item.label = "主题"
             item.paletteLabel = "主题"
@@ -168,6 +183,10 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
             self?.model.selectConversation(id)
         }
         sidebar.onLoadMore = { [weak self] in self?.model.loadMoreWorkspace($0) }
+        sidebar.onHistory = { [weak self] in self?.manager.present(.conversations) }
+        sidebar.onAddWorkspace = { [weak self] in self?.manager.present(.workspaces) }
+        detail.onReadPayload = { [weak self] in self?.model.loadPayload(source: $0) }
+        detail.onOpenPolicy = { [weak self] in self?.openPolicy() }
 
         timeline.onCallSelected = { [weak self] id in
             self?.selectedInsertionID = nil
@@ -326,6 +345,10 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
         return alert.runModal() == .alertFirstButtonReturn
     }
 
+    @objc private func openManager() { manager.present() }
+    @objc private func openPolicy() {
+        policyEditor.present(workspaceID: model.snapshot.selectedConversation?.workspaceID ?? "")
+    }
     @objc private func refreshToolbar(_ sender: Any?) { model.refresh() }
     @objc private func cycleTheme(_ sender: Any?) { WorkbenchAppearance.shared.cycle() }
     @objc private func openSettings(_ sender: Any?) { onOpenSettings?() }
@@ -334,6 +357,8 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
 
 private extension NSToolbarItem.Identifier {
     static let refresh = NSToolbarItem.Identifier("workbench.refresh")
+    static let manager = NSToolbarItem.Identifier("workbench.manager")
+    static let policy = NSToolbarItem.Identifier("workbench.policy")
     static let theme = NSToolbarItem.Identifier("workbench.theme")
     static let settings = NSToolbarItem.Identifier("workbench.settings")
     static let permissions = NSToolbarItem.Identifier("workbench.permissions")
