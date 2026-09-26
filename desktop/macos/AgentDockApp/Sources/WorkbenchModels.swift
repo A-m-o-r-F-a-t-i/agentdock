@@ -229,7 +229,8 @@ struct WorkbenchSidebarPage: Equatable, Sendable {
         serverNow = json.date("server_now")
         latestSequence = json.unsigned("latest_seq")
         total = Int(json.integer("total"))
-        groups = json.values("groups").map { WorkbenchWorkspaceGroup(json: $0, serverNow: serverNow) }
+        let capturedServerNow = serverNow
+        groups = json.values("groups").map { WorkbenchWorkspaceGroup(json: $0, serverNow: capturedServerNow) }
         selected = json["selected"].isNull ? nil : WorkbenchConversation(json: json["selected"], serverNow: serverNow)
         raw = json
     }
