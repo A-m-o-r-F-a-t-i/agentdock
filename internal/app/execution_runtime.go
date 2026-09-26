@@ -26,8 +26,11 @@ type ExecutionListQuery struct {
 	Limit       int
 }
 type ConversationItem struct {
-	InFlight       bool      `json:"in_flight"`
-	LastActivityAt time.Time `json:"last_activity_at"`
+	InFlight             bool       `json:"in_flight"`
+	RecentlyActive       bool       `json:"recently_active"`
+	LastActivityAt       time.Time  `json:"last_activity_at"`
+	LastInteractionAt    *time.Time `json:"last_interaction_at,omitempty"`
+	InteractionExpiresAt *time.Time `json:"interaction_expires_at,omitempty"`
 	activity.Conversation
 	Statistics     activity.CallStats `json:"statistics"`
 	IsUnattributed bool               `json:"is_unattributed,omitempty"`
@@ -163,12 +166,17 @@ func (r *Runtime) RuntimeConversations(ctx context.Context, query ExecutionListQ
 		if summary.LastActivityAt != nil && summary.LastActivityAt.After(lastActivity) {
 			lastActivity = *summary.LastActivityAt
 		}
-		candidates = append(candidates, ConversationItem{Conversation: item, Statistics: summary, LastActivityAt: lastActivity, InFlight: inFlight[item.ID]})
+		lastInteraction, interactionExpires, recentlyActive := projectedConversationInteraction(summary, page.ServerNow,
+			item.TerminatedAt != nil || item.TrashedAt != nil || item.ArchivedAt != nil)
+		candidates = append(candidates, ConversationItem{Conversation: item, Statistics: summary, LastActivityAt: lastActivity,
+			LastInteractionAt: lastInteraction, InteractionExpiresAt: interactionExpires, RecentlyActive: recentlyActive, InFlight: inFlight[item.ID]})
 	}
 	if unknown := stats[""]; unknown.Total > 0 && query.View != "trash" && query.View != "archived" && query.Tag == "" && query.WorkspaceID == "" && (query.Search == "" || strings.Contains("未识别对话", query.Search)) {
 		// This is a navigation group, not a minted Conversation. Its ID is empty and
 		// calls are queried with unattributed=true, never conversation_id=unknown.
-		candidates = append(candidates, ConversationItem{Conversation: activity.Conversation{Title: "未识别对话 · 独立调用", Source: "unknown", UpdatedAt: unknown.LatestAt}, Statistics: unknown, IsUnattributed: true, LastActivityAt: unknown.LatestAt})
+		lastInteraction, interactionExpires, _ := projectedConversationInteraction(unknown, page.ServerNow, true)
+		candidates = append(candidates, ConversationItem{Conversation: activity.Conversation{Title: "未识别对话 · 独立调用", Source: "unknown", UpdatedAt: unknown.LatestAt},
+			Statistics: unknown, IsUnattributed: true, LastActivityAt: unknown.LatestAt, LastInteractionAt: lastInteraction, InteractionExpiresAt: interactionExpires})
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].Pinned != candidates[j].Pinned {

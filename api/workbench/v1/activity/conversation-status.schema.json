@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentdock.dev/api/workbench/v1/activity/conversation-status.schema.json",
+  "title": "AgentDock Workbench conversation activity projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "server_now",
+    "recent_interaction_window_ms",
+    "insertion_eligibility_window_ms",
+    "unclaimed_insertion_expiry_ms",
+    "receipt_wait_ms",
+    "groups"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "server_now": { "type": "string", "format": "date-time" },
+    "recent_interaction_window_ms": { "const": 120000 },
+    "insertion_eligibility_window_ms": { "const": 180000 },
+    "unclaimed_insertion_expiry_ms": { "const": 300000 },
+    "receipt_wait_ms": { "const": 30000 },
+    "groups": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/group" }
+    }
+  },
+  "$defs": {
+    "timestamp": { "type": "string", "format": "date-time" },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "last_tool_call_at": { "$ref": "#/$defs/timestamp" },
+        "last_interaction_at": { "$ref": "#/$defs/timestamp" },
+        "last_activity_at": { "$ref": "#/$defs/timestamp" },
+        "running": { "type": "integer", "minimum": 0 },
+        "pending": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "conversation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "conversation_id",
+        "recently_active",
+        "in_flight",
+        "statistics"
+      ],
+      "properties": {
+        "conversation_id": { "type": "string" },
+        "is_unattributed": { "type": "boolean" },
+        "recently_active": { "type": "boolean" },
+        "in_flight": { "type": "boolean" },
+        "last_interaction_at": { "$ref": "#/$defs/timestamp" },
+        "interaction_expires_at": { "$ref": "#/$defs/timestamp" },
+        "last_activity_at": { "$ref": "#/$defs/timestamp" },
+        "statistics": { "$ref": "#/$defs/statistics" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "is_unattributed": { "const": true } }, "required": ["is_unattributed"] },
+          "then": { "properties": { "conversation_id": { "const": "" }, "recently_active": { "const": false }, "in_flight": { "const": false } } },
+          "else": { "properties": { "conversation_id": { "pattern": "^(?!unattributed$)(?!footer:).+" } } }
+        }
+      ]
+    },
+    "group": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["workspace_id", "recent_count", "execution_count", "conversations"],
+      "properties": {
+        "workspace_id": { "type": "string", "minLength": 1, "pattern": "^(?!footer:).+" },
+        "recent_count": { "type": "integer", "minimum": 0 },
+        "execution_count": { "type": "integer", "minimum": 0 },
+        "conversations": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/conversation" }
+        }
+      }
+    }
+  }
+}

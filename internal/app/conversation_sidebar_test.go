@@ -15,7 +15,7 @@ func sidebarFixture(now time.Time, total, recent int) []ConversationItem {
 		if index >= recent {
 			at = now.Add(-80*time.Hour - time.Duration(index)*time.Minute)
 		}
-		items[index] = ConversationItem{Conversation: activity.Conversation{ID: fmt.Sprintf("conv_%05d", index)}, LastActivityAt: at}
+		items[index] = ConversationItem{Conversation: activity.Conversation{ID: fmt.Sprintf("conv_%05d", index)}, LastActivityAt: at, LastInteractionAt: sidebarTime(at)}
 	}
 	return items
 }
@@ -51,17 +51,17 @@ func TestSidebarActiveDefaultAndFiveTwentySteps(t *testing.T) {
 func TestSidebarActivityBoundaryAndRuntimeEvidence(t *testing.T) {
 	now := time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC)
 	items := []ConversationItem{
-		{LastActivityAt: now.Add(-119 * time.Second)},
-		{LastActivityAt: now.Add(-120 * time.Second)},
-		{LastActivityAt: now.Add(-121 * time.Second)},
-		{LastActivityAt: now.Add(time.Second)}, {},
-		{LastActivityAt: now.Add(-time.Hour), InFlight: true},
-		{LastActivityAt: now.Add(-time.Hour), Statistics: activity.CallStats{Running: 1, Pending: 1}},
+		{LastActivityAt: now.Add(-119999 * time.Millisecond), LastInteractionAt: sidebarTime(now.Add(-119999 * time.Millisecond))},
+		{LastActivityAt: now.Add(-120 * time.Second), LastInteractionAt: sidebarTime(now.Add(-120 * time.Second))},
+		{LastActivityAt: now.Add(-121 * time.Second), LastInteractionAt: sidebarTime(now.Add(-121 * time.Second))},
+		{LastActivityAt: now.Add(time.Second), LastInteractionAt: sidebarTime(now.Add(time.Second))}, {},
+		{LastActivityAt: now.Add(-time.Hour), LastInteractionAt: sidebarTime(now.Add(-time.Hour)), InFlight: true},
+		{LastActivityAt: now.Add(-time.Hour), LastInteractionAt: sidebarTime(now.Add(-time.Hour)), Statistics: activity.CallStats{Running: 1, Pending: 1}},
 		{Conversation: activity.Conversation{TerminatedAt: &now}, InFlight: true},
 	}
 	group := SidebarGroup{Total: len(items), Conversations: []ConversationItem{}}
 	projectSidebarRows(&group, items, 0, "", "active", now)
-	if group.Shown != 2 || group.RecentCount != 2 || group.HasMore {
+	if group.Shown != 2 || group.RecentCount != 1 || group.ExecutionCount != 1 || group.HasMore {
 		t.Fatalf("boundary=%+v", group)
 	}
 }
@@ -76,6 +76,15 @@ func TestSidebarHistoryIsNotCappedAtTwentyThousand(t *testing.T) {
 	}
 }
 
+func TestSidebarTimingContractIsExplicitAndStable(t *testing.T) {
+	now := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	page := sidebarPageAt(now)
+	if !page.ServerNow.Equal(now) || page.RecentInteractionWindowMS != 120000 || page.InsertionEligibilityWindowMS != 180000 ||
+		page.UnclaimedInsertionExpiryMS != 300000 || page.ReceiptWaitMS != 30000 || page.Groups == nil {
+		t.Fatalf("sidebar timing contract changed: %+v", page)
+	}
+}
+
 func TestSidebarHistorySnapshotSurvivesMovingActivity(t *testing.T) {
 	now := time.Now().UTC()
 	cache := sidebarHistoryCache{}
@@ -84,7 +93,7 @@ func TestSidebarHistorySnapshotSurvivesMovingActivity(t *testing.T) {
 	if err != nil || reset || token == "" || len(ordered) != 70 || len(arrivals) != 0 {
 		t.Fatal("initial snapshot failed", err)
 	}
-	current := []ConversationItem{{Conversation: activity.Conversation{ID: "new-conversation"}, LastActivityAt: now.Add(time.Second)}}
+	current := []ConversationItem{{Conversation: activity.Conversation{ID: "new-conversation"}, LastActivityAt: now.Add(time.Second), LastInteractionAt: sidebarTime(now.Add(time.Second))}}
 	for index := len(initial) - 1; index >= 0; index-- {
 		if index != 11 {
 			current = append(current, initial[index])
@@ -132,4 +141,43 @@ func TestSidebarHistoryCacheHasBoundedLifetimeAndCapacity(t *testing.T) {
 	if len(cache.entries) != 1 || cache.ids != 0 {
 		t.Fatal("expired IDs were retained")
 	}
+}
+
+func TestSidebarNavigationIdentityIsTypedAndUnique(t *testing.T) {
+	ordinary := ConversationItem{Conversation: activity.Conversation{ID: "conv_ordinary"}}
+	unattributed := ConversationItem{IsUnattributed: true}
+	if key, err := sidebarNavigationKey(ordinary); err != nil || key != ordinary.ID {
+		t.Fatalf("ordinary identity changed: key=%q err=%v", key, err)
+	}
+	if key, err := sidebarNavigationKey(unattributed); err != nil || key != sidebarUnattributedKey {
+		t.Fatalf("typed unattributed identity rejected: key=%q err=%v", key, err)
+	}
+	invalid := []ConversationItem{
+		{},
+		{Conversation: activity.Conversation{ID: "conv_illegal"}, IsUnattributed: true},
+		{Conversation: activity.Conversation{ID: "unattributed"}},
+		{Conversation: activity.Conversation{ID: "footer:wsp_a"}},
+	}
+	for index, item := range invalid {
+		if _, err := sidebarNavigationKey(item); err == nil {
+			t.Fatalf("invalid navigation identity %d was accepted", index)
+		}
+	}
+
+	cache := sidebarHistoryCache{}
+	now := time.Now().UTC()
+	ordered, arrivals, token, reset, err := cache.order("typed", "", []ConversationItem{ordinary, unattributed}, now)
+	if err != nil || token == "" || reset || len(ordered) != 2 || len(arrivals) != 0 || !ordered[1].IsUnattributed {
+		t.Fatalf("typed identity did not survive frozen history: ordered=%+v arrivals=%+v reset=%v err=%v", ordered, arrivals, reset, err)
+	}
+	if _, _, _, _, err := cache.order("duplicate-special", "", []ConversationItem{unattributed, unattributed}, now); err == nil {
+		t.Fatal("duplicate unattributed rows were silently collapsed")
+	}
+	if _, _, _, _, err := cache.order("duplicate-real", "", []ConversationItem{ordinary, ordinary}, now); err == nil {
+		t.Fatal("duplicate real conversation IDs were silently collapsed")
+	}
+}
+
+func sidebarTime(value time.Time) *time.Time {
+	return &value
 }

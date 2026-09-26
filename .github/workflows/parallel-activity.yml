@@ -1,0 +1,384 @@
+name: WB04 Activity and Sidebar Validation
+
+on:
+  push:
+    branches:
+      - parallel/20260925/activity
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wb04-activity-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  WB04_BASE_SHA: b367eaab95202873fb213b8713440bf7822878c4
+
+jobs:
+  source:
+    name: Resolve immutable source and lane scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.identity.outputs.commit }}
+    steps:
+      - name: Checkout complete history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - id: identity
+        name: Verify immutable source
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse --verify 'HEAD^{commit}')"
+          test "$commit" = "$GITHUB_SHA"
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$WB04_BASE_SHA" "$commit"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          mkdir -p dist/wb04-source
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          base = os.environ["WB04_BASE_SHA"]
+          commit = os.environ["GITHUB_SHA"]
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", f"{base}...{commit}"], text=True
+          ).splitlines()
+          payload = {
+              "lane": "04-activity",
+              "branch": os.environ.get("GITHUB_REF_NAME", ""),
+              "base_sha": base,
+              "commit": commit,
+              "changed_files": changed,
+              "production_modified": False,
+              "merged": False,
+              "released": False,
+          }
+          pathlib.Path("dist/wb04-source/source.json").write_text(
+              json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Enforce WB04 ownership boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import fnmatch, json, os, pathlib, subprocess
+          base = os.environ["WB04_BASE_SHA"]
+          commit = os.environ["GITHUB_SHA"]
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", f"{base}...{commit}"], text=True
+          ).splitlines()
+          allowed = [
+              "internal/activity/calls.go",
+              "internal/activity/call_transitions.go",
+              "internal/activity/measurements.go",
+              "internal/activity/*_test.go",
+              "internal/app/conversation_activity.go",
+              "internal/app/conversation_sidebar.go",
+              "internal/app/conversation_history.go",
+              "internal/app/execution_runtime.go",
+              "internal/app/*activity*_test.go",
+              "internal/app/conversation_sidebar*_test.go",
+              "internal/tool/command/activity.go",
+              "internal/tool/command/*activity*_test.go",
+              "desktop/windows/control-panel/Services/ConversationActivityPolicy.cs",
+              "desktop/windows/control-panel/Services/ConversationActivityClock.cs",
+              "desktop/windows/control-panel/Services/SidebarResponseValidation.cs",
+              "desktop/windows/control-panel/Models/ExecutionModels.cs",
+              "desktop/windows/control-panel/ExecutionWindow.Sidebar*.cs",
+              "desktop/windows/control-panel/ExecutionWindow.xaml",
+              "desktop/windows/control-panel/ExecutionWindow.xaml.cs",
+              "desktop/windows/control-panel-tests/AgentDock.ControlPanel.Tests.csproj",
+              "desktop/windows/control-panel-tests/*Activity*",
+              "desktop/windows/control-panel-tests/Program.cs",
+              "desktop/windows/control-panel-layout-tests/SidebarInteractionTests.cs",
+              "desktop/windows/control-panel-layout-tests/Program.cs",
+              "api/workbench/v1/activity/**",
+              "scripts/ci/parallel-activity/**",
+              ".github/workflows/parallel-activity.yml",
+          ]
+          outside = [path for path in changed if not any(fnmatch.fnmatch(path, pattern) for pattern in allowed)]
+          report = {
+              "status": "passed" if not outside else "failed",
+              "changed_files": changed,
+              "outside_claim": outside,
+              "protected_release_files_modified": any(
+                  path.startswith(".github/workflows/") and path != ".github/workflows/parallel-activity.yml"
+                  or "release" in pathlib.PurePosixPath(path).name.lower()
+                  or path.startswith("packaging/")
+                  for path in changed
+              ),
+          }
+          pathlib.Path("dist/wb04-source/scope.json").write_text(
+              json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          if outside or report["protected_release_files_modified"]:
+              raise SystemExit("WB04 ownership boundary violated")
+          PY
+
+      - name: Upload source evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wb04-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/wb04-source/*
+          if-no-files-found: error
+          retention-days: 30
+
+  core:
+    name: Core activity contract and race tests
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      EXPECTED_COMMIT: ${{ needs.source.outputs.commit }}
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Verify exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          mkdir -p dist/wb04-core
+
+      - id: format
+        name: Check Go formatting
+        shell: bash
+        run: |
+          set -euo pipefail
+          unformatted="$(git ls-files '*.go' | while IFS= read -r file; do gofmt -l "$file"; done)"
+          if [ -n "$unformatted" ]; then
+            printf 'Unformatted Go files:\n%s\n' "$unformatted" | tee dist/wb04-core/gofmt.txt
+            exit 1
+          fi
+          printf 'All tracked Go files are formatted.\n' | tee dist/wb04-core/gofmt.txt
+
+      - id: contract
+        name: Validate shared activity contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ci/parallel-activity/verify_contract.py \
+            --output dist/wb04-core/contract-report.json | tee dist/wb04-core/contract.log
+
+      - id: tests
+        name: Run Core race and boundary regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test -race -p 2 \
+            ./internal/activity ./internal/app ./internal/tool/command \
+            -count=1 -timeout=8m -json | tee dist/wb04-core/go-test.jsonl
+
+      - id: vet
+        name: Vet affected Core packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          go vet ./internal/activity ./internal/app ./internal/tool/command \
+            2>&1 | tee dist/wb04-core/go-vet.log
+
+      - id: build
+        name: Build AgentDock Core
+        shell: bash
+        run: |
+          set -euo pipefail
+          go build -trimpath -o dist/wb04-core/agentdock-linux-amd64 ./cmd/agentdock
+          sha256sum dist/wb04-core/agentdock-linux-amd64 > dist/wb04-core/agentdock-linux-amd64.sha256
+
+      - name: Record Core evidence
+        if: always()
+        shell: bash
+        env:
+          FORMAT_OUTCOME: ${{ steps.format.outcome }}
+          CONTRACT_OUTCOME: ${{ steps.contract.outcome }}
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          VET_OUTCOME: ${{ steps.vet.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+        run: |
+          mkdir -p dist/wb04-core
+          python3 - <<'PY'
+          import json, os, pathlib
+          payload = {
+              "lane": "04-activity",
+              "commit": os.environ["EXPECTED_COMMIT"],
+              "runner": "ubuntu-latest",
+              "format": os.environ.get("FORMAT_OUTCOME", "skipped"),
+              "contract": os.environ.get("CONTRACT_OUTCOME", "skipped"),
+              "tests": os.environ.get("TEST_OUTCOME", "skipped"),
+              "vet": os.environ.get("VET_OUTCOME", "skipped"),
+              "build": os.environ.get("BUILD_OUTCOME", "skipped"),
+              "production_modified": False,
+              "merged": False,
+              "released": False,
+          }
+          pathlib.Path("dist/wb04-core/evidence.json").write_text(
+              json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Upload Core evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wb04-core-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/wb04-core/*
+          if-no-files-found: warn
+          retention-days: 30
+
+  windows:
+    name: Windows WPF contract and offscreen layout tests
+    needs: source
+    runs-on: windows-latest
+    timeout-minutes: 25
+    env:
+      EXPECTED_COMMIT: ${{ needs.source.outputs.commit }}
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.source.outputs.commit }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify exact source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ((git rev-parse HEAD) -ne $env:EXPECTED_COMMIT) { throw 'Source SHA mismatch' }
+          New-Item -ItemType Directory -Force dist/wb04-windows/layout | Out-Null
+
+      - id: build
+        name: Build WPF and test projects
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build desktop/windows/control-panel/AgentDock.ControlPanel.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'WPF build failed' }
+          dotnet build desktop/windows/control-panel-tests/AgentDock.ControlPanel.Tests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Pure contract test build failed' }
+          dotnet build desktop/windows/control-panel-layout-tests/AgentDock.ControlPanel.LayoutTests.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Layout test build failed' }
+
+      - id: pure
+        name: Run Windows pure contract regressions
+        run: |
+          $ErrorActionPreference = 'Continue'
+          dotnet run --project desktop/windows/control-panel-tests/AgentDock.ControlPanel.Tests.csproj -c Release --no-build 2>&1 |
+            Tee-Object -FilePath dist/wb04-windows/pure-contract.log
+          if ($LASTEXITCODE -ne 0) { throw 'Windows pure contract regressions failed' }
+
+      - id: layout
+        name: Run real offscreen WPF regressions
+        run: |
+          $ErrorActionPreference = 'Continue'
+          dotnet run --project desktop/windows/control-panel-layout-tests/AgentDock.ControlPanel.LayoutTests.csproj -c Release --no-build -- `
+            $PWD (Join-Path $PWD 'dist/wb04-windows/layout') 2>&1 |
+            Tee-Object -FilePath dist/wb04-windows/layout.log
+          if ($LASTEXITCODE -ne 0) { throw 'Offscreen WPF regressions failed' }
+
+      - name: Record Windows evidence
+        if: always()
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          PURE_OUTCOME: ${{ steps.pure.outcome }}
+          LAYOUT_OUTCOME: ${{ steps.layout.outcome }}
+        run: |
+          New-Item -ItemType Directory -Force dist/wb04-windows | Out-Null
+          @{
+            lane = '04-activity'
+            commit = $env:EXPECTED_COMMIT
+            runner = 'windows-latest'
+            build = $env:BUILD_OUTCOME
+            pure_contract = $env:PURE_OUTCOME
+            offscreen_layout = $env:LAYOUT_OUTCOME
+            runtime_started = $false
+            installer_started = $false
+            production_modified = $false
+            merged = $false
+            released = $false
+          } | ConvertTo-Json | Set-Content -Encoding utf8 dist/wb04-windows/evidence.json
+
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wb04-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/wb04-windows/*
+          if-no-files-found: warn
+          retention-days: 30
+
+  result:
+    name: Consolidate WB04 result
+    if: always()
+    needs: [source, core, windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Write result manifest
+        shell: bash
+        env:
+          SOURCE_RESULT: ${{ needs.source.result }}
+          CORE_RESULT: ${{ needs.core.result }}
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          VALIDATED_COMMIT: ${{ needs.source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/wb04-result
+          python3 - <<'PY'
+          import json, os, pathlib
+          jobs = {
+              "source": os.environ.get("SOURCE_RESULT", "skipped"),
+              "core": os.environ.get("CORE_RESULT", "skipped"),
+              "windows": os.environ.get("WINDOWS_RESULT", "skipped"),
+          }
+          payload = {
+              "lane": "04-activity",
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "commit": os.environ.get("VALIDATED_COMMIT") or os.environ["GITHUB_SHA"],
+              "jobs": jobs,
+              "status": "passed" if all(value == "success" for value in jobs.values()) else "failed",
+              "production_modified": False,
+              "merged": False,
+              "released": False,
+          }
+          pathlib.Path("dist/wb04-result/result.json").write_text(
+              json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          if payload["status"] != "passed":
+              raise SystemExit("one or more WB04 validation jobs failed")
+          PY
+
+      - name: Upload consolidated result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wb04-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dist/wb04-result/*
+          if-no-files-found: error
+          retention-days: 30

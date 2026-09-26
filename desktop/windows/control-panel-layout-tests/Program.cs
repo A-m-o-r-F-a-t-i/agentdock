@@ -176,10 +176,12 @@ internal static class Program
             Check(table.ActualWidth>=940,"Detailed table compressed below its readable minimum.");
             Check(header.ColumnDefinitions[0].ActualWidth>=280,"Detailed tool title was squeezed by fixed diagnostic columns.");
             if(scroller.ActualWidth<940) Check(scroller.ScrollableWidth>0 && scroller.ComputedHorizontalScrollBarVisibility==Visibility.Visible,"Narrow detailed view has no horizontal access to diagnostic columns.");
-            var row=Descendants(Named<ListBox>(window,"CallsList")).OfType<Grid>().First(grid=>grid.ColumnDefinitions.Count==8 && grid.DataContext is ExecutionCallRow);
+            var row=Descendants(Named<ListBox>(window,"CallsList")).OfType<Grid>().First(grid=>grid.ColumnDefinitions.Count==9 && grid.DataContext is ExecutionCallRow);
             var stats=row.Children.OfType<ContentControl>().Single(control=>Grid.GetColumn(control)==1);
             Check(stats.ActualWidth>=100,"Detailed modification numbers were clipped.");
             Check(Math.Abs(row.ColumnDefinitions[0].ActualWidth-header.ColumnDefinitions[0].ActualWidth)<2,"Detailed header and row columns are misaligned.");
+            var labels=header.Children.OfType<TextBlock>().ToDictionary(Grid.GetColumn,block=>block.Text);
+            Check(labels.GetValueOrDefault(4)=="RPC"&&labels.GetValueOrDefault(7)=="后台","RPC and background process durations do not have separate columns.");
         }
         else Check(scroller.ScrollableWidth<1,"Compact mode retained a wide diagnostic table.");
     }

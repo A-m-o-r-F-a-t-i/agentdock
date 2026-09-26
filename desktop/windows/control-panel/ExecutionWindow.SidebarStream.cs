@@ -17,6 +17,8 @@ public partial class ExecutionWindow
         {
             _sidebarRefresh.Stop();
             if (_closed || !_sidebarDirty || _sidebarLoading) return;
+            var remaining = SidebarRetryDelay(SidebarScope());
+            if (remaining > TimeSpan.Zero) { QueueSidebarRefresh(); return; }
             await GuardAsync(LoadSidebarAsync);
         };
     }
@@ -24,7 +26,11 @@ public partial class ExecutionWindow
     {
         if (_closed) return;
         _sidebarDirty = true;
-        if (!_sidebarLoading && !_sidebarRefresh.IsEnabled) _sidebarRefresh.Start();
+        if (_sidebarLoading || _sidebarRefresh.IsEnabled) return;
+        if (_sidebarFailures.TryGetValue(SidebarScope(), out var failure) && failure.Attempts > 5) return;
+        var remaining = SidebarRetryDelay(SidebarScope());
+        _sidebarRefresh.Interval = remaining > TimeSpan.FromMilliseconds(100) ? remaining : TimeSpan.FromMilliseconds(100);
+        _sidebarRefresh.Start();
     }
     private void StartSidebarStream(ulong cursor)
     {
@@ -39,7 +45,7 @@ public partial class ExecutionWindow
             {
                 if (_closed) return;
                 if (message.Kind == "call") ObserveSidebarRoot(message.Value);
-                else if (message.Kind is "connected" or "reset" or "gap") QueueSidebarRefresh();
+                else if (message.Kind is "connected" or "reset" or "gap") { ResetSidebarRecoveryBudget(); QueueSidebarRefresh(); }
             }, DispatcherPriority.DataBind);
         }, _lifetime.Token));
     }
@@ -58,6 +64,7 @@ public partial class ExecutionWindow
     private void ObserveSidebarRoot(JsonElement call)
     {
         if (!IsSidebarRoot(call)) return;
+        ResetSidebarRecoveryBudget();
         var id = call.Text("conversation_id");
         if (_sidebarUnacknowledged.TryGetValue(id, out var previous) && previous.Number("updated_seq") >= call.Number("updated_seq")) return;
         _sidebarUnacknowledged[id] = call.Clone();
@@ -92,8 +99,18 @@ public partial class ExecutionWindow
     {
         var requested = call.Date("request_received_at");
         var changed = call.Date("last_activity_at") ?? requested;
+        var interaction = call.Date("last_interaction_at") ?? requested;
+        DateTimeOffset? expires = interaction is { } interactionAt ? interactionAt + ConversationActivityPolicy.ActivityWindow : null;
         if (requested is not null && (item.LastToolCallAt is null || requested > item.LastToolCallAt)) item.LastToolCallAt = requested;
         if (changed is not null && (item.LastActivityAt is null || changed > item.LastActivityAt)) item.LastActivityAt = item.SortActivityAt = changed;
+        if (interaction is not null && (item.LastInteractionAt is null || interaction > item.LastInteractionAt))
+        {
+            item.LastInteractionAt = interaction;
+            item.InteractionExpiresAt = call.Date("interaction_expires_at") ?? expires;
+        }
+        var status = call.Text("status");
+        if (status is "created" or "running" or "pending_approval") item.InFlight = true;
+        else if (status is "succeeded" or "partial" or "failed" or "cancelled" or "unknown") item.InFlight = false;
         item.RefreshActivity();
     }
 
@@ -111,30 +128,38 @@ public partial class ExecutionWindow
             if (_provisionalTitles.Count > 4096) _provisionalTitles.Remove(_provisionalTitles.Keys.First());
         }
         var state = navigation.For(workspace);
+        var requested = call.Date("request_received_at");
+        var interaction = call.Date("last_interaction_at") ?? requested;
+        DateTimeOffset? expires = call.Date("interaction_expires_at") ?? (interaction is { } interactionAt ? interactionAt + ConversationActivityPolicy.ActivityWindow : null);
+        var inFlight = call.Text("status") is "created" or "running" or "pending_approval";
+        var recent = _activityClock.ServerNow is { } serverNow && ConversationActivityPolicy.IsRecent(interaction, expires, serverNow, false);
         if (!_sidebarGroups.TryGetValue(workspace, out var key))
         {
             var name = _workspaceNames.GetValueOrDefault(workspace, workspace == "unassigned" ? "未关联项目" : "项目");
             _sidebarGroups[workspace] = key = new(workspace, name);
-            key.Apply(JsonSerializer.SerializeToElement(new { title = name, workspace_id = workspace, total = 1, recent_count = 1, mode = state.ProtocolMode, last_activity_at = call.Date("last_activity_at") ?? call.Date("request_received_at") }));
+            key.Apply(JsonSerializer.SerializeToElement(new { title = name, workspace_id = workspace, total = 1, recent_count = recent ? 1 : 0, execution_count = inFlight ? 1 : 0, mode = state.ProtocolMode, last_activity_at = call.Date("last_activity_at") ?? requested }));
         }
-        key.IsExpanded = state.Expanded(1);
+        key.IsExpanded = state.Expanded(recent || inFlight ? 1 : 0);
         var snapshot = JsonSerializer.SerializeToElement(new
         {
-            conversation_id = id, title, source = call.Text("source"), created_at = call.Date("request_received_at"),
+            conversation_id = id, title, source = call.Text("source"), created_at = requested,
+            in_flight = inFlight, recently_active = recent, last_interaction_at = interaction, interaction_expires_at = expires,
             state = new { workspace_id = workspace }, task_ids = Array.Empty<string>(),
-            statistics = new { last_tool_call_at = call.Date("request_received_at"), last_activity_at = call.Date("last_activity_at") ?? call.Date("request_received_at") }
+            statistics = new { last_tool_call_at = requested, last_interaction_at = interaction, last_activity_at = call.Date("last_activity_at") ?? requested }
         });
         var item = ExecutionObject.From(snapshot, "conversation"); item.WorkspaceKey = key;
         _conversationTitles[id] = title;
         return item;
     }
 
-    private void MergeUnacknowledgedSidebarCalls(long acknowledged, SidebarNavigationState navigation, List<WorkspaceGroupKey> groups, Dictionary<string, List<ExecutionObject>> rows)
+    private void MergeUnacknowledgedSidebarCalls(long acknowledged, SidebarNavigationState navigation, List<WorkspaceGroupKey> groups, Dictionary<string, List<ExecutionObject>> rows, IReadOnlySet<string> protectedGroups)
     {
         foreach (var id in _sidebarUnacknowledged.Where(pair => pair.Value.Number("updated_seq") <= acknowledged).Select(pair => pair.Key).ToArray()) _sidebarUnacknowledged.Remove(id);
         if (_conversationView != "active" || SearchBox.Text.Trim().Length > 0) return;
         foreach (var call in _sidebarUnacknowledged.Values.OrderBy(value => value.Number("updated_seq")))
         {
+            var protectedWorkspace = call.Text("workspace_id"); if (protectedWorkspace.Length == 0) protectedWorkspace = "unassigned";
+            if (protectedGroups.Contains(protectedWorkspace)) continue;
             var existing = rows.Values.SelectMany(value => value).FirstOrDefault(item => !item.IsGroupFooter && item.Id == call.Text("conversation_id"));
             if (existing is not null) { ApplySidebarActivity(existing, call); continue; }
             var workspace = call.Text("workspace_id"); if (workspace.Length == 0) workspace = "unassigned";

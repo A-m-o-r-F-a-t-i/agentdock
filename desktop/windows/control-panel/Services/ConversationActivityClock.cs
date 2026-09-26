@@ -34,6 +34,9 @@ internal sealed class ConversationActivityClock : IDisposable
     internal static bool IsRecent(DateTimeOffset? last, DateTimeOffset now, bool terminated) =>
         ConversationActivityPolicy.IsRecent(last, now, terminated);
 
+    internal static bool IsRecent(DateTimeOffset? last, DateTimeOffset? expires, DateTimeOffset now, bool terminated) =>
+        ConversationActivityPolicy.IsRecent(last, expires, now, terminated);
+
     internal static bool CanInsert(DateTimeOffset? last, DateTimeOffset now, bool terminated) =>
         ConversationActivityPolicy.CanInsert(last, now, terminated);
 
@@ -46,12 +49,13 @@ internal sealed class ConversationActivityClock : IDisposable
         TimeSpan? next = null;
         foreach (var item in _items())
         {
-			var recent = IsRecent(item.LastActivityAt, now, item.Terminated);
-			item.RecentlyActive = !item.IsUnknown && !item.IsOrphan && !item.IsGroupFooter && !item.Trashed && !item.Terminated && (recent || item.InFlight);
+            var recent = IsRecent(item.LastInteractionAt, item.InteractionExpiresAt, now, item.Terminated || item.Archived || item.Trashed);
+			item.RecentlyActive = !item.IsUnknown && !item.IsOrphan && !item.IsGroupFooter && !item.Trashed && !item.Archived && !item.Terminated && recent;
             item.InsertionEligible = !item.IsUnknown && !item.IsOrphan && !item.IsGroupFooter && !item.Trashed && CanInsert(item.LastToolCallAt, now, item.Terminated);
-			if (recent && item.LastActivityAt is { } activity)
+            DateTimeOffset? expiry = item.InteractionExpiresAt ?? (item.LastInteractionAt is { } interaction ? interaction + ActivityWindow : null);
+            if (recent && expiry is { } deadline)
             {
-                var remaining = activity + ActivityWindow - now;
+                var remaining = deadline - now;
                 if (next is null || remaining < next) next = remaining;
             }
             if (item.InsertionEligible && item.LastToolCallAt is { } request)

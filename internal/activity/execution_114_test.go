@@ -92,6 +92,81 @@ func Test114CallStatisticsUseTopLevelTerminalDurations(t *testing.T) {
 	}
 }
 
+func TestWB04InteractionStopsAtRPCReturnWhileExecutionContinues(t *testing.T) {
+	projection := newCallProjection()
+	base := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	binding := Binding{ConversationID: "conv_daemon", CallID: "call_daemon", WorkspaceID: "wsp_daemon"}
+	sequence := uint64(0)
+	apply := func(at time.Time, event Event) {
+		sequence++
+		event.Seq, event.CreatedAt = sequence, at
+		projection.apply(event)
+	}
+	received := base
+	apply(base, Event{Binding: binding, Kind: "call.created", Status: "created", ToolName: "exec_command", CallMeasurements: CallMeasurements{RequestReceivedAt: &received}})
+	apply(base.Add(20*time.Millisecond), Event{Binding: binding, Kind: "call.pending", Status: "pending_approval", ToolName: "exec_command"})
+	rpcReturned := base.Add(232 * time.Millisecond)
+	rpcElapsed := int64(232)
+	apply(rpcReturned, Event{Binding: binding, Kind: "call.rpc_returned", ToolName: "exec_command", CallMeasurements: CallMeasurements{RPCCompletedAt: &rpcReturned, RPCElapsedMS: &rpcElapsed, RPCStatus: "pending_approval"}})
+
+	// Approval continuation, metadata repair and reconnect/recovery occur after
+	// the original RPC returned. They preserve liveness/history but never renew
+	// the two-minute external-interaction window.
+	apply(base.Add(10*time.Minute), Event{Binding: binding, Kind: "command.started", Status: "running", ToolName: "exec_command"})
+	apply(base.Add(11*time.Minute), Event{Binding: binding, Kind: "call.bound", ToolName: "exec_command"})
+	apply(base.Add(12*time.Minute), Event{Binding: binding, Kind: "call.recovered", ToolName: "exec_command"})
+	outputAt := base.Add(20 * time.Minute)
+	apply(outputAt, Event{Binding: binding, Kind: "command.output", Status: "running", ToolName: "exec_command", OutputPreview: "still alive"})
+	completedAt := outputAt.Add(5 * time.Second)
+	processElapsed := int64((20*time.Minute + 5*time.Second) / time.Millisecond)
+	apply(completedAt, Event{Binding: binding, Kind: "command.completed", Status: "succeeded", ToolName: "exec_command", ElapsedMS: processElapsed})
+
+	call := projection.calls[binding.CallID]
+	if call == nil {
+		t.Fatal("daemon call was not projected")
+	}
+	if call.LastInteractionAt == nil || !call.LastInteractionAt.Equal(rpcReturned) {
+		t.Fatalf("late execution renewed interaction: got=%v want=%v", call.LastInteractionAt, rpcReturned)
+	}
+	if call.LastActivityAt == nil || !call.LastActivityAt.Equal(completedAt) {
+		t.Fatalf("execution activity stopped at RPC return: got=%v want=%v", call.LastActivityAt, completedAt)
+	}
+	if call.RPCElapsedMS == nil || *call.RPCElapsedMS != 232 || call.ProcessElapsedMS == nil || *call.ProcessElapsedMS != processElapsed {
+		t.Fatalf("RPC/process timing collapsed: rpc=%v process=%v", call.RPCElapsedMS, call.ProcessElapsedMS)
+	}
+	if !RecentlyActive(call.LastInteractionAt, rpcReturned.Add(119999*time.Millisecond), false) ||
+		RecentlyActive(call.LastInteractionAt, rpcReturned.Add(120*time.Second), false) {
+		t.Fatal("interaction boundary is not half-open at 120 seconds")
+	}
+
+	// A later independent root request in the same conversation becomes the
+	// conversation's newest interaction. A five-minute synchronous RPC uses its
+	// actual return, not its request or an unrelated background completion.
+	syncBinding := Binding{ConversationID: binding.ConversationID, CallID: "call_sync", WorkspaceID: binding.WorkspaceID}
+	syncReceived := base.Add(time.Hour)
+	apply(syncReceived, Event{Binding: syncBinding, Kind: "call.created", Status: "created", ToolName: "read_file", CallMeasurements: CallMeasurements{RequestReceivedAt: &syncReceived}})
+	syncReturned := syncReceived.Add(5 * time.Minute)
+	syncElapsed := int64((5 * time.Minute) / time.Millisecond)
+	apply(syncReturned, Event{Binding: syncBinding, Kind: "call.rpc_returned", ToolName: "read_file", CallMeasurements: CallMeasurements{RPCCompletedAt: &syncReturned, RPCElapsedMS: &syncElapsed, RPCStatus: "succeeded"}})
+	apply(syncReturned, Event{Binding: syncBinding, Kind: "call.completed", Status: "succeeded", ToolName: "read_file"})
+	syncCall := projection.calls[syncBinding.CallID]
+	if syncCall.LastInteractionAt == nil || !syncCall.LastInteractionAt.Equal(syncReturned) {
+		t.Fatalf("synchronous RPC return was not the interaction boundary: %v", syncCall.LastInteractionAt)
+	}
+
+	stats := callStatsAccumulator{}
+	for _, projected := range projection.calls {
+		stats.add(projected)
+	}
+	conversation := stats.result()
+	if conversation.LastInteractionAt == nil || !conversation.LastInteractionAt.Equal(syncReturned) {
+		t.Fatalf("new root did not advance conversation interaction: %v", conversation.LastInteractionAt)
+	}
+	if conversation.LastActivityAt == nil || !conversation.LastActivityAt.Equal(syncReturned) {
+		t.Fatalf("conversation execution activity is inconsistent: %v", conversation.LastActivityAt)
+	}
+}
+
 func Test114FileEditProjectionKeepsBoundedDetails(t *testing.T) {
 	store, err := New(t.TempDir(), Options{})
 	if err != nil {

@@ -118,6 +118,16 @@ internal static class SidebarInteractionTests
                 check(navigation.For("A").HistoryLimit == limit && window.Objects.Select(row => row.Id).SequenceEqual(old), "Failed pagination changed the committed cursor or displayed rows.");
                 check(((FrameworkElement)window.FindName("WarningPanel")).Visibility == Visibility.Visible, "Pagination failure did not expose a retryable warning.");
             }
+            var retainedA = window.Objects.Where(row => !row.IsGroupFooter && row.WorkspaceKey.Id == "A").Select(row => row.Id).ToArray();
+            handler.Failure = "group";
+            Reload(window); Settled(window);
+            check(window.Objects.Where(row => !row.IsGroupFooter && row.WorkspaceKey.Id == "A").Select(row => row.Id).SequenceEqual(retainedA),
+                "A malformed project replaced its last trusted project snapshot.");
+            check(window.Objects.First(row => row.WorkspaceKey.Id == "B").WorkspaceKey.Title == "Project B refreshed",
+                "A malformed project prevented an independent healthy project from updating.");
+            check(((TextBlock)window.FindName("WarningText")).Text.Contains("SIDEBAR_CONVERSATION_ID_MISSING"),
+                "Group-local recovery did not expose its stable error code.");
+            Reload(window); Settled(window);
             var peer = new ButtonAutomationPeer(More(window, "B"));
             ((IInvokeProvider)peer.GetPattern(PatternInterface.Invoke)).Invoke();
             PumpUntil(() => navigation.For("B").HistoryLimit == 40); Settled(window);
@@ -161,6 +171,24 @@ internal static class SidebarInteractionTests
                 KeyboardPage(window,"B",key);Settled(window);
                 check(handler.Requests==before+1&&navigation.For("B").HistoryLimit==limit+20,"Keyboard input did not advance exactly once: "+key);
             }
+            var scope = (string)typeof(ExecutionWindow).GetMethod("SidebarScope", Private)!.Invoke(window, null)!;
+            var recordFailure = typeof(ExecutionWindow).GetMethod("RecordSidebarFailures", Private)!;
+            var retryAllowed = typeof(ExecutionWindow).GetMethod("SidebarAutomaticRefreshAllowed", Private)!;
+            var resetBudget = typeof(ExecutionWindow).GetMethod("ResetSidebarRecoveryBudget", Private)!;
+            var clearFailure = typeof(ExecutionWindow).GetMethod("ClearSidebarFailure", Private)!;
+            var repeatedFailure = new SidebarProtocolException("SIDEBAR_TRANSPORT_UNAVAILABLE", "page", "transport", handler.Requests);
+            for (var attempt = 0; attempt < 6; attempt++)
+                recordFailure.Invoke(window, [scope, new[] { repeatedFailure }, true]);
+            check(!(bool)retryAllowed.Invoke(window, null)! && !Field<bool>(window, "_sidebarDirty"),
+                "An unchanged sidebar failure retained an unbounded automatic retry path.");
+            var warning = (FrameworkElement)window.FindName("WarningPanel");
+            var closeWarning = Children(warning).OfType<Button>().Single(button => Equals(button.Content, "关闭"));
+            closeWarning.RaiseEvent(new RoutedEventArgs(Button.ClickEvent, closeWarning));
+            check(warning.Visibility == Visibility.Collapsed && !(bool)retryAllowed.Invoke(window, null)!,
+                "Closing the warning incorrectly marked the underlying sidebar failure as repaired.");
+            resetBudget.Invoke(window, null);
+            check((bool)retryAllowed.Invoke(window, null)!, "An explicit recovery trigger did not reset the bounded retry budget.");
+            clearFailure.Invoke(window, [scope]);
             completion = handler.DelayNext(); Click(window, "A");
             window.Close(); closed = true;
             completion.TrySetResult(); Settled(window);
@@ -206,7 +234,9 @@ internal static class SidebarInteractionTests
                     var limit = limits.TryGetProperty(id, out value) ? value.GetInt32() : 5;
                     var empty = id=="A"&&failure=="empty";
                     var count = mode == "collapsed" || empty ? 0 : limit;
-                    return new { workspace_id = id, title = "Project " + id, total = 500, recent_count = 5, mode, history_limit = limit, history_cursor = "cursor_" + id, has_more = mode != "collapsed"&&!empty, conversations = Enumerable.Range(0, count).Where(index=>id+"-"+index!=DeletedId).Select(index => new { conversation_id = id + "-" + index, title = "Conversation " + index, task_ids = Array.Empty<string>(), state = new { workspace_id = id }, statistics = new { } }).ToArray() };
+                    var malformed = id == "A" && failure == "group";
+                    var title = id == "B" && failure == "group" ? "Project B refreshed" : "Project " + id;
+                    return new { workspace_id = id, title, total = 500, recent_count = 5, execution_count = 0, mode, history_limit = limit, history_cursor = "cursor_" + id, has_more = mode != "collapsed"&&!empty, conversations = Enumerable.Range(0, count).Where(index=>id+"-"+index!=DeletedId).Select(index => new { conversation_id = malformed && index == 0 ? "" : id + "-" + index, title = "Conversation " + index, task_ids = Array.Empty<string>(), state = new { workspace_id = id }, statistics = new { } }).ToArray() };
                 }).ToArray();
                 // The service preserves the requested selected conversation even
                 // when its group is collapsed or a search does not show its row.
