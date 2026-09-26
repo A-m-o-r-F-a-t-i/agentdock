@@ -3,6 +3,17 @@ import AppKit
 @testable import WorkbenchKit
 
 final class NativeUITests: XCTestCase {
+    private var previousLanguage: UILanguagePreference = .system
+    override func setUp() {
+        super.setUp()
+        previousLanguage = L10n.languagePreference()
+        L10n.setLanguagePreference(.simplifiedChinese)
+    }
+    override func tearDown() {
+        L10n.setLanguagePreference(previousLanguage)
+        super.tearDown()
+    }
+
     @MainActor private func descendants(_ view: NSView) -> [NSView] {
         [view] + view.subviews.flatMap { descendants($0) }
     }

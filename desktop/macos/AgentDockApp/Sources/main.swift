@@ -37,6 +37,7 @@ if let screenshotArgument = CommandLine.arguments.first(where: { $0.hasPrefix("-
             }
             let application = NSApplication.shared
             application.setActivationPolicy(.accessory)
+            L10n.setLanguagePreference(.simplifiedChinese)
             let theme = WorkbenchTheme(rawValue: requestedTheme ?? "light") ?? .light
             WorkbenchAppearance.shared.setTheme(theme, persist: false)
             let controller = WorkbenchWindowController(fixtureMode: true)

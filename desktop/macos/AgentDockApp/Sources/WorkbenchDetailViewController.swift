@@ -12,11 +12,11 @@ final class WorkbenchDetailViewController: NSViewController {
     var onOpenPolicy: (() -> Void)?
     private let readRequestButton = NSButton()
     private let readOutputButton = NSButton()
-    private let payloadCaption = WorkbenchUI.label("输出默认隐藏", font: .systemFont(ofSize: 11), lines: 3)
+    private let payloadCaption = WorkbenchUI.label(L10n.text("Output hidden by default"), font: .systemFont(ofSize: 11), lines: 3)
     private var loadedOutput = ""
 
-    private let titleLabel = WorkbenchUI.label("详情", font: .systemFont(ofSize: 16, weight: .semibold), lines: 2)
-    private let subtitleLabel = WorkbenchUI.label("选择调用或用户补充。", font: .systemFont(ofSize: 11), color: WorkbenchPalette.secondaryText, lines: 2)
+    private let titleLabel = WorkbenchUI.label(L10n.text("Details"), font: .systemFont(ofSize: 16, weight: .semibold), lines: 2)
+    private let subtitleLabel = WorkbenchUI.label(L10n.text("Select a call or user supplement."), font: .systemFont(ofSize: 11), color: WorkbenchPalette.secondaryText, lines: 2)
     private let stopButton = NSButton()
     private let approveButton = NSButton()
     private let rejectButton = NSButton()
@@ -62,13 +62,13 @@ final class WorkbenchDetailViewController: NSViewController {
         let root = NSView()
         root.enableLayerBackground(WorkbenchPalette.surface)
 
-        configureButton(stopButton, title: "停止调用", action: #selector(stopCall(_:)))
-        configureButton(approveButton, title: "审批", action: #selector(approve(_:)))
-        configureButton(rejectButton, title: "拒绝", action: #selector(reject(_:)))
-        configureButton(copyButton, title: "复制", action: #selector(copyDetail(_:)))
-        configureButton(exportButton, title: "导出", action: #selector(exportDetail(_:)))
+        configureButton(stopButton, title: L10n.text("Stop call"), action: #selector(stopCall(_:)))
+        configureButton(approveButton, title: L10n.text("Approval"), action: #selector(approve(_:)))
+        configureButton(rejectButton, title: L10n.text("Reject"), action: #selector(reject(_:)))
+        configureButton(copyButton, title: L10n.text("Copy"), action: #selector(copyDetail(_:)))
+        configureButton(exportButton, title: L10n.text("Export"), action: #selector(exportDetail(_:)))
 
-        conversationMenu.addItem(withTitle: "对话操作…")
+        conversationMenu.addItem(withTitle: L10n.text("Conversation actions…"))
         conversationMenu.menu?.addItem(.separator())
         for item in conversationActions {
             let menuItem = NSMenuItem(title: item.title, action: nil, keyEquivalent: "")
@@ -77,7 +77,7 @@ final class WorkbenchDetailViewController: NSViewController {
         }
         conversationMenu.target = self
         conversationMenu.action = #selector(conversationAction(_:))
-        conversationMenu.setAccessibilityLabel("对话操作")
+        conversationMenu.setAccessibilityLabel(L10n.text("Conversation actions"))
 
         let headerActions = WorkbenchUI.stack(.horizontal, spacing: 6)
         for button in [stopButton, approveButton, rejectButton, copyButton, exportButton] {
@@ -90,11 +90,11 @@ final class WorkbenchDetailViewController: NSViewController {
         header.addArrangedSubview(headerActions)
         header.addArrangedSubview(conversationMenu)
 
-        tabs.addTabViewItem(tab(label: "调用与输出", view: executionView()))
-        tabs.addTabViewItem(tab(label: "任务", view: textTab(taskText, identifier: "workbench.detail.task")))
-        tabs.addTabViewItem(tab(label: "权限", view: permissionView()))
-        tabs.addTabViewItem(tab(label: "用户补充", view: insertionView()))
-        tabs.addTabViewItem(tab(label: "技术", view: textTab(technicalText, identifier: "workbench.detail.technical")))
+        tabs.addTabViewItem(tab(label: L10n.text("Call and output"), view: executionView()))
+        tabs.addTabViewItem(tab(label: L10n.text("Task"), view: textTab(taskText, identifier: "workbench.detail.task")))
+        tabs.addTabViewItem(tab(label: L10n.text("Permissions"), view: permissionView()))
+        tabs.addTabViewItem(tab(label: L10n.text("User supplement"), view: insertionView()))
+        tabs.addTabViewItem(tab(label: L10n.text("Technical"), view: textTab(technicalText, identifier: "workbench.detail.technical")))
         tabs.tabViewType = .topTabsBezelBorder
         tabs.setAccessibilityIdentifier("workbench.detail.tabs")
 
@@ -119,40 +119,40 @@ final class WorkbenchDetailViewController: NSViewController {
         currentPermission = snapshot.permission
 
         if let insertion = selectedInsertion {
-            titleLabel.stringValue = "用户补充"
+            titleLabel.stringValue = L10n.text("User supplement")
             subtitleLabel.stringValue = insertion.detailText
             insertionText.string = insertion.text + "\n\n" + insertion.raw.prettyPrinted
             tabs.selectTabViewItem(at: 3)
         } else if let call = snapshot.selectedCall {
             titleLabel.stringValue = call.title
             subtitleLabel.stringValue = call.metadataText
-            requestText.string = call.requestText.isEmpty ? "调用参数未内联；可按需读取分页载荷。" : call.requestText
-            outputText.string = call.responseText.isEmpty ? "工具输出未记录或仍在执行。" : call.responseText
+            requestText.string = call.requestText.isEmpty ? L10n.text("Call arguments are not inline; read the paged payload on demand.") : call.requestText
+            outputText.string = call.responseText.isEmpty ? L10n.text("Tool output is not recorded or the call is still running.") : call.responseText
         } else if let conversation = snapshot.selectedConversation {
             titleLabel.stringValue = conversation.title
             subtitleLabel.stringValue = conversation.metadataText
-            requestText.string = "选择时间线中的调用以查看参数。"
-            outputText.string = "选择时间线中的调用以查看真实工具输出。"
+            requestText.string = L10n.text("Select a timeline call to inspect its arguments.")
+            outputText.string = L10n.text("Select a timeline call to inspect its actual tool output.")
         } else {
-            titleLabel.stringValue = "详情"
-            subtitleLabel.stringValue = "选择调用或用户补充。"
+            titleLabel.stringValue = L10n.text("Details")
+            subtitleLabel.stringValue = L10n.text("Select a call or user supplement.")
             requestText.string = ""
             outputText.string = ""
         }
 
-        taskText.string = snapshot.task?.detailText ?? "当前对话没有活动任务，或此 Core 版本未提供任务详情接口。"
+        taskText.string = snapshot.task?.detailText ?? L10n.text("This conversation has no active task, or this Core version does not provide task details.")
         if let permission = snapshot.permission {
-            permissionText.string = permission.summaryText + "\n\n设置\n" + permission.settings.prettyPrinted
+            permissionText.string = permission.summaryText + L10n.text("\n\nSettings\n") + permission.settings.prettyPrinted
             let mode = permission.mode == "read_only" ? "readonly" : permission.mode
             permissionMode.selectItem(withTitle: modeTitle(mode))
         } else {
-            permissionText.string = "权限接口不可用；Workbench 不会用本地默认值替代 Core 的有效权限。"
+            permissionText.string = L10n.text("The permission interface is unavailable. Workbench will not replace effective Core permissions with local defaults.")
             permissionMode.selectItem(at: 0)
         }
 
         if selectedInsertion == nil {
             insertionText.string = snapshot.insertions.items.isEmpty
-                ? "当前没有排队或历史用户补充。"
+                ? L10n.text("There are no queued or historical user supplements.")
                 : snapshot.insertions.items.map { "\($0.detailText)\n\($0.text)" }.joined(separator: "\n\n——\n\n")
         }
 
@@ -164,8 +164,8 @@ final class WorkbenchDetailViewController: NSViewController {
             payloadCaption.stringValue = slice.caption
         } else {
             loadedOutput = ""
-            outputText.string = "输出尚未展开；点击读取后按 Unicode 字符分段加载。"
-            payloadCaption.stringValue = "未展开输出时不读取载荷；每段最多 10000 个 Unicode 字符。"
+            outputText.string = L10n.text("Output is not expanded. Click Read to load chunks measured in Unicode scalars.")
+            payloadCaption.stringValue = L10n.text("Hidden output does not fetch payloads. Each chunk contains at most 10000 Unicode scalars.")
         }
         readRequestButton.isEnabled = currentCall != nil && !model.isReadingPayload && model.payloadSlices["request"]?.hasMore != false
         readOutputButton.isEnabled = currentCall != nil && !model.isReadingPayload && model.payloadSlices["response"]?.hasMore != false
@@ -174,18 +174,18 @@ final class WorkbenchDetailViewController: NSViewController {
 
     private var conversationActions: [(title: String, key: String)] {
         [
-            ("重命名…", "rename"),
-            ("编辑标签…", "tags"),
-            ("置顶 / 取消置顶", "toggle_pin"),
-            ("归档", "archive"),
-            ("取消归档", "unarchive"),
-            ("移入回收站", "trash"),
-            ("从回收站恢复", "restore"),
-            ("永久删除…", "delete"),
-            ("关联任务…", "link_task"),
-            ("设为当前任务…", "current_task"),
-            ("终止对话…", "terminate"),
-            ("恢复对话", "resume")
+            (L10n.text("Rename…"), "rename"),
+            (L10n.text("Edit tags…"), "tags"),
+            (L10n.text("Pin / Unpin"), "toggle_pin"),
+            (L10n.text("Archive"), "archive"),
+            (L10n.text("Unarchive"), "unarchive"),
+            (L10n.text("Move to Trash"), "trash"),
+            (L10n.text("Restore from Trash"), "restore"),
+            (L10n.text("Permanently delete…"), "delete"),
+            (L10n.text("Link task…"), "link_task"),
+            (L10n.text("Set current task…"), "current_task"),
+            (L10n.text("Terminate conversation…"), "terminate"),
+            (L10n.text("Resume conversation"), "resume")
         ]
     }
 
@@ -196,16 +196,16 @@ final class WorkbenchDetailViewController: NSViewController {
         outputText.setAccessibilityIdentifier("workbench.detail.response")
 
         let left = WorkbenchUI.stack(.vertical, spacing: 6)
-        left.addArrangedSubview(WorkbenchUI.label("调用参数", font: .systemFont(ofSize: 12, weight: .semibold)))
-        configureButton(readRequestButton, title: "读取参数 / 下一段", action: #selector(readRequest))
+        left.addArrangedSubview(WorkbenchUI.label(L10n.text("Call arguments"), font: .systemFont(ofSize: 12, weight: .semibold)))
+        configureButton(readRequestButton, title: L10n.text("Read arguments / Next chunk"), action: #selector(readRequest))
         left.addArrangedSubview(readRequestButton)
         left.addArrangedSubview(requestScroll)
         let right = WorkbenchUI.stack(.vertical, spacing: 6)
-        right.addArrangedSubview(WorkbenchUI.label("真实工具输出", font: .systemFont(ofSize: 12, weight: .semibold)))
-        configureButton(readOutputButton, title: "展开输出 / 下一段", action: #selector(readOutput))
+        right.addArrangedSubview(WorkbenchUI.label(L10n.text("Actual tool output"), font: .systemFont(ofSize: 12, weight: .semibold)))
+        configureButton(readOutputButton, title: L10n.text("Expand output / Next chunk"), action: #selector(readOutput))
         readOutputButton.setAccessibilityIdentifier("workbench.output.load")
         right.addArrangedSubview(readOutputButton)
-        right.addArrangedSubview(WorkbenchUI.button("复制当前输出段", target: self, action: #selector(copyOutput)))
+        right.addArrangedSubview(WorkbenchUI.button(L10n.text("Copy current output chunk"), target: self, action: #selector(copyOutput)))
         right.addArrangedSubview(payloadCaption)
         right.addArrangedSubview(outputScroll)
 
@@ -222,9 +222,9 @@ final class WorkbenchDetailViewController: NSViewController {
     private func permissionView() -> NSView {
         let scroll = enclosingScroll(for: permissionText)
         permissionText.setAccessibilityIdentifier("workbench.detail.permission")
-        permissionMode.addItems(withTitles: ["需要审批", "完全权限", "只读"])
-        permissionMode.setAccessibilityLabel("权限模式")
-        applyPermissionButton.title = "应用权限模式"
+        permissionMode.addItems(withTitles: [L10n.text("Approval required"), L10n.text("Full permission"), L10n.text("Read only")])
+        permissionMode.setAccessibilityLabel(L10n.text("Permission mode"))
+        applyPermissionButton.title = L10n.text("Apply permission mode")
         applyPermissionButton.target = self
         applyPermissionButton.action = #selector(applyPermission(_:))
         applyPermissionButton.bezelStyle = .rounded
@@ -232,7 +232,7 @@ final class WorkbenchDetailViewController: NSViewController {
         controls.addArrangedSubview(permissionMode)
         controls.addArrangedSubview(applyPermissionButton)
         let note = WorkbenchUI.label(
-            "修改使用 Core 修订号执行 CAS；完全权限需要显式确认。自定义权限设置仅在 Core 暴露该能力时显示。",
+            L10n.text("Changes use the Core revision for compare-and-swap. Full permission requires explicit confirmation. Custom permission settings appear only when Core exposes that capability."),
             font: .systemFont(ofSize: 10.5),
             color: WorkbenchPalette.secondaryText,
             lines: 3
@@ -240,7 +240,7 @@ final class WorkbenchDetailViewController: NSViewController {
         let stack = WorkbenchUI.stack(.vertical, spacing: 8)
         stack.addArrangedSubview(controls)
         stack.addArrangedSubview(note)
-        stack.addArrangedSubview(WorkbenchUI.button("完整权限设置…", target: self, action: #selector(openPolicy)))
+        stack.addArrangedSubview(WorkbenchUI.button(L10n.text("Complete permission settings…"), target: self, action: #selector(openPolicy)))
         stack.addArrangedSubview(scroll)
         return stack
     }
@@ -248,11 +248,11 @@ final class WorkbenchDetailViewController: NSViewController {
     private func insertionView() -> NSView {
         let scroll = enclosingScroll(for: insertionText)
         insertionText.setAccessibilityIdentifier("workbench.detail.insertion")
-        retryInsertionButton.title = "有限重投"
+        retryInsertionButton.title = L10n.text("Bounded redelivery")
         retryInsertionButton.target = self
         retryInsertionButton.action = #selector(retryInsertion(_:))
         retryInsertionButton.bezelStyle = .rounded
-        cancelInsertionButton.title = "取消补充"
+        cancelInsertionButton.title = L10n.text("Cancel supplement")
         cancelInsertionButton.target = self
         cancelInsertionButton.action = #selector(cancelInsertion(_:))
         cancelInsertionButton.bezelStyle = .rounded
@@ -318,26 +318,26 @@ final class WorkbenchDetailViewController: NSViewController {
             return snapshot.selectedConversation?.raw.prettyPrinted ?? ""
         }
         var sections = [String]()
-        if !call.command.isEmpty { sections.append("命令\n\(call.command)") }
-        if !call.workdir.isEmpty { sections.append("工作目录\n\(call.workdir)") }
-        sections.append("耗时\n\(call.timingText)")
-        sections.append("文件编辑\n\(call.fileEditText)")
-        sections.append("原始记录\n\(call.raw.prettyPrinted)")
+        if !call.command.isEmpty { sections.append(L10n.format("Command\n%@", String(describing: call.command))) }
+        if !call.workdir.isEmpty { sections.append(L10n.format("Working directory\n%@", String(describing: call.workdir))) }
+        sections.append(L10n.format("Timing\n%@", String(describing: call.timingText)))
+        sections.append(L10n.format("File editing\n%@", String(describing: call.fileEditText)))
+        sections.append(L10n.format("Original record\n%@", String(describing: call.raw.prettyPrinted)))
         return sections.joined(separator: "\n\n")
     }
 
     private func modeTitle(_ mode: String) -> String {
         switch mode {
-        case "full": return "完全权限"
-        case "readonly", "read_only": return "只读"
-        default: return "需要审批"
+        case "full": return L10n.text("Full permission")
+        case "readonly", "read_only": return L10n.text("Read only")
+        default: return L10n.text("Approval required")
         }
     }
 
     private func selectedMode() -> String {
         switch permissionMode.titleOfSelectedItem {
-        case "完全权限": return "full"
-        case "只读": return "readonly"
+        case L10n.text("Full permission"): return "full"
+        case L10n.text("Read only"): return "readonly"
         default: return "rules"
         }
     }

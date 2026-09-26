@@ -56,7 +56,7 @@ struct WorkbenchSSEParser {
         if raw.isEmpty { return try dispatch() }
         if raw.first == 0x3A { return [] }
         guard let text = String(data: raw, encoding: .utf8) else {
-            throw WorkbenchClientError.invalidJSON("活动流包含无效 UTF-8。")
+            throw WorkbenchClientError.invalidJSON(L10n.text("The activity stream contains invalid UTF-8."))
         }
         let pieces = text.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
         let field = String(pieces[0])
@@ -71,7 +71,7 @@ struct WorkbenchSSEParser {
             if !value.contains("\0") { eventID = String(value.prefix(256)) }
         case "data":
             guard let encoded = value.data(using: .utf8) else {
-                throw WorkbenchClientError.invalidJSON("活动流 data 字段不是 UTF-8。")
+                throw WorkbenchClientError.invalidJSON(L10n.text("The activity-stream data field is not UTF-8."))
             }
             eventBytes += encoded.count + (dataLines.isEmpty ? 0 : 1)
             guard eventBytes <= maximumEventBytes else {
@@ -100,7 +100,7 @@ struct WorkbenchSSEParser {
             let value = try WorkbenchJSON.decode(combined)
             return [WorkbenchStreamEvent(id: eventID, name: eventName, data: value)]
         } catch {
-            throw WorkbenchClientError.invalidJSON("活动流 JSON 无法解析：\(error.localizedDescription)")
+            throw WorkbenchClientError.invalidJSON(L10n.format("Unable to parse activity-stream JSON: %@", String(describing: error.localizedDescription)))
         }
     }
 }

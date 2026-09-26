@@ -6,15 +6,15 @@ struct WorkbenchConnection: Equatable, Sendable {
 
     init(paths: AppPaths = AppPaths()) throws {
         guard let configuration = ServiceConfiguration.load(from: paths.environment) else {
-            throw WorkbenchClientError.configuration("AgentDock Core 尚未配置。请先完成安装或修复配置。")
+            throw WorkbenchClientError.configuration(L10n.text("AgentDock Core is not configured. Complete installation or repair the configuration first."))
         }
         let host = configuration.healthHost.lowercased()
         guard ["127.0.0.1", "::1", "localhost"].contains(host) else {
-            throw WorkbenchClientError.configuration("Workbench 只连接 Core 的直接回环地址，当前地址为 \(configuration.healthHost)。")
+            throw WorkbenchClientError.configuration(L10n.format("Workbench connects only to Core's direct loopback address. Current address: %@.", String(describing: configuration.healthHost)))
         }
         let token = configuration.authToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else {
-            throw WorkbenchClientError.configuration("Core 配置缺少本地 Bearer Token。")
+            throw WorkbenchClientError.configuration(L10n.text("Core configuration is missing the local Bearer Token."))
         }
         var components = URLComponents()
         components.scheme = "http"
@@ -22,7 +22,7 @@ struct WorkbenchConnection: Equatable, Sendable {
         components.port = configuration.port
         components.path = "/"
         guard let url = components.url else {
-            throw WorkbenchClientError.configuration("无法构造 Core 回环地址。")
+            throw WorkbenchClientError.configuration(L10n.text("Unable to construct the Core loopback address."))
         }
         baseURL = url
         bearerToken = token
@@ -32,12 +32,12 @@ struct WorkbenchConnection: Equatable, Sendable {
         guard baseURL.scheme?.lowercased() == "http",
               let host = baseURL.host?.lowercased(),
               ["127.0.0.1", "::1", "localhost"].contains(host) else {
-            throw WorkbenchClientError.configuration("测试或运行连接必须是直接 HTTP 回环地址。")
+            throw WorkbenchClientError.configuration(L10n.text("A test or runtime connection must use direct loopback HTTP."))
         }
         guard baseURL.user == nil, baseURL.password == nil, baseURL.query == nil, baseURL.fragment == nil,
               !bearerToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !bearerToken.contains("\r"), !bearerToken.contains("\n") else {
-            throw WorkbenchClientError.configuration("Bearer Token 不能为空。")
+            throw WorkbenchClientError.configuration(L10n.text("Bearer Token cannot be empty."))
         }
         self.baseURL = baseURL
         self.bearerToken = bearerToken
@@ -129,7 +129,7 @@ final class WorkbenchAPIClient {
                     let (bytes, response) = try await session.bytes(for: request, delegate: redirectGuard)
                     defer { bytes.task.cancel() }
                     guard let http = response as? HTTPURLResponse else {
-                        throw WorkbenchClientError.invalidResponse("Core 活动流没有返回 HTTP 响应。")
+                        throw WorkbenchClientError.invalidResponse(L10n.text("The Core activity stream did not return an HTTP response."))
                     }
                     guard (200...299).contains(http.statusCode) else {
                         let data = try await read(bytes: bytes, limit: maximumResponseBytes)
@@ -137,7 +137,7 @@ final class WorkbenchAPIClient {
                     }
                     let contentType = http.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
                     guard contentType.contains("text/event-stream") else {
-                        throw WorkbenchClientError.invalidResponse("Core 活动流返回了非 SSE 内容类型：\(contentType.isEmpty ? "未提供" : contentType)。")
+                        throw WorkbenchClientError.invalidResponse(L10n.format("The Core activity stream returned a non-SSE content type: %@.", String(describing: contentType.isEmpty ? L10n.text("Not provided") : contentType)))
                     }
                     var parser = WorkbenchSSEParser(
                         maximumLineBytes: Self.maximumStreamLineBytes,
@@ -147,7 +147,7 @@ final class WorkbenchAPIClient {
                         try Task.checkCancellation()
                         for event in try parser.feed(byte) {
                             if case .dropped = continuation.yield(event) {
-                                throw WorkbenchClientError.transport("活动流消费滞后，已关闭连接以便按游标重新同步。")
+                                throw WorkbenchClientError.transport(L10n.text("The activity-stream consumer fell behind. The connection was closed for cursor-based resynchronization."))
                             }
                         }
                     }
@@ -172,7 +172,7 @@ final class WorkbenchAPIClient {
             let (bytes, response) = try await session.bytes(for: request, delegate: redirectGuard)
             defer { bytes.task.cancel() }
             guard let http = response as? HTTPURLResponse else {
-                throw WorkbenchClientError.invalidResponse("Core 没有返回 HTTP 响应。")
+                throw WorkbenchClientError.invalidResponse(L10n.text("Core did not return an HTTP response."))
             }
             let expected = response.expectedContentLength
             if expected > Int64(maximumResponseBytes) {
@@ -184,12 +184,12 @@ final class WorkbenchAPIClient {
             }
             let contentType = http.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
             guard contentType.contains("application/json") || contentType.contains("+json") else {
-                throw WorkbenchClientError.invalidResponse("Core 返回了非 JSON 内容类型：\(contentType.isEmpty ? "未提供" : contentType)。")
+                throw WorkbenchClientError.invalidResponse(L10n.format("Core returned a non-JSON content type: %@.", String(describing: contentType.isEmpty ? L10n.text("Not provided") : contentType)))
             }
             do {
                 return try WorkbenchJSON.decode(data)
             } catch {
-                throw WorkbenchClientError.invalidJSON("Core JSON 无法解析：\(error.localizedDescription)")
+                throw WorkbenchClientError.invalidJSON(L10n.format("Unable to parse Core JSON: %@", String(describing: error.localizedDescription)))
             }
         } catch is CancellationError {
             throw WorkbenchClientError.cancelled
@@ -205,7 +205,7 @@ final class WorkbenchAPIClient {
               url.scheme == connection.baseURL.scheme,
               url.host?.lowercased() == connection.baseURL.host?.lowercased(),
               url.port == connection.baseURL.port else {
-            throw WorkbenchClientError.configuration("拒绝访问回环 Core 以外的地址。")
+            throw WorkbenchClientError.configuration(L10n.text("Access outside the loopback Core origin was rejected."))
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -236,12 +236,12 @@ final class WorkbenchAPIClient {
             if urlError.code == .cancelled { return .cancelled }
             switch urlError.code {
             case .cannotConnectToHost, .networkConnectionLost, .notConnectedToInternet, .timedOut, .cannotFindHost:
-                return .transport("无法连接 AgentDock Core：\(urlError.localizedDescription)")
+                return .transport(L10n.format("Unable to connect to AgentDock Core: %@", String(describing: urlError.localizedDescription)))
             default:
-                return .transport("Core 请求失败：\(urlError.localizedDescription)")
+                return .transport(L10n.format("Core request failed: %@", String(describing: urlError.localizedDescription)))
             }
         }
-        return .transport("Core 请求失败：\(error.localizedDescription)")
+        return .transport(L10n.format("Core request failed: %@", String(describing: error.localizedDescription)))
     }
 
     private static func httpError(status: Int, data: Data) -> WorkbenchClientError {
@@ -271,7 +271,7 @@ final class WorkbenchAPIClient {
         guard !value.isEmpty, value.count <= 256, value != ".", value != "..",
               !value.contains("/"), !value.contains("\\"), !value.contains("%"),
               let encoded = value.addingPercentEncoding(withAllowedCharacters: allowed) else {
-            throw WorkbenchClientError.configuration("无效的 Runtime 对象 ID。")
+            throw WorkbenchClientError.configuration(L10n.text("Invalid Runtime resource ID."))
         }
         return encoded
     }

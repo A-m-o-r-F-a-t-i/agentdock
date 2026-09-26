@@ -48,7 +48,7 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
             defer: false
         )
         window.title = "AgentDock Workbench"
-        window.subtitle = "任务与执行中心"
+        window.subtitle = L10n.text("Task and execution center")
         window.contentViewController = split
         window.minSize = NSSize(width: 1040, height: 650)
         window.collectionBehavior.insert(.fullScreenPrimary)
@@ -132,41 +132,41 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
         let item = NSToolbarItem(itemIdentifier: itemIdentifier)
         switch itemIdentifier {
         case .refresh:
-            item.label = "刷新"
-            item.paletteLabel = "刷新"
-            item.toolTip = "从 AgentDock Core 刷新"
-            item.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: "刷新")
+            item.label = L10n.text("Refresh")
+            item.paletteLabel = L10n.text("Refresh")
+            item.toolTip = L10n.text("Refresh from AgentDock Core")
+            item.image = NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: L10n.text("Refresh"))
             item.target = self
             item.action = #selector(refreshToolbar(_:))
         case .manager:
-            item.label = "管理中心"
-            item.image = NSImage(systemSymbolName: "list.bullet.rectangle", accessibilityDescription: "管理中心")
+            item.label = L10n.text("Management center")
+            item.image = NSImage(systemSymbolName: "list.bullet.rectangle", accessibilityDescription: L10n.text("Management center"))
             item.target = self
             item.action = #selector(openManager)
         case .policy:
-            item.label = "权限设置"
-            item.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "权限设置")
+            item.label = L10n.text("Permission settings")
+            item.image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: L10n.text("Permission settings"))
             item.target = self
             item.action = #selector(openPolicy)
         case .theme:
-            item.label = "主题"
-            item.paletteLabel = "主题"
-            item.toolTip = "切换系统、浅色与深色主题"
-            item.image = NSImage(systemSymbolName: "circle.lefthalf.filled", accessibilityDescription: "主题")
+            item.label = L10n.text("Theme")
+            item.paletteLabel = L10n.text("Theme")
+            item.toolTip = L10n.text("Switch between system, light and dark themes")
+            item.image = NSImage(systemSymbolName: "circle.lefthalf.filled", accessibilityDescription: L10n.text("Theme"))
             item.target = self
             item.action = #selector(cycleTheme(_:))
         case .settings:
-            item.label = "设置"
-            item.paletteLabel = "设置"
-            item.toolTip = "打开 AgentDock 设置"
-            item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "设置")
+            item.label = L10n.text("Settings")
+            item.paletteLabel = L10n.text("Settings")
+            item.toolTip = L10n.text("Open AgentDock settings")
+            item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: L10n.text("Settings"))
             item.target = self
             item.action = #selector(openSettings(_:))
         case .permissions:
-            item.label = "系统权限"
-            item.paletteLabel = "系统权限"
-            item.toolTip = "检查 macOS 系统权限"
-            item.image = NSImage(systemSymbolName: "lock.shield", accessibilityDescription: "系统权限")
+            item.label = L10n.text("System permissions")
+            item.paletteLabel = L10n.text("System permissions")
+            item.toolTip = L10n.text("Check macOS system permissions")
+            item.image = NSImage(systemSymbolName: "lock.shield", accessibilityDescription: L10n.text("System permissions"))
             item.target = self
             item.action = #selector(openPermissions(_:))
         default:
@@ -227,7 +227,7 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
         sidebar.render(model)
         timeline.render(model, selectedInsertionID: selectedInsertion?.id)
         detail.render(model, selectedInsertion: selectedInsertion)
-        window?.subtitle = model.snapshot.stale ? "离线快照" : model.snapshot.message
+        window?.subtitle = model.snapshot.stale ? L10n.text("Offline snapshot") : model.snapshot.message
     }
 
     private func handleConversationAction(_ action: String) {
@@ -235,53 +235,53 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
         switch action {
         case "rename":
             guard let value = prompt(
-                title: "重命名对话",
-                message: "名称只改变展示标题，不改变 Conversation ID。",
-                fields: [("名称", conversation.title)]
+                title: L10n.text("Rename conversation"),
+                message: L10n.text("The name changes only the display title, not the Conversation ID."),
+                fields: [(L10n.text("Name"), conversation.title)]
             )?.first, !value.isEmpty else { return }
             model.manageSelectedConversation(action: "rename", title: value)
         case "tags":
             let current = conversation.tags.joined(separator: ", ")
             guard let raw = prompt(
-                title: "编辑标签",
-                message: "使用逗号分隔；提交后由 Core 规范化与校验。",
-                fields: [("标签", current)]
+                title: L10n.text("Edit tags"),
+                message: L10n.text("Separate tags with commas. Core normalizes and validates them after submission."),
+                fields: [(L10n.text("Tags"), current)]
             )?.first else { return }
             let tags = raw.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
             model.manageSelectedConversation(action: "tags", tags: tags)
         case "toggle_pin":
             model.manageSelectedConversation(action: conversation.pinned ? "unpin" : "pin")
         case "archive", "unarchive", "trash", "restore":
-            if action == "trash", !confirm(title: "移入回收站？", message: "对话可从回收站恢复。", destructive: true) { return }
+            if action == "trash", !confirm(title: L10n.text("Move to Trash?"), message: L10n.text("The conversation can be restored from Trash."), destructive: true) { return }
             model.manageSelectedConversation(action: action)
         case "delete":
             guard confirm(
-                title: "永久删除此对话？",
-                message: "此操作不可恢复。Core 仍会执行所有保留期与所有权检查。",
+                title: L10n.text("Permanently delete this conversation?"),
+                message: L10n.text("This cannot be undone. Core still enforces retention and ownership checks."),
                 destructive: true,
-                confirmTitle: "永久删除"
+                confirmTitle: L10n.text("Permanently delete")
             ) else { return }
             model.manageSelectedConversation(action: "delete", confirmPermanent: true)
         case "link_task":
             guard let taskID = prompt(
-                title: "关联任务",
-                message: "输入已存在的 Task ID。",
+                title: L10n.text("Link task"),
+                message: L10n.text("Enter an existing Task ID."),
                 fields: [("Task ID", conversation.activeTaskID)]
             )?.first, !taskID.isEmpty else { return }
             model.linkSelectedConversation(to: taskID)
         case "current_task":
             guard let values = prompt(
-                title: "设为当前任务",
-                message: "此绑定决定后续调用继承的任务与线程。",
+                title: L10n.text("Set current task"),
+                message: L10n.text("This binding determines the task and thread inherited by subsequent calls."),
                 fields: [("Task ID", conversation.activeTaskID), ("Thread ID", conversation.activeThreadID)]
             ), values.count == 2, !values[0].isEmpty else { return }
             model.setSelectedCurrentTask(taskID: values[0], threadID: values[1])
         case "terminate":
             guard confirm(
-                title: "终止此对话？",
-                message: "Core 将拒绝新的业务调用；已运行操作不会被本按钮伪装成已停止。",
+                title: L10n.text("Terminate this conversation?"),
+                message: L10n.text("Core will reject new business calls. This button does not mark already running operations as stopped."),
                 destructive: true,
-                confirmTitle: "终止"
+                confirmTitle: L10n.text("Terminate")
             ) else { return }
             model.setConversationTerminated(true)
         case "resume":
@@ -294,10 +294,10 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
     private func applyPermissionMode(_ mode: String) {
         if mode == "full" {
             guard confirm(
-                title: "启用完全权限？",
-                message: "这会减少 Core 对业务工具的审批。显式禁止规则与 macOS 系统权限仍然有效。",
+                title: L10n.text("Enable full permission?"),
+                message: L10n.text("This reduces Core approval prompts for business tools. Explicit deny rules and macOS system permissions remain effective."),
                 destructive: true,
-                confirmTitle: "启用完全权限"
+                confirmTitle: L10n.text("Enable full permission")
             ) else { return }
         }
         model.updatePermissionMode(mode)
@@ -308,8 +308,8 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "确定")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L10n.text("OK"))
+        alert.addButton(withTitle: L10n.text("Cancel"))
 
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -334,14 +334,14 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
         title: String,
         message: String,
         destructive: Bool,
-        confirmTitle: String = "继续"
+        confirmTitle: String = L10n.text("Continue")
     ) -> Bool {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = destructive ? .warning : .informational
         alert.addButton(withTitle: confirmTitle)
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L10n.text("Cancel"))
         return alert.runModal() == .alertFirstButtonReturn
     }
 

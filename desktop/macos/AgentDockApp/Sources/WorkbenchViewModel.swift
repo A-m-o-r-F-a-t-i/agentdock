@@ -82,7 +82,7 @@ final class WorkbenchViewModel {
         let generation = refreshGeneration
         let request = sidebarRequest()
         isRefreshing = true
-        if reason != "poll" { snapshot.message = "正在读取 Core…" }
+        if reason != "poll" { snapshot.message = L10n.text("Reading Core…") }
         notify()
         refreshTask = Task { [weak self] in
             guard let self else { return }
@@ -110,7 +110,7 @@ final class WorkbenchViewModel {
                 uptimeAnchor = ProcessInfo.processInfo.systemUptime
                 for group in newSidebar.groups { cursors[group.id] = group.historyCursor }
                 snapshot.stale = false; snapshot.lastLoadedAt = Date()
-                snapshot.message = "已连接 · \(newSidebar.total) 个对话"
+                snapshot.message = L10n.format("Connected · %@ conversations", String(describing: newSidebar.total))
                 isRefreshing = false
                 let all = newSidebar.groups.flatMap(\.conversations)
                 let selected = all.first { $0.navigationID == selectedNavigationID }
@@ -125,7 +125,7 @@ final class WorkbenchViewModel {
             } catch {
                 guard generation == refreshGeneration, !Task.isCancelled else { return }
                 isRefreshing = false; snapshot.stale = true
-                snapshot.message = "读取失败；原快照已保留：\(error.localizedDescription)"; notify()
+                snapshot.message = L10n.format("Read failed; the last snapshot was preserved: %@", String(describing: error.localizedDescription)); notify()
             }
         }
     }
@@ -187,15 +187,15 @@ final class WorkbenchViewModel {
                     let merged = (selected.raw.objectValue ?? [:]).merging(value.objectValue ?? [:]) { _, new in new }
                     detailed = WorkbenchConversation(json: .object(merged), serverNow: snapshot.sidebar.serverNow)
                     do { permission = try await client.permission(conversationID: selected.id, workspaceID: detailed.workspaceID) }
-                    catch { warnings.append("权限读取不可用：\(error.localizedDescription)") }
+                    catch { warnings.append(L10n.format("Permission read unavailable: %@", String(describing: error.localizedDescription))) }
                     do { insertions = try await client.insertions(conversationID: selected.id) }
-                    catch { warnings.append("用户补充读取不可用：\(error.localizedDescription)") }
+                    catch { warnings.append(L10n.format("Supplement read unavailable: %@", String(describing: error.localizedDescription))) }
                     if !detailed.activeTaskID.isEmpty {
                         do {
                             let data = try await client.task(detailed.activeTaskID)
                             let threads = (try? await client.taskThreads(detailed.activeTaskID)) ?? .null
                             task = WorkbenchTaskSummary(json: data, threads: threads)
-                        } catch { warnings.append("任务读取不可用：\(error.localizedDescription)") }
+                        } catch { warnings.append(L10n.format("Task read unavailable: %@", String(describing: error.localizedDescription))) }
                     }
                 }
                 try Task.checkCancellation()
@@ -207,11 +207,11 @@ final class WorkbenchViewModel {
                 snapshot.calls = page
                 if !page.calls.contains(where: { $0.id == selectedCallID }) { selectedCallID = page.calls.first?.id ?? "" }
                 snapshot.selectedCall = page.calls.first { $0.id == selectedCallID }
-                snapshot.message = warnings.isEmpty ? "已同步对话详情" : warnings.joined(separator: " · ")
+                snapshot.message = warnings.isEmpty ? L10n.text("Conversation details synchronized") : warnings.joined(separator: " · ")
                 notify()
             } catch {
                 guard currentEpoch == epoch, !Task.isCancelled else { return }
-                snapshot.message = "详情读取失败：\(error.localizedDescription)"; snapshot.stale = true; notify()
+                snapshot.message = L10n.format("Failed to read details: %@", String(describing: error.localizedDescription)); snapshot.stale = true; notify()
             }
         }
     }
@@ -232,7 +232,7 @@ final class WorkbenchViewModel {
                 snapshot.calls.calls = Self.mergeCalls(snapshot.calls.calls, [value]); notify()
             } catch {
                 guard currentEpoch == epoch, id == selectedCallID, !Task.isCancelled else { return }
-                snapshot.message = "调用详情不可用：\(error.localizedDescription)"; notify()
+                snapshot.message = L10n.format("Call details unavailable: %@", String(describing: error.localizedDescription)); notify()
             }
         }
     }
@@ -250,13 +250,13 @@ final class WorkbenchViewModel {
                 try Task.checkCancellation()
                 guard currentEpoch == epoch, id == selectedCallID else { return }
                 guard !slice.hasMore || slice.nextOffset > offset else {
-                    throw WorkbenchClientError.invalidResponse("输出游标未前进；已停止重复读取。")
+                    throw WorkbenchClientError.invalidResponse(L10n.text("The output cursor did not advance; repeated reads were stopped."))
                 }
                 payloadSlices[source] = slice; isReadingPayload = false; notify()
             } catch {
                 guard currentEpoch == epoch, id == selectedCallID, !Task.isCancelled else { return }
                 isReadingPayload = false
-                snapshot.message = "分块输出读取失败：\(error.localizedDescription)"; notify()
+                snapshot.message = L10n.format("Failed to read chunked output: %@", String(describing: error.localizedDescription)); notify()
             }
         }
     }
@@ -273,7 +273,7 @@ final class WorkbenchViewModel {
                 page.calls = Self.mergeCalls(snapshot.calls.calls, older.calls)
             }
             snapshot.calls = page
-            return .object(["message": .string("已读取更早记录；显示窗口最多 1000 条。")])
+            return .object(["message": .string(L10n.text("Earlier records loaded; the display window holds at most 1000 items."))])
         }
     }
     static func mergeCalls(_ old: [WorkbenchCall], _ incoming: [WorkbenchCall]) -> [WorkbenchCall] {
@@ -324,7 +324,7 @@ final class WorkbenchViewModel {
                 } catch {
                     guard !Task.isCancelled else { return }
                     snapshot.stale = true
-                    snapshot.message = "活动流断开：\(error.localizedDescription)"; notify()
+                    snapshot.message = L10n.format("Activity stream disconnected: %@", String(describing: error.localizedDescription)); notify()
                     if let error = error as? WorkbenchClientError, !error.retryable {
                         streamTask = nil; return
                     }
@@ -407,7 +407,7 @@ final class WorkbenchViewModel {
         guard !fixtureMode, !isOperating, !snapshot.stale,
               let conversation = snapshot.selectedConversation, !conversation.id.isEmpty,
               conversation.insertionEligible == true else {
-            snapshot.message = "插入资格未确认；请刷新 Core 状态。"; notify(); return
+            snapshot.message = L10n.text("Insertion eligibility is unconfirmed. Refresh the Core state."); notify(); return
         }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.utf8.count <= 16384 else { return }
@@ -445,12 +445,12 @@ final class WorkbenchViewModel {
                     }
                 } catch {
                     guard currentEpoch == epoch, !Task.isCancelled else { return }
-                    snapshot.message = "写入结果待核对，未自动重试：\(error.localizedDescription)"; notify()
+                    snapshot.message = L10n.format("Write result needs verification; no automatic retry was made: %@", String(describing: error.localizedDescription)); notify()
                 }
                 do { try await Task.sleep(nanoseconds: 1_500_000_000) } catch { return }
             }
             guard currentEpoch == epoch else { return }
-            snapshot.message = "回执仍待确认；重投与到期时间以 Core 返回值为准。"; notify()
+            snapshot.message = L10n.text("Receipt remains unconfirmed. Retry and expiry times are determined by Core."); notify()
         }
     }
     func insertionAction(_ insertionID: String, action: String) {
@@ -466,7 +466,7 @@ final class WorkbenchViewModel {
         guard !fixtureMode, !isOperating, !snapshot.stale else { return }
         isOperating = true
         let currentEpoch = epoch
-        snapshot.message = "正在提交操作…"; notify()
+        snapshot.message = L10n.text("Submitting operation…"); notify()
         operationTask = Task { [weak self] in
             guard let self else { return }
             defer { isOperating = false; notify() }
@@ -474,11 +474,11 @@ final class WorkbenchViewModel {
                 let result = try await operation()
                 guard currentEpoch == epoch, !Task.isCancelled else { return }
                 snapshot.message = result.firstText("message").isEmpty ?
-                    "Core 已返回操作结果；不等同工具或任务执行完成。" : result.text("message")
+                    L10n.text("Core returned an operation result; this does not imply completion of the tool or task.") : result.text("message")
                 if refreshAfter { refresh(reason: "operation") }
             } catch {
                 guard currentEpoch == epoch, !Task.isCancelled else { return }
-                snapshot.message = "操作结果待核对，未自动重试：\(error.localizedDescription)"
+                snapshot.message = L10n.format("Operation result needs verification; no automatic retry was made: %@", String(describing: error.localizedDescription))
                 loadSelection()
             }
         }

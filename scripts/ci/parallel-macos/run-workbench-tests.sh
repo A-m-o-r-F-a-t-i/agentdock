@@ -3,7 +3,15 @@ set -euo pipefail
 
 ROOT_DIR="${0:A:h:h:h:h}"
 TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/agentdock-workbench-macos.XXXXXX")"
-trap 'rm -rf "$TMP_ROOT"' EXIT
+FIXTURE_PID=""
+cleanup() {
+  if [[ -n "$FIXTURE_PID" ]]; then
+    kill "$FIXTURE_PID" 2>/dev/null || true
+    wait "$FIXTURE_PID" 2>/dev/null || true
+  fi
+  rm -rf "$TMP_ROOT"
+}
+trap cleanup EXIT
 export WB06_EVIDENCE_DIR="$ROOT_DIR/evidence/$(uname -m)"
 mkdir -p "$WB06_EVIDENCE_DIR"
 {
@@ -17,12 +25,14 @@ mkdir -p "$WB06_EVIDENCE_DIR"
 } | tee "$WB06_EVIDENCE_DIR/toolchain.txt"
 
 xcrun swiftc -swift-version 5 -parse-as-library \
+  "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/Localization.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/WorkbenchJSON.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/WorkbenchModels.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Tests/WorkbenchModelTests.swift" \
   -o "$TMP_ROOT/workbench-model-tests"
 "$TMP_ROOT/workbench-model-tests" | tee "$WB06_EVIDENCE_DIR/model-tests.txt"
 xcrun swiftc -swift-version 5 -parse-as-library \
+  "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/Localization.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/WorkbenchJSON.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/WorkbenchClientError.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/WorkbenchSSE.swift" \
@@ -30,7 +40,21 @@ xcrun swiftc -swift-version 5 -parse-as-library \
   -o "$TMP_ROOT/workbench-sse-tests"
 "$TMP_ROOT/workbench-sse-tests" | tee "$WB06_EVIDENCE_DIR/sse-tests.txt"
 
-swift test --package-path "$ROOT_DIR/desktop/macos/AgentDockApp" \
+swift build --build-tests --package-path "$ROOT_DIR/desktop/macos/AgentDockApp" \
+  --scratch-path "$TMP_ROOT/swiftpm" \
+  2>&1 | tee "$WB06_EVIDENCE_DIR/swift-build.log"
+(cd "$ROOT_DIR" && go build -trimpath -o "$TMP_ROOT/fixture-core" ./scripts/ci/parallel-macos/fixture-core) \
+  2>&1 | tee "$WB06_EVIDENCE_DIR/fixture-build.log"
+export WB06_CORE_FIXTURE="$TMP_ROOT/core-ready.json"
+"$TMP_ROOT/fixture-core" "$WB06_CORE_FIXTURE" > "$WB06_EVIDENCE_DIR/fixture-core.log" 2>&1 &
+FIXTURE_PID=$!
+for i in {1..120}; do
+  [[ -s "$WB06_CORE_FIXTURE" ]] && break
+  kill -0 "$FIXTURE_PID" || { cat "$WB06_EVIDENCE_DIR/fixture-core.log"; exit 1; }
+  sleep 0.25
+done
+test -s "$WB06_CORE_FIXTURE"
+swift test --skip-build --package-path "$ROOT_DIR/desktop/macos/AgentDockApp" \
   --scratch-path "$TMP_ROOT/swiftpm" \
   --xunit-output "$WB06_EVIDENCE_DIR/xctest.xml" \
   2>&1 | tee "$WB06_EVIDENCE_DIR/xctest.log"
@@ -46,7 +70,7 @@ import sys
 root = Path(sys.argv[1])
 sources = root / 'desktop/macos/AgentDockApp/Sources'
 text = '\n'.join(p.read_text() for p in sources.glob('Workbench*.swift'))
-for value in ['placeholderString = "搜索对话"', 'Last-Event-ID',
+for value in ['placeholderString = L10n.text("Search conversations")', 'Last-Event-ID',
               'custom_permissions_enabled', 'receipt_type', 'limit_chars',
               'bufferingOldest(256)', 'maximumCalls = 1000']:
     if value not in text:

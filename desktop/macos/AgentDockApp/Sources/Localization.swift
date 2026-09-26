@@ -51,10 +51,15 @@ enum L10n {
     }
 
     private static func localizationBundle(for preference: UILanguagePreference) -> Bundle {
+        #if SWIFT_PACKAGE
+        let resources = Bundle.module
+        #else
+        let resources = Bundle.main
+        #endif
         guard preference != .system,
-              let path = Bundle.main.path(forResource: preference.rawValue, ofType: "lproj"),
+              let path = resources.path(forResource: preference.rawValue, ofType: "lproj"),
               let bundle = Bundle(path: path) else {
-            return .main
+            return resources
         }
         return bundle
     }

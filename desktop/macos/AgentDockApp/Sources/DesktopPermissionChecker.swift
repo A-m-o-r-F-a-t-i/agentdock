@@ -142,8 +142,8 @@ enum DesktopPermissionChecker {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else { return }
         if !NSWorkspace.shared.open(url) {
             let alert = NSAlert()
-            alert.messageText = "无法打开系统设置"
-            alert.informativeText = "请手动打开 系统设置 → 隐私与安全性 → 对应权限项（\(pane)）。本页检测对象是管理 App；Core、helper 与 Skill 进程需按实际调用验证。"
+            alert.messageText = L10n.text("Unable to open System Settings")
+            alert.informativeText = L10n.format("Open System Settings → Privacy & Security → the relevant permission (%@). This check applies to the management app; Core, helper and Skill processes require verification through their actual calls.", String(describing: pane))
             alert.runModal()
         }
     }

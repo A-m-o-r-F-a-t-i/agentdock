@@ -33,6 +33,17 @@ final class RuntimeProtocol: URLProtocol {
 }
 
 final class TransportTests: XCTestCase {
+    private var previousLanguage: UILanguagePreference = .system
+    override func setUp() {
+        super.setUp()
+        previousLanguage = L10n.languagePreference()
+        L10n.setLanguagePreference(.simplifiedChinese)
+    }
+    override func tearDown() {
+        L10n.setLanguagePreference(previousLanguage)
+        super.tearDown()
+    }
+
     private func client(limit: Int = 8 * 1024 * 1024) -> WorkbenchAPIClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [RuntimeProtocol.self]

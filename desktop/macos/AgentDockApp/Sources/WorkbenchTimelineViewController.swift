@@ -7,7 +7,7 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
     var onSendInsertion: ((String) -> Void)?
     var onLoadOlder: (() -> Void)?
 
-    private let titleLabel = WorkbenchUI.label("选择一个对话", font: .systemFont(ofSize: 20, weight: .semibold), lines: 2)
+    private let titleLabel = WorkbenchUI.label(L10n.text("Select a conversation"), font: .systemFont(ofSize: 20, weight: .semibold), lines: 2)
     private let metadataLabel = WorkbenchUI.label("", font: .systemFont(ofSize: 11.5), color: WorkbenchPalette.secondaryText, lines: 2)
     private let taskBadge = WorkbenchUI.label("", font: .systemFont(ofSize: 11, weight: .medium), color: WorkbenchPalette.accent)
     private let statusBanner = WorkbenchUI.label("", font: .systemFont(ofSize: 11.5), color: WorkbenchPalette.secondaryText, lines: 2)
@@ -16,7 +16,7 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
     private let loadOlderButton = NSButton()
     private let composerScroll: NSScrollView
     private let composer: NSTextView
-    private let composerHint = WorkbenchUI.label("选择活动对话后可插入补充。", font: .systemFont(ofSize: 10.5), color: WorkbenchPalette.secondaryText, lines: 2)
+    private let composerHint = WorkbenchUI.label(L10n.text("Select an active conversation to insert a supplement."), font: .systemFont(ofSize: 10.5), color: WorkbenchPalette.secondaryText, lines: 2)
     private let sendButton = NSButton()
     private var entries = [WorkbenchTimelineEntry]()
     private var selectedEntryID = ""
@@ -59,7 +59,7 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
         table.dataSource = self
         table.delegate = self
         table.setAccessibilityIdentifier("workbench.timeline")
-        table.setAccessibilityLabel("调用与用户补充时间线")
+        table.setAccessibilityLabel(L10n.text("Call and user-supplement timeline"))
 
         scroll.documentView = table
         scroll.hasVerticalScroller = true
@@ -67,18 +67,18 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
         scroll.drawsBackground = false
         scroll.borderType = .noBorder
 
-        loadOlderButton.title = "加载更早记录"
+        loadOlderButton.title = L10n.text("Load earlier records")
         loadOlderButton.bezelStyle = .inline
         loadOlderButton.target = self
         loadOlderButton.action = #selector(loadOlder(_:))
-        loadOlderButton.setAccessibilityLabel("加载更早的调用记录")
+        loadOlderButton.setAccessibilityLabel(L10n.text("Load earlier call records"))
 
         composer.delegate = self
         composer.setAccessibilityIdentifier("workbench.insertion.editor")
-        composer.setAccessibilityLabel("插入用户补充")
+        composer.setAccessibilityLabel(L10n.text("Insert user supplement"))
         composerScroll.heightAnchor.constraint(equalToConstant: 86).isActive = true
 
-        sendButton.title = "插入对话"
+        sendButton.title = L10n.text("Insert into conversation")
         sendButton.bezelStyle = .rounded
         sendButton.keyEquivalent = "\r"
         sendButton.keyEquivalentModifierMask = [.command]
@@ -121,13 +121,13 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
     func render(_ model: WorkbenchViewModel, selectedInsertionID: String?) {
         let snapshot = model.snapshot
         let conversation = snapshot.selectedConversation
-        titleLabel.stringValue = conversation?.title ?? "选择一个对话"
-        metadataLabel.stringValue = conversation?.metadataText ?? "从左侧工作区选择对话，查看其任务、调用、审批与用户补充。"
+        titleLabel.stringValue = conversation?.title ?? L10n.text("Select a conversation")
+        metadataLabel.stringValue = conversation?.metadataText ?? L10n.text("Select a conversation in the left workspace pane to inspect its tasks, calls, approvals and supplements.")
         if let task = snapshot.task {
-            taskBadge.stringValue = "任务 · \(task.title) · \(WorkbenchFormatting.state(task.status))"
+            taskBadge.stringValue = L10n.format("Task · %@ · %@", String(describing: task.title), String(describing: WorkbenchFormatting.state(task.status)))
             taskBadge.isHidden = false
         } else if let conversation, !conversation.activeTaskID.isEmpty {
-            taskBadge.stringValue = "任务 · \(conversation.activeTaskID)"
+            taskBadge.stringValue = L10n.format("Task · %@", String(describing: conversation.activeTaskID))
             taskBadge.isHidden = false
         } else {
             taskBadge.stringValue = ""
@@ -136,7 +136,7 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
 
         statusBanner.stringValue = snapshot.message
         statusBanner.textColor = snapshot.stale ? WorkbenchPalette.warning : WorkbenchPalette.secondaryText
-        statusBanner.toolTip = snapshot.lastLoadedAt.map { "最近同步：\(WorkbenchFormatting.shortDate($0))" }
+        statusBanner.toolTip = snapshot.lastLoadedAt.map { L10n.format("Last synchronized: %@", String(describing: WorkbenchFormatting.shortDate($0))) }
 
         entries = Self.timeline(calls: snapshot.calls.calls, insertions: snapshot.insertions.items)
         selectedEntryID = selectedInsertionID.map { "insertion:\($0)" }
@@ -151,17 +151,17 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
         if let conversation {
             canCompose = !conversation.terminated && !conversation.trashed && !conversation.id.isEmpty && conversation.insertionEligible == true && !snapshot.stale
             if conversation.insertionEligible == true {
-                composerHint.stringValue = "插入窗口有效；原始有效期 300 秒，成功附加后等待回执 30 秒。"
+                composerHint.stringValue = L10n.text("Insertion is eligible. Original expiry is 300 seconds; the receipt wait starts after successful attachment and lasts 30 seconds.")
             } else if conversation.insertionEligible == false {
                 composerHint.stringValue = conversation.insertionEligibilityReason.isEmpty
-                    ? "当前不在 180 秒插入窗口内。"
+                    ? L10n.text("Outside the 180-second insertion window.")
                     : conversation.insertionEligibilityReason
             } else {
-                composerHint.stringValue = "Core 尚未确认插入资格；刷新后再提交。"
+                composerHint.stringValue = L10n.text("Core has not confirmed insertion eligibility. Refresh before submitting.")
             }
         } else {
             canCompose = false
-            composerHint.stringValue = "选择活动对话后可插入补充。"
+            composerHint.stringValue = L10n.text("Select an active conversation to insert a supplement.")
         }
         composer.isEditable = canCompose && !model.isOperating
         sendButton.isEnabled = canCompose && !model.isOperating && !composer.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -295,18 +295,18 @@ private final class WorkbenchTimelineCellView: NSTableCellView {
             setAccessibilityLabel(call.title)
             setAccessibilityValue(call.metadataText)
         case let .insertion(insertion):
-            titleLabel.stringValue = "用户补充"
+            titleLabel.stringValue = L10n.text("User supplement")
             metadataLabel.stringValue = insertion.detailText
             previewLabel.stringValue = Self.preview(insertion.text)
             marker.layer?.backgroundColor = WorkbenchPalette.accent.cgColor
-            setAccessibilityLabel("用户补充")
+            setAccessibilityLabel(L10n.text("User supplement"))
             setAccessibilityValue(insertion.detailText)
         }
     }
 
     private static func preview(_ value: String) -> String {
         let normalized = value.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-        return normalized.isEmpty ? "没有可显示的摘要。" : String(normalized.prefix(220))
+        return normalized.isEmpty ? L10n.text("No displayable summary.") : String(normalized.prefix(220))
     }
 
     private static func color(_ status: String) -> NSColor {

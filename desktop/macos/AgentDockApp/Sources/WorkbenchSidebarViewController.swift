@@ -35,13 +35,13 @@ final class WorkbenchSidebarViewController: NSViewController, NSOutlineViewDataS
         segmented.action = #selector(viewChanged(_:))
         segmented.selectedSegment = 0
         segmented.segmentStyle = .texturedRounded
-        segmented.setAccessibilityLabel("对话视图")
+        segmented.setAccessibilityLabel(L10n.text("Conversation view"))
 
-        searchField.placeholderString = "搜索对话"
+        searchField.placeholderString = L10n.text("Search conversations")
         searchField.delegate = self
         searchField.sendsSearchStringImmediately = true
         searchField.setAccessibilityIdentifier("workbench.search.conversations")
-        searchField.setAccessibilityLabel("搜索对话")
+        searchField.setAccessibilityLabel(L10n.text("Search conversations"))
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("sidebar"))
         column.resizingMask = .autoresizingMask
@@ -57,7 +57,7 @@ final class WorkbenchSidebarViewController: NSViewController, NSOutlineViewDataS
         outline.dataSource = self
         outline.delegate = self
         outline.setAccessibilityIdentifier("workbench.sidebar")
-        outline.setAccessibilityLabel("工作区与对话")
+        outline.setAccessibilityLabel(L10n.text("Workspaces and conversations"))
 
         scroll.documentView = outline
         scroll.hasVerticalScroller = true
@@ -66,7 +66,7 @@ final class WorkbenchSidebarViewController: NSViewController, NSOutlineViewDataS
         scroll.borderType = .noBorder
 
         let heading = WorkbenchUI.label("AgentDock Workbench", font: .systemFont(ofSize: 16, weight: .semibold))
-        let subtitle = WorkbenchUI.label("任务与执行中心", font: .systemFont(ofSize: 11), color: WorkbenchPalette.secondaryText)
+        let subtitle = WorkbenchUI.label(L10n.text("Task and execution center"), font: .systemFont(ofSize: 11), color: WorkbenchPalette.secondaryText)
         let titleStack = WorkbenchUI.stack(.vertical, spacing: 2)
         titleStack.addArrangedSubview(heading)
         titleStack.addArrangedSubview(subtitle)
@@ -75,8 +75,8 @@ final class WorkbenchSidebarViewController: NSViewController, NSOutlineViewDataS
         stack.alignment = .leading
         stack.addArrangedSubview(titleStack)
         let actions = WorkbenchUI.stack(.horizontal, spacing: 4)
-        actions.addArrangedSubview(WorkbenchUI.button("折叠全部", target: self, action: #selector(collapseAll)))
-        actions.addArrangedSubview(WorkbenchUI.button("历史", target: self, action: #selector(openHistory)))
+        actions.addArrangedSubview(WorkbenchUI.button(L10n.text("Collapse all"), target: self, action: #selector(collapseAll)))
+        actions.addArrangedSubview(WorkbenchUI.button(L10n.text("History"), target: self, action: #selector(openHistory)))
         actions.addArrangedSubview(WorkbenchUI.button("＋", target: self, action: #selector(addWorkspace)))
         stack.addArrangedSubview(actions)
         stack.addArrangedSubview(segmented)
@@ -115,8 +115,8 @@ final class WorkbenchSidebarViewController: NSViewController, NSOutlineViewDataS
         let changed = groups != lastGroups
         if changed { lastGroups = groups; roots = groups.map(WorkspaceNode.init) }
         footer.stringValue = model.snapshot.sidebar.groups.isEmpty
-            ? (model.snapshot.stale ? "Core 离线；保留最近一次快照。" : "没有匹配的对话。")
-            : "\(model.snapshot.sidebar.total) 个对话 · 列表顺序由 Core 管理"
+            ? (model.snapshot.stale ? L10n.text("Core is offline; retaining the most recent snapshot.") : L10n.text("No matching conversations."))
+            : L10n.format("%@ conversations · Core manages the list order", String(describing: model.snapshot.sidebar.total))
         if changed {
             suppressSelection = true
             outline.reloadData()
@@ -188,7 +188,7 @@ final class WorkbenchSidebarViewController: NSViewController, NSOutlineViewDataS
             let cell = (outlineView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView) ?? {
                 let value = NSTableCellView()
                 value.identifier = identifier
-                let label = WorkbenchUI.label("显示更多…", font: .systemFont(ofSize: 12), color: WorkbenchPalette.accent)
+                let label = WorkbenchUI.label(L10n.text("Show more…"), font: .systemFont(ofSize: 12), color: WorkbenchPalette.accent)
                 label.alignment = .center
                 label.tag = 1
                 value.addSubview(label)
@@ -315,7 +315,7 @@ private final class WorkbenchSidebarConversationCellView: NSTableCellView {
     func render(_ conversation: WorkbenchConversation) {
         titleLabel.stringValue = conversation.title
         metadataLabel.stringValue = conversation.metadataText
-        pinLabel.stringValue = conversation.pinned ? "置顶" : ""
+        pinLabel.stringValue = conversation.pinned ? L10n.text("Pin") : ""
         let color: NSColor
         if conversation.inFlight { color = WorkbenchPalette.accent }
         else if conversation.recentlyActive { color = WorkbenchPalette.success }

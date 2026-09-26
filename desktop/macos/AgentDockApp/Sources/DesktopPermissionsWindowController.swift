@@ -58,7 +58,7 @@ final class DesktopPermissionsWindowController: NSWindowController {
         intro.widthAnchor.constraint(equalToConstant: 580).isActive = true
         contentStack.addArrangedSubview(title)
         contentStack.addArrangedSubview(intro)
-        let attribution = PermissionUI.detailLabel("基础节点、普通 CLI/MCP 和任务中心不要求屏幕录制或辅助功能权限。下列预检只针对当前管理 App（\(ProcessInfo.processInfo.processName)）。Core、helper 与可选 Skill 的授权归属需实际调用验证，不视为自动继承。")
+        let attribution = PermissionUI.detailLabel(L10n.format("The basic node, ordinary CLI/MCP and task center do not require Screen Recording or Accessibility permission. These checks apply only to the current management app (%@). Permission ownership for Core, helpers and optional Skills must be verified by an actual call; inheritance is not assumed.", String(describing: ProcessInfo.processInfo.processName)))
         attribution.widthAnchor.constraint(equalToConstant: 580).isActive = true
         contentStack.addArrangedSubview(attribution)
         contentStack.addArrangedSubview(PermissionUI.separator())

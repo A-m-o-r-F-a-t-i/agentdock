@@ -63,7 +63,7 @@ struct WorkbenchModelTests {
             "text": .string("继续执行")
         ]))
         precondition(insertionCall.isInsertion)
-        precondition(insertionCall.title == "用户补充")
+        precondition(insertionCall.title == L10n.text("User supplement"))
         precondition(!insertionCall.canStop)
 
         let runningCall = WorkbenchCall(json: .object([

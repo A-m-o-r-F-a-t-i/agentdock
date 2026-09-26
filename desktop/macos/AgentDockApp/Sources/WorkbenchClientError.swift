@@ -16,13 +16,13 @@ enum WorkbenchClientError: LocalizedError, Equatable, Sendable {
         case let .configuration(message), let .transport(message), let .invalidResponse(message), let .invalidJSON(message):
             return message
         case .cancelled:
-            return "请求已取消。"
+            return L10n.text("The request was cancelled.")
         case let .responseTooLarge(limit):
-            return "Core 响应超过 \(limit) bytes 的桌面端安全上限。"
+            return L10n.format("The Core response exceeds the desktop limit of %@ bytes.", String(describing: limit))
         case let .streamLineTooLarge(limit):
-            return "活动流单行超过 \(limit) bytes 的安全上限。"
+            return L10n.format("An activity-stream line exceeds the limit of %@ bytes.", String(describing: limit))
         case let .streamEventTooLarge(limit):
-            return "活动流单事件超过 \(limit) bytes 的安全上限。"
+            return L10n.format("An activity-stream event exceeds the limit of %@ bytes.", String(describing: limit))
         case let .http(status, code, message):
             let identity = code.isEmpty ? "HTTP \(status)" : "\(code) · HTTP \(status)"
             return "\(identity)：\(message)"

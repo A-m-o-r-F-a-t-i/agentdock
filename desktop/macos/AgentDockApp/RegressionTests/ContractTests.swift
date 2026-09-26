@@ -2,6 +2,17 @@ import XCTest
 @testable import WorkbenchKit
 
 final class ContractTests: XCTestCase {
+    private var previousLanguage: UILanguagePreference = .system
+    override func setUp() {
+        super.setUp()
+        previousLanguage = L10n.languagePreference()
+        L10n.setLanguagePreference(.simplifiedChinese)
+    }
+    override func tearDown() {
+        L10n.setLanguagePreference(previousLanguage)
+        super.tearDown()
+    }
+
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
     private func conversation(_ id: String, age: TimeInterval = 5, live: Bool = false) -> WorkbenchJSON {
         .object(["conversation_id": .string(id), "title": .string("中文 e\u{301} 👩‍💻"),

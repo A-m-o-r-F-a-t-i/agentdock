@@ -8,10 +8,10 @@ enum WorkbenchListView: String, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .active: return "对话"
-        case .archived: return "归档"
-        case .trash: return "回收站"
-        case .all: return "全部"
+        case .active: return L10n.text("Conversations")
+        case .archived: return L10n.text("Archive")
+        case .trash: return L10n.text("Trash")
+        case .all: return L10n.text("All")
         }
     }
 }
@@ -23,9 +23,9 @@ enum WorkbenchTheme: String, CaseIterable, Sendable {
 
     var title: String {
         switch self {
-        case .system: return "跟随系统"
-        case .light: return "浅色"
-        case .dark: return "深色"
+        case .system: return L10n.text("Follow system")
+        case .light: return L10n.text("Light")
+        case .dark: return L10n.text("Dark")
         }
     }
 }
@@ -85,8 +85,8 @@ struct WorkbenchConversation: Equatable, Identifiable, Sendable {
         id = json.firstText("conversation_id", "id")
         let created = json.date("created_at")
         let providedTitle = json.text("title").trimmingCharacters(in: .whitespacesAndNewlines)
-        if providedTitle.isEmpty || providedTitle == "新对话" {
-            title = "对话 · " + WorkbenchFormatting.shortDate(created)
+        if providedTitle.isEmpty || providedTitle == "\u{65b0}\u{5bf9}\u{8bdd}" {
+            title = L10n.text("Conversation · ") + WorkbenchFormatting.shortDate(created)
         } else {
             title = providedTitle
         }
@@ -172,18 +172,18 @@ struct WorkbenchConversation: Equatable, Identifiable, Sendable {
     }
 
     var stateText: String {
-        if terminated { return "已终止" }
-        if trashed { return "回收站" }
-        if archived { return "已归档" }
-        if inFlight { return "正在执行" }
-        if recentlyActive { return "活动中" }
-        return source.isEmpty ? "历史对话" : source
+        if terminated { return L10n.text("Terminated") }
+        if trashed { return L10n.text("Trash") }
+        if archived { return L10n.text("Archived") }
+        if inFlight { return L10n.text("Executing") }
+        if recentlyActive { return L10n.text("Recently active") }
+        return source.isEmpty ? L10n.text("Historical conversation") : source
     }
 
     var metadataText: String {
         var values = [stateText]
-        if runningCount > 0 { values.append("\(runningCount) 运行中") }
-        if pendingCount > 0 { values.append("\(pendingCount) 待审批") }
+        if runningCount > 0 { values.append(L10n.format("%@ running", String(describing: runningCount))) }
+        if pendingCount > 0 { values.append(L10n.format("%@ pending approval", String(describing: pendingCount))) }
         if let lastActivityAt { values.append(WorkbenchFormatting.relative(lastActivityAt)) }
         return values.joined(separator: " · ")
     }
@@ -204,7 +204,7 @@ struct WorkbenchWorkspaceGroup: Equatable, Identifiable, Sendable {
 
     init(json: WorkbenchJSON, serverNow: Date?) {
         id = json.text("workspace_id", fallback: "unassigned")
-        title = json.text("title", fallback: "历史工作区")
+        title = json.text("title", fallback: L10n.text("Historical workspace"))
         root = json.text("root")
         total = Int(json.integer("total"))
         recentCount = Int(json.integer("recent_count"))
@@ -291,13 +291,13 @@ struct WorkbenchCall: Equatable, Identifiable, Sendable {
         isInsertion = !insertionID.isEmpty || kind.hasPrefix("insertion.") || toolName == "conversation.insertion"
         let originalTitle = json.firstText("display_title", "activity_label", "title")
         if isInsertion {
-            title = "用户补充"
+            title = L10n.text("User supplement")
         } else if !originalTitle.isEmpty {
             title = originalTitle
         } else if !toolName.isEmpty {
             title = WorkbenchFormatting.toolTitle(toolName)
         } else {
-            title = "执行记录"
+            title = L10n.text("Execution record")
         }
         requestText = Self.payloadText(json["request"])
         let response = json["output_source"].text("ref").isEmpty ? json["response"] : json["output_source"]
@@ -322,7 +322,7 @@ struct WorkbenchCall: Equatable, Identifiable, Sendable {
         if let preview = value.optionalText("preview") { return preview }
         if let reference = value.optionalText("ref") {
             let bytes = value.integer("bytes")
-            return bytes > 0 ? "外部载荷：\(reference) · \(bytes) bytes" : "外部载荷：\(reference)"
+            return bytes > 0 ? L10n.format("External payload: %@ · %@ bytes", String(describing: reference), String(describing: bytes)) : L10n.format("External payload: %@", String(describing: reference))
         }
         return value.prettyPrinted
     }
@@ -330,28 +330,28 @@ struct WorkbenchCall: Equatable, Identifiable, Sendable {
     private static func timing(_ value: WorkbenchJSON) -> String {
         let rows: [(String, Int64)] = [
             ("RPC", value.integer("rpc_elapsed_ms", fallback: -1)),
-            ("执行", value.integer("execution_elapsed_ms", fallback: -1)),
-            ("等待", value.integer("wait_elapsed_ms", fallback: -1)),
-            ("操作", value.integer("operation_elapsed_ms", fallback: -1)),
-            ("进程", value.integer("process_elapsed_ms", fallback: -1)),
-            ("总计", value.integer("elapsed_ms", fallback: -1))
+            (L10n.text("Execution"), value.integer("execution_elapsed_ms", fallback: -1)),
+            (L10n.text("Wait"), value.integer("wait_elapsed_ms", fallback: -1)),
+            (L10n.text("Operation"), value.integer("operation_elapsed_ms", fallback: -1)),
+            (L10n.text("Process"), value.integer("process_elapsed_ms", fallback: -1)),
+            (L10n.text("Total"), value.integer("elapsed_ms", fallback: -1))
         ]
         let available = rows.filter { $0.1 >= 0 }
-        if available.isEmpty { return "耗时未记录。" }
+        if available.isEmpty { return L10n.text("Timing was not recorded.") }
         return available.map { "\($0.0)：\(String(format: "%.3f s", Double($0.1) / 1000))" }.joined(separator: "\n")
     }
 
     private static func fileEdit(_ value: WorkbenchJSON) -> String {
-        guard !value.isNull else { return "文件修改详情未记录。" }
+        guard !value.isNull else { return L10n.text("File-change details were not recorded.") }
         var lines = [String]()
         let action = value.text("action")
         let path = value.text("path")
-        if !action.isEmpty { lines.append("操作：\(action)") }
-        if !path.isEmpty { lines.append("目标：\(path)") }
-        if let changed = value.optionalFlag("changed") { lines.append("实际修改：\(changed ? "是" : "否")") }
-        if value.optionalText("stats_state") != nil { lines.append("统计：\(value.text("stats_state"))") }
+        if !action.isEmpty { lines.append(L10n.format("Operation: %@", String(describing: action))) }
+        if !path.isEmpty { lines.append(L10n.format("Target: %@", String(describing: path))) }
+        if let changed = value.optionalFlag("changed") { lines.append(L10n.format("Actually changed: %@", String(describing: changed ? L10n.text("Yes") : L10n.text("No")))) }
+        if value.optionalText("stats_state") != nil { lines.append(L10n.format("Statistics: %@", String(describing: value.text("stats_state")))) }
         if !value["insertions"].isNull || !value["deletions"].isNull {
-            lines.append("新增/删除：\(value.integer("insertions")) / \(value.integer("deletions"))")
+            lines.append(L10n.format("Added/deleted: %@ / %@", String(describing: value.integer("insertions")), String(describing: value.integer("deletions"))))
         }
         for file in value.values("affected_files") {
             lines.append("• \(file.text("path"))  +\(file.integer("insertions")) −\(file.integer("deletions"))")
@@ -406,7 +406,7 @@ struct WorkbenchTaskSummary: Equatable, Sendable {
     init(json: WorkbenchJSON, threads threadJSON: WorkbenchJSON = .null) {
         let task = json["task"].isNull ? json : json["task"]
         id = task.firstText("id", "task_id")
-        title = task.text("title", fallback: "任务")
+        title = task.text("title", fallback: L10n.text("Task"))
         status = task.text("status", fallback: "unknown")
         outcome = task.text("outcome")
         summary = task.text("summary")
@@ -429,13 +429,13 @@ struct WorkbenchTaskSummary: Equatable, Sendable {
 
     var detailText: String {
         var sections = [String]()
-        sections.append("状态：\(WorkbenchFormatting.state(status))")
-        if !outcome.isEmpty { sections.append("结果：\(outcome)") }
+        sections.append(L10n.format("State: %@", String(describing: WorkbenchFormatting.state(status))))
+        if !outcome.isEmpty { sections.append(L10n.format("Outcome: %@", String(describing: outcome))) }
         if !summary.isEmpty { sections.append("\n\(summary)") }
-        if !steps.isEmpty { sections.append("\n步骤\n" + steps.joined(separator: "\n")) }
-        if !conditions.isEmpty { sections.append("\n验收条件\n" + conditions.map { "• \($0)" }.joined(separator: "\n")) }
-        if !threads.isEmpty { sections.append("\n分支\n" + threads.joined(separator: "\n")) }
-        if !review.isEmpty { sections.append("\n复核\n\(review)") }
+        if !steps.isEmpty { sections.append(L10n.text("\nSteps\n") + steps.joined(separator: "\n")) }
+        if !conditions.isEmpty { sections.append(L10n.text("\nAcceptance criteria\n") + conditions.map { "• \($0)" }.joined(separator: "\n")) }
+        if !threads.isEmpty { sections.append(L10n.text("\nThreads\n") + threads.joined(separator: "\n")) }
+        if !review.isEmpty { sections.append(L10n.format("\nReview\n%@", String(describing: review))) }
         return sections.joined(separator: "\n")
     }
 }
@@ -472,10 +472,10 @@ struct WorkbenchPermissionState: Equatable, Sendable {
     }
 
     var summaryText: String {
-        var values = ["模式：\(WorkbenchFormatting.permissionMode(mode))", "范围：\(scope)"]
-        if !scopeID.isEmpty { values.append("对象：\(scopeID)") }
-        values.append("修订：\(revision) · 来源：\(settingsSource)")
-        if let customSettingsEnabled { values.append("自定义权限设置：\(customSettingsEnabled ? "已启用" : "未启用")") }
+        var values = [L10n.format("Mode: %@", String(describing: WorkbenchFormatting.permissionMode(mode))), L10n.format("Scope: %@", String(describing: scope))]
+        if !scopeID.isEmpty { values.append(L10n.format("Resource: %@", String(describing: scopeID))) }
+        values.append(L10n.format("Revision: %@ · Source: %@", String(describing: revision), String(describing: settingsSource)))
+        if let customSettingsEnabled { values.append(L10n.format("Custom permission settings: %@", String(describing: customSettingsEnabled ? L10n.text("Enabled") : L10n.text("Disabled")))) }
         return values.joined(separator: "\n")
     }
 }
@@ -519,22 +519,22 @@ struct WorkbenchInsertion: Equatable, Identifiable, Sendable {
 
     var receiptDescription: String {
         switch receiptType {
-        case "receiver_receipt": return "接收方回执（不等同模型上下文确认）"
-        case "outer_forwarded": return "宿主已转发（未确认模型上下文）"
-        case "host_context_committed": return "宿主已确认写入模型上下文（不代表执行完成）"
-        case "": return "回执待确认"
-        default: return "未知回执类型：\(receiptType)"
+        case "receiver_receipt": return L10n.text("Receiver receipt (not model-context confirmation)")
+        case "outer_forwarded": return L10n.text("Host forwarded (model context unconfirmed)")
+        case "host_context_committed": return L10n.text("Host confirmed model-context commit (not execution completion)")
+        case "": return L10n.text("Receipt unconfirmed")
+        default: return L10n.format("Unknown receipt type: %@", String(describing: receiptType))
         }
     }
 
     var detailText: String {
         var values = [WorkbenchFormatting.state(status), receiptDescription]
-        if !receiptState.isEmpty { values.append("回执：\(receiptState)") }
-        if attempts > 0 { values.append("尝试：\(attempts)") }
-        if let automaticAttemptsRemaining { values.append("自动余量：\(automaticAttemptsRemaining)") }
-        if let totalAttemptsRemaining { values.append("总余量：\(totalAttemptsRemaining)") }
-        if let nextRetryAt { values.append("可重投时间：\(WorkbenchFormatting.clock(nextRetryAt))") }
-        if let expiresAt { values.append("到期：\(WorkbenchFormatting.clock(expiresAt))") }
+        if !receiptState.isEmpty { values.append(L10n.format("Receipt: %@", String(describing: receiptState))) }
+        if attempts > 0 { values.append(L10n.format("Attempts: %@", String(describing: attempts))) }
+        if let automaticAttemptsRemaining { values.append(L10n.format("Automatic attempts remaining: %@", String(describing: automaticAttemptsRemaining))) }
+        if let totalAttemptsRemaining { values.append(L10n.format("Total attempts remaining: %@", String(describing: totalAttemptsRemaining))) }
+        if let nextRetryAt { values.append(L10n.format("Eligible retry time: %@", String(describing: WorkbenchFormatting.clock(nextRetryAt)))) }
+        if let expiresAt { values.append(L10n.format("Expires: %@", String(describing: WorkbenchFormatting.clock(expiresAt)))) }
         if !terminalReason.isEmpty { values.append(terminalReason) }
         return values.joined(separator: " · ")
     }
@@ -581,9 +581,9 @@ struct WorkbenchSnapshot: Equatable, Sendable {
             historyCursor: "fixture",
             historyReset: false,
             conversations: [
-                WorkbenchConversation.fixture(id: "conv_active", title: "macOS 原生 Workbench 完整对齐", state: "running", pinned: true, active: true, server: server),
-                WorkbenchConversation.fixture(id: "conv_permissions", title: "权限设置与首次安装默认值", state: "pending", pinned: false, active: true, server: server),
-                WorkbenchConversation.fixture(id: "conv_history", title: "安装速度与回退版本优化", state: "completed", pinned: false, active: false, server: server)
+                WorkbenchConversation.fixture(id: "conv_active", title: L10n.text("Native macOS Workbench parity"), state: "running", pinned: true, active: true, server: server),
+                WorkbenchConversation.fixture(id: "conv_permissions", title: L10n.text("Permission settings and fresh-install defaults"), state: "pending", pinned: false, active: true, server: server),
+                WorkbenchConversation.fixture(id: "conv_history", title: L10n.text("Installation speed and fallback version optimization"), state: "completed", pinned: false, active: false, server: server)
             ]
         )
         let sidebarJSON: WorkbenchJSON = .object([
@@ -596,9 +596,9 @@ struct WorkbenchSnapshot: Equatable, Sendable {
         sidebar.groups = [workspace]
         sidebar.selected = workspace.conversations[0]
         let calls = [
-            WorkbenchCall.fixture(id: "call_1", title: "读取完整任务与接口契约", tool: "files.read", status: "succeeded", sequence: 40, output: "已读取三份完整文档并锁定文件边界。"),
-            WorkbenchCall.fixture(id: "call_2", title: "构建原生三栏窗口", tool: "file_edit", status: "running", sequence: 41, output: "AppKit navigation, timeline and detail panes"),
-            WorkbenchCall.fixture(id: "call_3", title: "验证候选包", tool: "github.actions", status: "pending_approval", sequence: 42, output: "等待 Actions 原生架构验证")
+            WorkbenchCall.fixture(id: "call_1", title: L10n.text("Read the complete task and interface contract"), tool: "files.read", status: "succeeded", sequence: 40, output: L10n.text("Read three complete documents and fixed the file-ownership boundaries.")),
+            WorkbenchCall.fixture(id: "call_2", title: L10n.text("Build the native three-pane window"), tool: "file_edit", status: "running", sequence: 41, output: "AppKit navigation, timeline and detail panes"),
+            WorkbenchCall.fixture(id: "call_3", title: L10n.text("Verify candidate package"), tool: "github.actions", status: "pending_approval", sequence: 42, output: L10n.text("Awaiting native architecture verification in Actions"))
         ]
         let callPageJSON: WorkbenchJSON = .object(["calls": .array([])])
         var page = WorkbenchCallPage(json: callPageJSON)
@@ -617,7 +617,7 @@ struct WorkbenchSnapshot: Equatable, Sendable {
         let insertion = WorkbenchInsertion(json: .object([
             "insertion_id": .string("ins_fixture"),
             "submission_id": .string("macos-fixture"),
-            "text": .string("继续执行，并在 Actions 中保留 Intel 与 Apple Silicon 的真实架构证据。"),
+            "text": .string(L10n.text("Continue and retain actual Intel and Apple Silicon architecture evidence in Actions.")),
             "status": .string("queued"),
             "receipt_state": .string("pending"),
             "attempts": .integer(1),
@@ -637,7 +637,7 @@ struct WorkbenchSnapshot: Equatable, Sendable {
             permission: permission,
             insertions: insertionPage,
             stale: false,
-            message: "已连接 · 2 个活动对话",
+            message: L10n.text("Connected · 2 active conversations"),
             lastLoadedAt: server
         )
     }
@@ -690,7 +690,7 @@ private extension WorkbenchCall {
             "status": .string(status),
             "updated_seq": .integer(sequence),
             "created_at": .string("2027-01-15T08:00:00Z"),
-            "request": .object(["text": .string("执行：\(title)")]),
+            "request": .object(["text": .string(L10n.format("Execute: %@", String(describing: title)))]),
             "response": .object(["text": .string(output)]),
             "output_preview": .string(output),
             "rpc_elapsed_ms": .integer(status == "running" ? 1834 : 842)
@@ -703,15 +703,15 @@ private extension WorkbenchTaskSummary {
         WorkbenchTaskSummary(json: .object([
             "task": .object([
                 "task_id": .string("tsk_fixture"),
-                "title": .string("WB06 macOS 原生 Workbench 完整对齐"),
+                "title": .string(L10n.text("WB06 native macOS Workbench parity")),
                 "status": .string("active"),
-                "summary": .string("保留 Swift/AppKit，并用 Core Runtime API 对齐 Windows 的任务与执行中心。"),
+                "summary": .string(L10n.text("Retain Swift/AppKit and align with the Windows task and execution center using the Core Runtime API.")),
                 "steps": .array([
-                    .object(["title": .string("功能矩阵与接口契约"), "status": .string("completed")]),
-                    .object(["title": .string("原生窗口与数据客户端"), "status": .string("running")]),
-                    .object(["title": .string("Actions 原生验证"), "status": .string("pending")])
+                    .object(["title": .string(L10n.text("Feature matrix and interface contract")), "status": .string("completed")]),
+                    .object(["title": .string(L10n.text("Native window and data client")), "status": .string("running")]),
+                    .object(["title": .string(L10n.text("Native verification in Actions")), "status": .string("pending")])
                 ]),
-                "conditions": .array([.object(["text": .string("原生 AppKit 三栏界面")]), .object(["text": .string("Intel 与 Apple Silicon 真实 Actions 证据")])])
+                "conditions": .array([.object(["text": .string(L10n.text("Native three-pane AppKit interface"))]), .object(["text": .string(L10n.text("Actual Intel and Apple Silicon Actions evidence"))])])
             ])
         ]))
     }
@@ -720,25 +720,25 @@ private extension WorkbenchTaskSummary {
 enum WorkbenchFormatting {
     static func state(_ value: String) -> String {
         switch value {
-        case "created", "pending": return "未开始"
-        case "running", "in_progress", "active": return "运行中"
-        case "pending_approval": return "待审批"
-        case "succeeded", "completed": return "已完成"
-        case "failed": return "失败"
-        case "partial": return "部分完成"
-        case "cancelled", "canceled": return "已取消"
-        case "blocked": return "受阻"
-        case "unknown", "": return "结果待核对"
+        case "created", "pending": return L10n.text("Not started")
+        case "running", "in_progress", "active": return L10n.text("Running")
+        case "pending_approval": return L10n.text("Pending approval")
+        case "succeeded", "completed": return L10n.text("Completed")
+        case "failed": return L10n.text("Failed")
+        case "partial": return L10n.text("Partially completed")
+        case "cancelled", "canceled": return L10n.text("Cancelled")
+        case "blocked": return L10n.text("Blocked")
+        case "unknown", "": return L10n.text("Result needs verification")
         default: return value
         }
     }
 
     static func permissionMode(_ value: String) -> String {
         switch value {
-        case "full": return "完全权限"
-        case "readonly", "read_only": return "只读"
-        case "rules", "ask", "guarded", "default", "on-request": return "需要审批"
-        default: return value.isEmpty ? "未知" : value
+        case "full": return L10n.text("Full permission")
+        case "readonly", "read_only": return L10n.text("Read only")
+        case "rules", "ask", "guarded", "default", "on-request": return L10n.text("Approval required")
+        default: return value.isEmpty ? L10n.text("Unknown") : value
         }
     }
 
@@ -748,7 +748,7 @@ enum WorkbenchFormatting {
     }
 
     static func shortDate(_ date: Date?) -> String {
-        guard let date else { return "历史记录" }
+        guard let date else { return L10n.text("History record") }
         let formatter = DateFormatter()
         formatter.dateFormat = "MM-dd HH:mm"
         return formatter.string(from: date)
@@ -762,10 +762,10 @@ enum WorkbenchFormatting {
 
     static func relative(_ date: Date, now: Date = Date()) -> String {
         let seconds = max(0, Int(now.timeIntervalSince(date)))
-        if seconds < 60 { return "刚刚" }
-        if seconds < 3600 { return "\(seconds / 60) 分钟前" }
-        if seconds < 86400 { return "\(seconds / 3600) 小时前" }
-        return "\(seconds / 86400) 天前"
+        if seconds < 60 { return L10n.text("Just now") }
+        if seconds < 3600 { return L10n.format("%@ minutes ago", String(describing: seconds / 60)) }
+        if seconds < 86400 { return L10n.format("%@ hours ago", String(describing: seconds / 3600)) }
+        return L10n.format("%@ days ago", String(describing: seconds / 86400))
     }
 
     static func iso(_ date: Date) -> String {

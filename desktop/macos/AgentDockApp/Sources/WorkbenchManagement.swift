@@ -4,14 +4,14 @@ enum WorkbenchResource: String, CaseIterable {
     case tasks, conversations, approvals, skills, plugins, mcp, workspaces, display
     var title: String {
         switch self {
-        case .tasks: return "任务中心"
-        case .conversations: return "完整对话历史"
-        case .approvals: return "审批与历史"
+        case .tasks: return L10n.text("Task center")
+        case .conversations: return L10n.text("Complete conversation history")
+        case .approvals: return L10n.text("Approvals and history")
         case .skills: return "Skill"
-        case .plugins: return "插件"
+        case .plugins: return L10n.text("Plugins")
         case .mcp: return "MCP"
-        case .workspaces: return "工作区"
-        case .display: return "显示设置"
+        case .workspaces: return L10n.text("Workspaces")
+        case .display: return L10n.text("Display settings")
         }
     }
     var endpoint: String {
@@ -45,7 +45,7 @@ struct WorkbenchManagementPage {
             return
         }
         guard let values = json[resource.arrayKey].arrayValue else {
-            throw WorkbenchClientError.invalidResponse("资源列表格式无效；原页面已保留。")
+            throw WorkbenchClientError.invalidResponse(L10n.text("Invalid resource-list format; the previous page was retained."))
         }
         guard values.count <= (resource.pageable ? 200 : 10000) else {
             throw WorkbenchClientError.responseTooLarge(limit: resource.pageable ? 200 : 10000)
@@ -55,13 +55,13 @@ struct WorkbenchManagementPage {
             let id = resource.identity(item)
             if resource == .conversations && item.flag("is_unattributed") && id.isEmpty { continue }
             guard !id.isEmpty, seen.insert(id).inserted else {
-                throw WorkbenchClientError.invalidResponse("资源标识缺失或重复；原页面已保留。")
+                throw WorkbenchClientError.invalidResponse(L10n.text("Missing or duplicate resource identifiers; the previous page was retained."))
             }
         }
         hasMore = json.flag("has_more")
         nextOffset = Int(json.integer("next_offset", fallback: Int64(offset + values.count)))
         guard !hasMore || nextOffset > offset else {
-            throw WorkbenchClientError.invalidResponse("分页游标没有前进。")
+            throw WorkbenchClientError.invalidResponse(L10n.text("The pagination cursor did not advance."))
         }
         items = values
         total = json["total"].int64Value.map(Int.init) ?? json["count"].int64Value.map(Int.init)

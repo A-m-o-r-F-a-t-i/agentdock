@@ -60,7 +60,7 @@ extension WorkbenchAPIClient {
 
     func callPayload(_ id: String, source: String, offset: Int = 0, limit: Int = 10000) async throws -> WorkbenchJSON {
         guard source == "request" || source == "response" else {
-            throw WorkbenchClientError.configuration("未知调用载荷来源：\(source)")
+            throw WorkbenchClientError.configuration(L10n.format("Unknown call payload source: %@", String(describing: source)))
         }
         let path = "/internal/runtime/calls/\(try encodedPathComponent(id))/payload/\(source)"
         return try await get(queryPath(path, query: [
@@ -129,10 +129,10 @@ extension WorkbenchAPIClient {
         confirmPermanent: Bool = false
     ) async throws -> WorkbenchJSON {
         guard kind == "conversation" || kind == "task" || kind == "call" else {
-            throw WorkbenchClientError.configuration("未知管理对象类型：\(kind)")
+            throw WorkbenchClientError.configuration(L10n.format("Unknown management resource type: %@", String(describing: kind)))
         }
         guard !ids.isEmpty, ids.count <= 200 else {
-            throw WorkbenchClientError.configuration("批量操作必须包含 1–200 个明确对象。")
+            throw WorkbenchClientError.configuration(L10n.text("A batch operation must contain 1–200 explicit resources."))
         }
         let endpoint = kind == "conversation" ? "conversations" : (kind == "task" ? "tasks" : "calls")
         return try await post("/internal/runtime/\(endpoint)/batch", body: .object([
@@ -148,7 +148,7 @@ extension WorkbenchAPIClient {
     @discardableResult
     func conversationLifecycle(id: String, action: String) async throws -> WorkbenchJSON {
         guard action == "terminate" || action == "resume" else {
-            throw WorkbenchClientError.configuration("未知对话生命周期操作：\(action)")
+            throw WorkbenchClientError.configuration(L10n.format("Unknown conversation lifecycle action: %@", String(describing: action)))
         }
         return try await post("/internal/runtime/conversations/\(try encodedPathComponent(id))/\(action)", body: .object([
             "confirm": .bool(true)
@@ -170,7 +170,7 @@ extension WorkbenchAPIClient {
         bindingRevision: UInt64
     ) async throws -> WorkbenchJSON {
         guard bindingRevision <= UInt64(Int64.max) else {
-            throw WorkbenchClientError.configuration("对话绑定修订号超出客户端可编码范围。")
+            throw WorkbenchClientError.configuration(L10n.text("The conversation binding revision exceeds the client encoding range."))
         }
         return try await post("/internal/runtime/conversations/\(try encodedPathComponent(conversationID))/current-task", body: .object([
             "task_id": .string(taskID),
@@ -187,7 +187,7 @@ extension WorkbenchAPIClient {
     @discardableResult
     func decideApproval(_ id: String, action: String, allowWorkspace: Bool = false) async throws -> WorkbenchJSON {
         guard action == "approve" || action == "reject" else {
-            throw WorkbenchClientError.configuration("未知审批操作：\(action)")
+            throw WorkbenchClientError.configuration(L10n.format("Unknown approval action: %@", String(describing: action)))
         }
         return try await post("/internal/runtime/approvals/\(try encodedPathComponent(id))/\(action)", body: .object([
             "allow_workspace": .bool(allowWorkspace)
@@ -203,7 +203,7 @@ extension WorkbenchAPIClient {
     func enqueueInsertion(conversationID: String, submissionID: String, text: String) async throws -> WorkbenchJSON {
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty, normalized.utf8.count <= 16 * 1024 else {
-            throw WorkbenchClientError.configuration("补充内容必须为 1–16384 bytes。")
+            throw WorkbenchClientError.configuration(L10n.text("A supplement must contain 1–16384 bytes."))
         }
         return try await post("/internal/runtime/conversations/\(try encodedPathComponent(conversationID))/insertions", body: .object([
             "submission_id": .string(submissionID),
@@ -214,7 +214,7 @@ extension WorkbenchAPIClient {
     @discardableResult
     func insertionAction(conversationID: String, insertionID: String, action: String) async throws -> WorkbenchJSON {
         guard action == "cancel" || action == "retry" else {
-            throw WorkbenchClientError.configuration("未知插入操作：\(action)")
+            throw WorkbenchClientError.configuration(L10n.format("Unknown insertion action: %@", String(describing: action)))
         }
         return try await post(
             "/internal/runtime/conversations/\(try encodedPathComponent(conversationID))/insertions/\(try encodedPathComponent(insertionID))/\(action)",
