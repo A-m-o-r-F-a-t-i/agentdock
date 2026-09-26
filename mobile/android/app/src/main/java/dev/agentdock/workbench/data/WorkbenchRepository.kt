@@ -8,6 +8,7 @@ import dev.agentdock.workbench.model.NodeHealth
 import dev.agentdock.workbench.model.WorkbenchItem
 import dev.agentdock.workbench.model.WorkbenchSettings
 import dev.agentdock.workbench.model.WorkbenchSnapshot
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import org.json.JSONArray
@@ -23,7 +24,7 @@ class WorkbenchRepository(
 ) {
     private val debugBuild = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
 
-    suspend fun refresh(fixture: Boolean = false, selectedConversation: String = ""): WorkbenchSnapshot {
+    suspend fun refresh(fixture: Boolean = false, selectedConversation: String = "", tasksQuery: ListQuery = ListQuery(), conversationsQuery: ListQuery = ListQuery()): WorkbenchSnapshot {
         if (fixture) {
             check(debugBuild) { "Fixture data is disabled in non-debug builds" }
             return FixtureData.snapshot()
@@ -31,24 +32,28 @@ class WorkbenchRepository(
         val settings = settingsStore.current()
         val client = client(settings)
         return coroutineScope {
-            val health = async { runCatching { client.get("/healthz") } }
-            val sidebar = async { runCatching { client.post("/internal/runtime/execution/sidebar", sidebarRequest()) } }
-            val tasks = async { runCatching { client.get("/internal/runtime/activity/tasks?limit=200&status=all&include_archived=false") } }
-            val calls = async { runCatching { client.get("/internal/runtime/calls?view=active&limit=100&top_level=true&include_output=true") } }
-            val activity = async { runCatching { client.get("/internal/runtime/activity?limit=100&after=0") } }
-            val approvals = async { runCatching { client.get("/internal/runtime/approvals?limit=100") } }
-            val permissions = async { runCatching { client.get("/internal/runtime/permissions/effective") } }
-            val skills = async { runCatching { client.get("/internal/runtime/skills?summary=true") } }
-            val plugins = async { runCatching { client.get("/internal/runtime/plugins") } }
-            val mcp = async { runCatching { client.get("/internal/runtime/mcp") } }
+            val health = async { safeResult { client.get("/healthz") } }
+            val sidebar = async { safeResult { client.post("/internal/runtime/execution/sidebar", sidebarRequest()) } }
+            val conversations = async { safeResult { client.get(ManagementContract.listPath("conversations", conversationsQuery)) } }
+            val tasks = async { safeResult { client.get(ManagementContract.listPath("tasks", tasksQuery)) } }
+            val calls = async { safeResult { client.get("/internal/runtime/calls?view=active&limit=100&top_level=true&include_output=false") } }
+            val activity = async { safeResult { client.get("/internal/runtime/activity?limit=100&after=0") } }
+            val approvals = async { safeResult { client.get("/internal/runtime/approvals?limit=100") } }
+            val permissions = async { safeResult { client.get("/internal/runtime/permissions/effective") } }
+            val skills = async { safeResult { client.get("/internal/runtime/skills?summary=true") } }
+            val plugins = async { safeResult { client.get("/internal/runtime/plugins") } }
+            val mcp = async { safeResult { client.get("/internal/runtime/mcp") } }
             val insertions = async {
                 if (selectedConversation.isBlank()) Result.success(JSONObject())
-                else runCatching { client.get("/internal/runtime/conversations/${id(selectedConversation)}/insertions") }
+                else safeResult { client.get("/internal/runtime/conversations/${id(selectedConversation)}/insertions") }
             }
 
             val healthResult = health.await()
             val sidebarResult = sidebar.await()
             val taskResult = tasks.await()
+            val conversationResult = conversations.await()
+            val taskPageResult = taskResult.mapCatching { ManagementContract.parsePage(it, "tasks") }
+            val conversationPageResult = conversationResult.mapCatching { ManagementContract.parsePage(it, "conversations") }
             val callResult = calls.await()
             val activityResult = activity.await()
             val approvalsResult = approvals.await()
@@ -58,13 +63,21 @@ class WorkbenchRepository(
             val mcpResult = mcp.await()
             val insertionResult = insertions.await()
 
-            val failures = listOf(sidebarResult, taskResult, callResult, activityResult, approvalsResult, permissionsResult, skillsResult, pluginsResult, mcpResult)
-                .count { it.isFailure }
+            val endpointResults = mapOf(
+                "home" to healthResult, "workspaces" to sidebarResult, "tasks" to taskPageResult,
+                "conversations" to conversationPageResult, "calls" to callResult, "activity" to activityResult,
+                "approvals" to approvalsResult, "permissions" to permissionsResult, "skills" to skillsResult,
+                "plugins" to pluginsResult, "mcp" to mcpResult, "insert" to insertionResult
+            )
+            val endpointErrors = endpointResults.mapNotNull { (key, value) ->
+                value.exceptionOrNull()?.let { key to ManagementContract.failure(it) }
+            }.toMap()
+            val failures = endpointErrors.size
             val healthValue = healthResult.getOrNull()
             val coreHealth = when {
                 healthValue != null && failures == 0 -> NodeHealth.Healthy
                 healthValue != null -> NodeHealth.Degraded
-                else -> NodeHealth.Stopped
+                else -> NodeHealth.Unknown
             }
             val sidebarValue = sidebarResult.getOrNull()
             val groups = sidebarValue?.optJSONArray("groups") ?: JSONArray()
@@ -74,17 +87,20 @@ class WorkbenchRepository(
                 connectionMessage = when (coreHealth) {
                     NodeHealth.Healthy -> "Core 已连接"
                     NodeHealth.Degraded -> "Core 已连接，但 $failures 个能力端点不可用"
-                    NodeHealth.Stopped -> healthResult.exceptionOrNull()?.message ?: "Core 未运行或未授权"
+                    NodeHealth.Unknown -> healthResult.exceptionOrNull()?.message ?: "Core 未运行或未授权"
                     else -> "Core 状态未知"
                 },
                 workspaces = parseWorkspaceGroups(groups),
-                conversations = parseConversations(groups),
-                tasks = parseArray(taskResult.getOrNull(), "tasks", "task_id", "title", "status"),
+                conversations = conversationPageResult.getOrNull()?.items.orEmpty(),
+                tasks = taskPageResult.getOrNull()?.items.orEmpty(),
+                errors = endpointErrors,
+                taskPage = taskPageResult.getOrNull() ?: ResourcePage(),
+                conversationPage = conversationPageResult.getOrNull() ?: ResourcePage(),
                 calls = parseArray(callResult.getOrNull(), "calls", "call_id", "display_title", "status", fallbackTitle = "tool_name"),
                 activity = parseArray(activityResult.getOrNull(), "events", "event_id", "title", "status", fallbackTitle = "activity_label"),
                 approvals = parseArray(approvalsResult.getOrNull(), "approvals", "approval_id", "operation", "status", fallbackTitle = "tool_name"),
                 insertions = parseArray(insertionResult.getOrNull(), "insertions", "insertion_id", "text", "status"),
-                skills = parseArray(skillsResult.getOrNull(), "skills", "skill", "name", "status", enabledField = "enabled"),
+                skills = parseArray(skillsResult.getOrNull(), "skills", "skill_ref", "name", "status", enabledField = "enabled"),
                 plugins = parseArray(pluginsResult.getOrNull(), "plugins", "name", "name", "status", enabledField = "enabled"),
                 mcpServers = parseArray(mcpResult.getOrNull(), "servers", "name", "name", "status"),
                 effectivePermissionSummary = permissionSummary(permissionsResult.getOrNull()),
@@ -118,7 +134,7 @@ class WorkbenchRepository(
         )
 
     suspend fun callAction(callId: String, action: String): ActionOutcome {
-        require(action == "stop" || action == "retry")
+        require(action == "stop") { "共享接口不提供调用重试；未执行请求" }
         return client(settingsStore.current()).action("/internal/runtime/calls/${id(callId)}/$action")
     }
 
@@ -145,6 +161,37 @@ class WorkbenchRepository(
 
     suspend fun observeActivity(after: Long, receive: suspend (SseMessage) -> Unit) =
         client(settingsStore.current()).observeSse("/internal/runtime/activity/stream?after=$after", after, receive)
+
+    suspend fun batch(kind: String, ids: List<String>, action: String, title: String = "", tags: List<String> = emptyList(), confirmed: Boolean = false): ActionOutcome {
+        require(kind in setOf("tasks", "conversations"))
+        val body = ManagementContract.batchBody(ids, action, title, tags, confirmed)
+        val value = client(settingsStore.current()).post("/internal/runtime/$kind/batch", body)
+        return ManagementContract.batchOutcome(value, ids)
+    }
+
+    suspend fun detail(kind: String, identity: String): JSONObject {
+        require(kind in setOf("tasks", "conversations", "calls", "approvals"))
+        return client(settingsStore.current()).get("/internal/runtime/$kind/${id(identity)}")
+    }
+
+    suspend fun callChildren(identity: String): JSONObject = client(settingsStore.current()).get(
+        "/internal/runtime/calls?parent_call_id=${id(identity)}&limit=100&include_output=false"
+    )
+
+    suspend fun callPayload(identity: String, kind: String, offset: Long): JSONObject {
+        require(kind in setOf("request", "response", "source") && offset >= 0)
+        val settings = settingsStore.current()
+        check(settings.toolOutputEnabled) { "工具输出显示已关闭" }
+        return client(settings).get("/internal/runtime/calls/${id(identity)}/payload/$kind?offset=$offset&limit_chars=${settings.toolOutputMaxChars}")
+    }
+
+    private inline fun <T> safeResult(block: () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(error)
+    }
 
     private fun client(settings: WorkbenchSettings): CoreClient {
         val origin = EndpointPolicy.resolve(settings.endpoint, settings.remoteEndpointEnabled)
@@ -207,7 +254,7 @@ class WorkbenchRepository(
     ): List<WorkbenchItem> = buildList {
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue
-            val itemId = item.optString(idField, item.optString("id"))
+            val itemId = ManagementContract.text(item, idField).ifBlank { ManagementContract.text(item, "id").ifBlank { ManagementContract.text(item, "name") } }
             if (itemId.isBlank()) continue
             val title = item.optString(titleField).ifBlank { item.optString(fallbackTitle).ifBlank { itemId } }
             val status = if (enabledField.isNotBlank() && item.has(enabledField)) {
