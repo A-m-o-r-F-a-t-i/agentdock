@@ -247,6 +247,8 @@ jobs:
           java-version: "17"
 
       - name: Prepare preinstalled Android SDK
+        env:
+          ANDROID_SYSTEM_IMAGE_API_LEVEL: ${{ matrix.runner_api }}
         run: bash scripts/ci/parallel-android/prepare-runner-sdk.sh
 
       - uses: gradle/actions/setup-gradle@v4
@@ -283,9 +285,7 @@ jobs:
           PY
 
       - name: Run navigation and screenshot tests
-        # Command-line tools 22 fixes Android 37 feature-drop AVD metadata;
-        # pin the reviewed upstream fix instead of the older floating v2 tag.
-        uses: ReactiveCircus/android-emulator-runner@660ac26f5bd4cb6c1d98b2143e66ded57bee724f
+        uses: ReactiveCircus/android-emulator-runner@v2
         env:
           ANDROID_API_LEVEL: ${{ matrix.api }}
           ANDROID_SYSTEM_IMAGE_API_LEVEL: ${{ matrix.runner_api }}
