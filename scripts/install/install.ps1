@@ -1088,17 +1088,20 @@ function Expand-AgentDockReleaseArchive {
         $selectedBytes = [Int64] 0
         foreach ($entry in $archive.Entries) {
             $rawName = [string] $entry.FullName
+            # Windows PowerShell 5.1 Compress-Archive emits backslash entries.
+            # Normalize once before all validation, selection and duplicate checks;
+            # UNC/rooted paths, traversal and mixed-separator aliases still fail.
+            $normalizedName = $rawName.Replace('\', '/')
             if ([string]::IsNullOrEmpty($rawName) -or
                 $rawName.IndexOf([char] 0) -ge 0 -or
-                $rawName.Contains('\') -or
-                $rawName.StartsWith('/', [StringComparison]::Ordinal) -or
+                $normalizedName.StartsWith('/', [StringComparison]::Ordinal) -or
                 $rawName.Contains(':') -or
                 $rawName.Length -gt 4096) {
                 throw "Release archive contains an unsafe path: $rawName"
             }
 
-            $isDirectory = $rawName.EndsWith('/', [StringComparison]::Ordinal)
-            $trimmedName = if ($isDirectory) { $rawName.Substring(0, $rawName.Length - 1) } else { $rawName }
+            $isDirectory = $normalizedName.EndsWith('/', [StringComparison]::Ordinal)
+            $trimmedName = if ($isDirectory) { $normalizedName.Substring(0, $normalizedName.Length - 1) } else { $normalizedName }
             if ([string]::IsNullOrWhiteSpace($trimmedName)) {
                 throw "Release archive contains an empty path: $rawName"
             }

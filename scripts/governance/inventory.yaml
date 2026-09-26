@@ -327,6 +327,7 @@ scripts:
     owner: installer
     public_contract: false
     deletable: false
+    oversize_justification: Isolated native migration and rollback fixture retains bounded scalar diagnostics for asynchronous terminal-state failures.
     notes: 在隔离 runtime 中验证旧 flat Windows 安装可一次性迁移到 committed generation，且不触碰宿主生产实例。
 
   - path: scripts/test/run-windows-installer-e2e-as-standard-user.ps1

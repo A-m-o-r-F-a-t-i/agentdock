@@ -1,4 +1,4 @@
-#requires -Version 7.0
+#requires -Version 5.1
 [CmdletBinding()]
 param()
 
@@ -14,7 +14,8 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 function New-TestArchive {
     param(
         [Parameter(Mandatory = $true)][string] $Path,
-        [scriptblock] $Mutate = $null
+        [scriptblock] $Mutate = $null,
+        [switch] $BackslashPaths
     )
 
     $stream = [IO.File]::Open($Path, [IO.FileMode]::CreateNew, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
@@ -35,7 +36,8 @@ function New-TestArchive {
             'docs/not-installed.txt' = 'irrelevant'
         }
         foreach ($pair in $entries.GetEnumerator()) {
-            Add-TestEntry -Archive $archive -Name $pair.Key -Content $pair.Value
+            $name = if ($BackslashPaths) { $pair.Key.Replace('/', '\') } else { $pair.Key }
+            Add-TestEntry -Archive $archive -Name $name -Content $pair.Value
         }
         if ($null -ne $Mutate) { & $Mutate $archive }
     } finally {
@@ -111,6 +113,17 @@ try {
     Assert-True ($summary.entry_count -eq 12) "unexpected catalogue count: $($summary.entry_count)"
     Assert-True ($summary.selected_entry_count -eq 11) "unexpected selected count: $($summary.selected_entry_count)"
     Assert-True ($summary.skipped_bytes -gt 0) 'skipped byte evidence was not recorded'
+
+    $legacyArchive = Join-Path $normalRoot 'powershell51.zip'
+    $legacyDestination = Join-Path $normalRoot 'legacy-extract'
+    New-TestArchive -Path $legacyArchive -BackslashPaths -Mutate {
+        param($archive)
+        Add-TestEntry -Archive $archive -Name 'share\agentdock\'
+    }
+    $legacy = Expand-AgentDockReleaseArchive -ArchivePath $legacyArchive -DestinationPath $legacyDestination
+    Assert-True ($legacy.selected_entry_count -eq 11) 'legacy backslash ZIP did not preserve selected payload'
+    Assert-True ((Get-Content -LiteralPath (Join-Path $legacyDestination 'share\agentdock\core-skills\manifest.json') -Raw) -eq '{}') 'legacy nested payload was not extracted'
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $legacyDestination 'docs\not-installed.txt'))) 'legacy normalization bypassed selection'
 } finally {
     Remove-Item -LiteralPath $normalRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
@@ -123,6 +136,24 @@ Assert-ArchiveRejected -Name 'traversal' -ExpectedMessage 'path' -Mutate {
 Assert-ArchiveRejected -Name 'duplicate' -ExpectedMessage 'duplicate' -Mutate {
     param($archive)
     Add-TestEntry -Archive $archive -Name 'AGENTDOCK.EXE' -Content 'duplicate'
+}
+
+foreach ($unsafe in @('..\escape.exe', 'share\..\escape.exe', '\rooted.exe', '\\server\share\file.exe', 'C:\drive.exe', 'share\\empty.exe')) {
+    Assert-ArchiveRejected -Name 'backslash-unsafe' -ExpectedMessage 'path' -Mutate {
+        param($archive)
+        Add-TestEntry -Archive $archive -Name $unsafe -Content 'escape'
+    }
+}
+
+Assert-ArchiveRejected -Name 'separator-alias' -ExpectedMessage 'duplicate' -Mutate {
+    param($archive)
+    Add-TestEntry -Archive $archive -Name 'share\agentdock\core-skills\manifest.json' -Content 'duplicate'
+}
+
+Assert-ArchiveRejected -Name 'backslash-parent-file' -ExpectedMessage 'file/directory conflict' -Mutate {
+    param($archive)
+    Add-TestEntry -Archive $archive -Name 'collision' -Content 'file'
+    Add-TestEntry -Archive $archive -Name 'collision\child' -Content 'child'
 }
 
 $symlinkMode = [UInt32]::Parse('A1FF0000', [Globalization.NumberStyles]::HexNumber)
