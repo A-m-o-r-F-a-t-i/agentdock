@@ -97,7 +97,8 @@ data class BridgeOperation(
     val updatedAtEpochMs: Long = createdAtEpochMs,
     val exitCode: Int? = null,
     val stdoutTruncated: Boolean = false,
-    val stderrTruncated: Boolean = false
+    val stderrTruncated: Boolean = false,
+    val resultJson: String = ""
 )
 
 data class WorkbenchItem(

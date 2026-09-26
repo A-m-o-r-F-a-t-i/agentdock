@@ -8,6 +8,7 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 
 class PendingOperationStore(context: Context) {
+    val changes = kotlinx.coroutines.flow.MutableStateFlow(0L)
     private val directory = File(context.filesDir, "operations").apply { mkdirs() }
 
     @Synchronized
@@ -42,7 +43,8 @@ class PendingOperationStore(context: Context) {
         message: String,
         exitCode: Int?,
         stdoutTruncated: Boolean,
-        stderrTruncated: Boolean
+        stderrTruncated: Boolean,
+        resultJson: String = ""
     ): BridgeOperation {
         val current = checkNotNull(get(expected.operationId)) { "Unknown operation" }
         require(current.requestId == expected.requestId && current.nonce == expected.nonce)
@@ -54,7 +56,8 @@ class PendingOperationStore(context: Context) {
             updatedAtEpochMs = System.currentTimeMillis(),
             exitCode = exitCode,
             stdoutTruncated = stdoutTruncated,
-            stderrTruncated = stderrTruncated
+            stderrTruncated = stderrTruncated,
+            resultJson = resultJson
         )
         write(next)
         return next
@@ -69,6 +72,7 @@ class PendingOperationStore(context: Context) {
             stream.write(bytes)
             stream.write('\n'.code)
             target.finishWrite(stream)
+            changes.value = changes.value + 1
         } catch (error: Throwable) {
             target.failWrite(stream)
             throw error
@@ -98,6 +102,7 @@ class PendingOperationStore(context: Context) {
         .put("exit_code", value.exitCode ?: JSONObject.NULL)
         .put("stdout_truncated", value.stdoutTruncated)
         .put("stderr_truncated", value.stderrTruncated)
+        .put("result_data", value.resultJson.takeIf { it.isNotBlank() }?.let(::JSONObject) ?: JSONObject.NULL)
 
     private fun decode(value: String): BridgeOperation {
         val json = JSONObject(value)
@@ -113,12 +118,13 @@ class PendingOperationStore(context: Context) {
             updatedAtEpochMs = json.optLong("updated_at_epoch_ms", json.getLong("created_at_epoch_ms")),
             exitCode = if (json.isNull("exit_code")) null else json.getInt("exit_code"),
             stdoutTruncated = json.optBoolean("stdout_truncated"),
-            stderrTruncated = json.optBoolean("stderr_truncated")
+            stderrTruncated = json.optBoolean("stderr_truncated"),
+            resultJson = json.optJSONObject("result_data")?.toString().orEmpty()
         )
     }
 
     companion object {
-        private const val MAX_FILE_BYTES = 16 * 1024L
+        private const val MAX_FILE_BYTES = 64 * 1024L
         private const val MAX_FILES = 128
         private const val MAX_MESSAGE_CHARS = 2048
         private fun validId(value: String) = Regex("^[A-Za-z0-9_-]{1,96}$").matches(value)

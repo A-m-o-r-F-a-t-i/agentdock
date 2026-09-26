@@ -48,7 +48,8 @@ class TermuxResultService : Service() {
             message = result.message,
             exitCode = exitCode,
             stdoutTruncated = stdoutOriginal > stdout.length || stdout.length >= TermuxContract.MAX_RESULT_CHARS,
-            stderrTruncated = stderrOriginal > stderr.length || stderr.length >= TermuxContract.MAX_RESULT_CHARS
+            stderrTruncated = stderrOriginal > stderr.length || stderr.length >= TermuxContract.MAX_RESULT_CHARS,
+            resultJson = result.dataJson
         )
     }
 
@@ -59,7 +60,7 @@ class TermuxResultService : Service() {
     }
 }
 
-data class ValidatedTermuxResult(val phase: String, val message: String)
+data class ValidatedTermuxResult(val phase: String, val message: String, val dataJson: String = "")
 
 object TermuxResultValidator {
     fun validate(
@@ -82,7 +83,7 @@ object TermuxResultValidator {
         val json = runCatching { JSONObject(stdout) }.getOrElse {
             return ValidatedTermuxResult("failed", "Termux 未返回有效 JSON；原始输出不写入操作摘要")
         }
-        if (json.optInt("schema_version") != 1 ||
+        if (json.opt("schema_version") != 1 ||
             json.optString("operation_id") != expected.operationId ||
             json.optString("request_id") != expected.requestId ||
             json.optString("nonce") != expected.nonce ||
@@ -92,15 +93,16 @@ object TermuxResultValidator {
         if (TermuxResultPolicy.containsSecretFields(json)) {
             return ValidatedTermuxResult("failed", "旧桥返回了凭据字段，已拒绝导入；请更新桥并使用管理连接配对")
         }
+        val dataJson = BridgeResultData.sanitize(json.optJSONObject("data"))
         if (exitCode != 0) return ValidatedTermuxResult("failed",
-            TermuxResultPolicy.safeMessage(json.optString("message")).ifBlank { "Termux 执行失败（exit ${exitCode ?: "unknown"}）" })
+            TermuxResultPolicy.safeMessage(json.optString("message")).ifBlank { "Termux 执行失败（exit ${exitCode ?: "unknown"}）" }, dataJson)
         val status = json.optString("status")
         val message = TermuxResultPolicy.safeMessage(json.optString("message")).ifBlank { status }
         return when {
-            status == "pending_manifest" -> ValidatedTermuxResult("pending_manifest", message)
-            status == "requires_user_action" -> ValidatedTermuxResult("requires_user_action", message)
+            status == "pending_manifest" -> ValidatedTermuxResult("pending_manifest", message, dataJson)
+            status == "requires_user_action" -> ValidatedTermuxResult("requires_user_action", message, dataJson)
             status in setOf("ok", "healthy", "running", "stopped", "adopted", "installed", "updated", "rolled_back") && exitCode == 0 ->
-                ValidatedTermuxResult("succeeded", message)
+                ValidatedTermuxResult("succeeded", message, dataJson)
             else -> ValidatedTermuxResult("failed", message.ifBlank { "Termux operation failed (exit ${exitCode ?: "unknown"})" })
         }
     }
