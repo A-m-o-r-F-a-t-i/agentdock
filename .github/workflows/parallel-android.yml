@@ -2,7 +2,7 @@ name: WB07 Android Candidate
 
 on:
   push:
-    branches: ["__wb07-sync-disabled__"]
+    branches: ["parallel/20260925/android"]
 
 permissions:
   contents: read
