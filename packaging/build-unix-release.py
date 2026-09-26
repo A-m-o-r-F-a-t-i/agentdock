@@ -52,7 +52,7 @@ def linux_packages(stage: Path, output: Path, version: str, arch: str) -> list[P
         (control/'control').write_text(
             f'Package: agentdock-workbench\nVersion: {version}\nArchitecture: {arch}\n'
             'Maintainer: AgentDock Workbench contributors\nSection: devel\nPriority: optional\n'
-            'Homepage: https://github.com/A-m-o-r-F-a-t-i/agentdock\n'
+            'Homepage: https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench\n'
             'Description: AgentDock Workbench MCP runtime\n Local tool runtime with tasks, approvals and recoverable execution.\n', encoding='utf-8')
         deb = output/f'agentdock-workbench_{version}_{arch}.deb'
         run('dpkg-deb','--build','--root-owner-group',str(package),str(deb))
@@ -74,7 +74,7 @@ Version: {version}
 Release: 1
 Summary: AgentDock Workbench MCP runtime
 License: {LICENSE_ID}
-URL: https://github.com/A-m-o-r-F-a-t-i/agentdock
+URL: https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench
 BuildArch: {rpmarch}
 AutoReqProv: no
 %description

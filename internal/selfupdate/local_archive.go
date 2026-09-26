@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -57,25 +56,16 @@ func RunLocalArchive(ctx context.Context, archivePath, checksumPath, targetVersi
 	}
 	defer os.RemoveAll(tempDir)
 
-	binaryData, err := extractExecutable(archiveData, opts.GOOS, executableName)
+	payload, err := extractWindowsReleasePayload(archiveData, tempDir, executableName, targetVersion)
 	if err != nil {
-		return fmt.Errorf("extract local update core: %w", err)
+		return fmt.Errorf("extract local Windows Release payload: %w", err)
 	}
-	stagedPath := filepath.Join(tempDir, executableName)
-	if err := os.WriteFile(stagedPath, binaryData, 0o755); err != nil {
-		return fmt.Errorf("stage local update core: %w", err)
-	}
-	bundlePath, err := extractCoreSkillBundle(archiveData, opts.GOOS, tempDir)
-	if err != nil {
-		return fmt.Errorf("extract local core Skill Bundle: %w", err)
-	}
+	stagedPath := payload.CorePath
+	bundlePath := payload.BundlePath
 	if err := opts.VerifyBinary(ctx, stagedPath, targetVersion); err != nil {
 		return fmt.Errorf("verify local update core: %w", err)
 	}
-	desktopStagedPath, err := opts.ExtractDesktop(ctx, archiveData, tempDir, targetVersion)
-	if err != nil {
-		return fmt.Errorf("extract local desktop payload: %w", err)
-	}
+	desktopStagedPath := payload.DesktopPath
 
 	fmt.Fprintf(opts.Output, "使用本地 Release 归档更新：%s → %s\n", currentVersion, targetVersion)
 	result, err := opts.Apply(ctx, applyRequest{

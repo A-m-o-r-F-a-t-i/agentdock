@@ -22,10 +22,11 @@ type FileChange struct {
 	StatsKnown bool   `json:"stats_known"`
 }
 type ExecutionCall struct {
-	Request        *Payload   `json:"request,omitempty"`
-	Response       *Payload   `json:"response,omitempty"`
-	OutputSource   *Payload   `json:"output_source,omitempty"`
-	LastActivityAt *time.Time `json:"last_activity_at,omitempty"`
+	Request           *Payload   `json:"request,omitempty"`
+	Response          *Payload   `json:"response,omitempty"`
+	OutputSource      *Payload   `json:"output_source,omitempty"`
+	LastActivityAt    *time.Time `json:"last_activity_at,omitempty"`
+	LastInteractionAt *time.Time `json:"last_interaction_at,omitempty"`
 	CallMeasurements
 	FileEdit *FileEditDetails `json:"file_edit,omitempty"`
 	CallManagement
@@ -101,21 +102,22 @@ type CallPage struct {
 	Warnings      []string        `json:"warnings,omitempty"`
 }
 type CallStats struct {
-	LastActivityAt  *time.Time `json:"last_activity_at,omitempty"`
-	LastToolCallAt  *time.Time `json:"last_tool_call_at,omitempty"`
-	Total           int        `json:"total"`
-	Running         int        `json:"running"`
-	Pending         int        `json:"pending"`
-	Succeeded       int        `json:"succeeded"`
-	Partial         int        `json:"partial"`
-	Failed          int        `json:"failed"`
-	Cancelled       int        `json:"cancelled"`
-	Unknown         int        `json:"unknown"`
-	DurationSamples int        `json:"duration_samples"`
-	TotalElapsedMS  int64      `json:"total_elapsed_ms"`
-	P50ElapsedMS    *int64     `json:"p50_elapsed_ms,omitempty"`
-	P95ElapsedMS    *int64     `json:"p95_elapsed_ms,omitempty"`
-	LatestAt        time.Time  `json:"latest_at"`
+	LastActivityAt    *time.Time `json:"last_activity_at,omitempty"`
+	LastInteractionAt *time.Time `json:"last_interaction_at,omitempty"`
+	LastToolCallAt    *time.Time `json:"last_tool_call_at,omitempty"`
+	Total             int        `json:"total"`
+	Running           int        `json:"running"`
+	Pending           int        `json:"pending"`
+	Succeeded         int        `json:"succeeded"`
+	Partial           int        `json:"partial"`
+	Failed            int        `json:"failed"`
+	Cancelled         int        `json:"cancelled"`
+	Unknown           int        `json:"unknown"`
+	DurationSamples   int        `json:"duration_samples"`
+	TotalElapsedMS    int64      `json:"total_elapsed_ms"`
+	P50ElapsedMS      *int64     `json:"p50_elapsed_ms,omitempty"`
+	P95ElapsedMS      *int64     `json:"p95_elapsed_ms,omitempty"`
+	LatestAt          time.Time  `json:"latest_at"`
 }
 type callProjection struct {
 	seq            uint64
@@ -304,6 +306,7 @@ func cloneCall(call *ExecutionCall, output bool) ExecutionCall {
 	copied.OutputSource = call.OutputSource.clone(output)
 	copied.CallMeasurements = call.CallMeasurements.clone()
 	copied.LastActivityAt = copyValue(call.LastActivityAt)
+	copied.LastInteractionAt = copyValue(call.LastInteractionAt)
 	copied.FileEdit = call.FileEdit.clone(output)
 	copied.FileChanges = append([]FileChange(nil), call.FileChanges...)
 	if !output {
@@ -451,6 +454,9 @@ func (accumulator *callStatsAccumulator) add(call *ExecutionCall) {
 	}
 	if call.LastActivityAt != nil && (stats.LastActivityAt == nil || call.LastActivityAt.After(*stats.LastActivityAt)) {
 		stats.LastActivityAt = copyValue(call.LastActivityAt)
+	}
+	if call.LastInteractionAt != nil && (stats.LastInteractionAt == nil || call.LastInteractionAt.After(*stats.LastInteractionAt)) {
+		stats.LastInteractionAt = copyValue(call.LastInteractionAt)
 	}
 	if call.UpdatedAt.After(stats.LatestAt) {
 		stats.LatestAt = call.UpdatedAt

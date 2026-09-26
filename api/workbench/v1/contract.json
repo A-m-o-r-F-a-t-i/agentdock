@@ -1,0 +1,583 @@
+{
+  "schema_version": 1,
+  "contract_revision": 3,
+  "name": "AgentDock Workbench Local Control API",
+  "base_path": "/internal/runtime",
+  "architecture": {
+    "client": "agentdock CLI",
+    "authority": "existing AgentDock Core domain services",
+    "invariant": "The CLI and WB01 thin routes never create a second task, conversation, call, approval, permission, insertion, activity, or workspace state machine."
+  },
+  "transport": {
+    "schemes": [
+      "http",
+      "https"
+    ],
+    "ordinary_response_limit_bytes": 8388608,
+    "management_write_policy": "authentication plus existing direct-loopback verification",
+    "proxy_headers_establish_locality": false
+  },
+  "authentication": {
+    "header": "Authorization: Bearer <token>",
+    "sources": [
+      "token_file",
+      "AGENTDOCK_TOKEN_FILE",
+      "AGENTDOCK_AUTH_TOKEN",
+      "OAuth access-token file"
+    ],
+    "forbidden_cli_source": "plaintext command-line token value",
+    "redaction": "credentials never appear in normal, JSON, JSONL, verbose, error, or handoff output"
+  },
+  "configuration": {
+    "precedence": [
+      "command flag",
+      "environment",
+      "selected local profile",
+      "built-in default"
+    ],
+    "default_profile_file": "$AGENTDOCK_HOME/cli.json or ~/.agentdock/cli.json",
+    "formats": [
+      "human",
+      "json",
+      "jsonl"
+    ]
+  },
+  "errors": {
+    "envelope": {
+      "ok": false,
+      "code": "STABLE_CODE",
+      "error": "human-readable message",
+      "exit_code": 4
+    },
+    "exit_codes": {
+      "0": "success",
+      "1": "operation failed or object reached a failed terminal state",
+      "2": "invalid arguments or malformed input",
+      "3": "resource not found",
+      "4": "authentication or permission denied",
+      "5": "transport, Core, or local service failure",
+      "6": "approval required or still pending",
+      "7": "conflict, failed precondition, or uncertain terminal state",
+      "8": "capability unsupported; no operation was performed",
+      "9": "partial success or partial failure",
+      "10": "request or wait timeout",
+      "130": "user interruption or parent context cancellation"
+    },
+    "http_to_exit": {
+      "400": 2,
+      "401": 4,
+      "403": 4,
+      "404": 3,
+      "405": 8,
+      "408": 10,
+      "409": 7,
+      "412": 7,
+      "422": 2,
+      "429": 7,
+      "501": 8,
+      "502": 5,
+      "503": 5,
+      "504": 10,
+      "207": 9
+    }
+  },
+  "pagination": {
+    "offset": {
+      "request": [
+        "offset",
+        "limit"
+      ],
+      "response": [
+        "total",
+        "has_more",
+        "next_offset"
+      ]
+    },
+    "sequence": {
+      "request": [
+        "after",
+        "before",
+        "limit"
+      ],
+      "response": [
+        "has_more",
+        "next_seq"
+      ]
+    },
+    "ordinary_maximum_page_size": 200,
+    "event_maximum_page_size": 500,
+    "implicit_fetch_all": false
+  },
+  "payloads": {
+    "cursor_unit": "UTF-8 byte offset",
+    "limit_unit": "Unicode scalar values",
+    "maximum_limit_chars": 100000,
+    "kinds": [
+      "request",
+      "response",
+      "source"
+    ]
+  },
+  "events": {
+    "content_type": "text/event-stream",
+    "fields": [
+      "id",
+      "event",
+      "data"
+    ],
+    "resume": [
+      "Last-Event-ID",
+      "after"
+    ],
+    "retryable": [
+      "network failure",
+      "HTTP 429",
+      "HTTP 5xx",
+      "clean server close"
+    ],
+    "terminal": [
+      "authentication failure",
+      "invalid content type",
+      "output failure"
+    ],
+    "backoff": {
+      "minimum_ms": 250,
+      "maximum_ms": 5000,
+      "maximum_consecutive_cold_failures": 8
+    },
+    "jsonl": "one JSON object per event; a terminal machine-readable error is a final JSONL object"
+  },
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/status",
+      "commands": [
+        "status"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/execution/tasks",
+      "commands": [
+        "task list"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/tasks/{task_id}",
+      "commands": [
+        "task show",
+        "task steps",
+        "task export"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/tasks/{task_id}/calls",
+      "commands": [
+        "task calls"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/tasks",
+      "commands": [
+        "task create",
+        "task checkpoint",
+        "task block",
+        "task resume",
+        "task final-review",
+        "task complete",
+        "task cancel"
+      ],
+      "local_write": true,
+      "delegates_to": "task_manage"
+    },
+    {
+      "method": "POST",
+      "path": "/tasks/batch",
+      "commands": [
+        "task pin",
+        "task unpin",
+        "task tags",
+        "task archive",
+        "task unarchive",
+        "task trash",
+        "task restore",
+        "task rename",
+        "task delete"
+      ],
+      "local_write": true
+    },
+    {
+      "method": "GET",
+      "path": "/workspaces",
+      "commands": [
+        "workspace list"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/workspaces/{workspace_id}",
+      "commands": [
+        "workspace show",
+        "workspace status"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/workspaces",
+      "commands": [
+        "workspace create",
+        "workspace register",
+        "workspace update",
+        "workspace validate",
+        "workspace resolve"
+      ],
+      "local_write": true,
+      "delegates_to": "workspace_manage"
+    },
+    {
+      "method": "GET",
+      "path": "/conversations",
+      "commands": [
+        "conversation list"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/conversations/{conversation_id}",
+      "commands": [
+        "conversation show",
+        "conversation tasks",
+        "conversation export"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/conversations/{conversation_id}/calls",
+      "commands": [
+        "conversation calls"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/conversations/{conversation_id}/stream",
+      "commands": [
+        "conversation follow"
+      ],
+      "stream": true
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/current-task",
+      "commands": [
+        "conversation attach",
+        "conversation detach"
+      ],
+      "local_write": true,
+      "optimistic_revision": "binding_revision"
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/link-task",
+      "commands": [
+        "conversation link"
+      ],
+      "local_write": true
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/terminate",
+      "commands": [
+        "conversation stop"
+      ],
+      "local_write": true
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/resume",
+      "commands": [
+        "conversation resume"
+      ],
+      "local_write": true
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/batch",
+      "commands": [
+        "conversation pin",
+        "conversation unpin",
+        "conversation tags",
+        "conversation archive",
+        "conversation unarchive",
+        "conversation trash",
+        "conversation restore",
+        "conversation rename",
+        "conversation delete"
+      ],
+      "local_write": true
+    },
+    {
+      "method": "GET",
+      "path": "/calls",
+      "commands": [
+        "call list"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/calls/stream",
+      "commands": [
+        "call follow",
+        "task follow"
+      ],
+      "stream": true
+    },
+    {
+      "method": "GET",
+      "path": "/calls/export",
+      "commands": [
+        "call export",
+        "activity export"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/calls/{call_id}",
+      "commands": [
+        "call show",
+        "call wait"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/calls/{call_id}/events",
+      "commands": [
+        "call events"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/calls/{call_id}/payload/{kind}",
+      "commands": [
+        "call logs"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/calls/{call_id}/stop",
+      "commands": [
+        "call cancel"
+      ],
+      "local_write": true
+    },
+    {
+      "method": "POST",
+      "path": "/calls/batch",
+      "commands": [
+        "call archive",
+        "call unarchive",
+        "call isolate",
+        "call unisolate",
+        "call trash",
+        "call restore",
+        "call delete"
+      ],
+      "local_write": true
+    },
+    {
+      "method": "GET",
+      "path": "/activity",
+      "commands": [
+        "activity list"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/activity/stream",
+      "commands": [
+        "activity watch"
+      ],
+      "stream": true
+    },
+    {
+      "method": "GET",
+      "path": "/conversations/{conversation_id}/insertions",
+      "commands": [
+        "insertion list",
+        "insertion show",
+        "insertion wait"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/insertions",
+      "commands": [
+        "insertion send"
+      ],
+      "local_write": true
+    },
+    {
+      "method": "POST",
+      "path": "/conversations/{conversation_id}/insertions/{insertion_id}/{cancel|retry}",
+      "commands": [
+        "insertion cancel",
+        "insertion retry"
+      ],
+      "local_write": true
+    },
+    {
+      "method": "GET",
+      "path": "/approvals",
+      "commands": [
+        "approval list",
+        "approval history"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/approvals/{approval_id}",
+      "commands": [
+        "approval show",
+        "approval wait"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/approvals/{approval_id}/{approve|reject}",
+      "commands": [
+        "approval approve",
+        "approval reject"
+      ],
+      "local_write": true
+    },
+    {
+      "method": "GET",
+      "path": "/permissions/effective",
+      "commands": [
+        "permission show",
+        "permission effective"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/permissions",
+      "commands": [
+        "permission set"
+      ],
+      "local_write": true,
+      "optimistic_revision": "expected_revision"
+    },
+    {
+      "method": "GET",
+      "path": "/skills",
+      "commands": [
+        "skill list"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/skills/{skill}",
+      "commands": [
+        "skill show",
+        "skill status"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/plugins",
+      "commands": [
+        "plugin list"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/plugins/{plugin}",
+      "commands": [
+        "plugin show",
+        "plugin status"
+      ]
+    }
+  ],
+  "safety_confirmations": {
+    "permission_full": "--confirm-full plus expected_revision",
+    "permanent_management_delete": "--confirm-permanent",
+    "workspace_update": "--expected-revision",
+    "conversation_binding": "read then submit binding_revision",
+    "insertion_idempotency": "submission_id"
+  },
+  "explicitly_unavailable": [
+    "workspace set-default or unregister",
+    "generic task or conversation update",
+    "server-side dry-run for filter-based batch mutation",
+    "call retry or rerun",
+    "activity single-event show",
+    "permission profile CRUD",
+    "skill enable, disable, or refresh",
+    "plugin active test or reload",
+    "insertion-specific follow stream"
+  ],
+  "legacy_compatibility": [
+    "version and --version",
+    "update",
+    "skill bootstrap",
+    "plugin validate",
+    "plugin migrate --home",
+    "plugin list --home",
+    "install",
+    "uninstall",
+    "nexus",
+    "tunnel",
+    "server startup without a subcommand"
+  ],
+  "domain_contracts": {
+    "permissions": {
+      "authority": "internal/permission",
+      "schema_version": 3,
+      "effective_fields": [
+        "custom_permissions_enabled",
+        "configured_settings",
+        "settings_source",
+        "settings_scope",
+        "settings_scope_id",
+        "custom_permissions_scope",
+        "custom_permissions_scope_id"
+      ],
+      "write_fields": [
+        "custom_permissions_enabled",
+        "expected_revision",
+        "inherit_settings"
+      ],
+      "disabled_custom_settings": "Preserve configured_settings; derive effective settings from execution mode. Never erase saved custom settings.",
+      "fresh_install_default": "full only after installer proves a pristine Home and no previous installation; never infer fresh install from missing policy.json."
+    },
+    "insertions": {
+      "authority": "internal/insertion",
+      "public_fields": [
+        "receipt_type",
+        "next_retry_at",
+        "automatic_attempts_remaining",
+        "total_attempts_remaining",
+        "manual_retry_available",
+        "delivery_reason"
+      ],
+      "unconfirmed_receipt_type": "none",
+      "maximum_automatic_deliveries": 3,
+      "maximum_total_deliveries": 6,
+      "receipt_wait_ms": 30000,
+      "original_lifetime_ms": 300000,
+      "retry_invariant": "Server-owned retry budgets; redeliver supplement only, never repeat the original tool operation or extend original expiry.",
+      "receipt_invariant": "receiver_receipt is not model-context confirmation; host_context_committed is not execution completion."
+    },
+    "activity": {
+      "authority": "internal/activity",
+      "schema": "activity/conversation-status.schema.json",
+      "fixture": "activity/conversation-status.fixture.json",
+      "boundaries_fixture": "activity/activity-boundaries.fixture.json",
+      "recent_interaction_window_ms": 120000,
+      "insertion_eligibility_window_ms": 180000,
+      "clock": "server_now with monotonic elapsed time; detached output and rendering do not renew last_interaction_at."
+    }
+  }
+}

@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	agentDockRepositoryURL = "https://github.com/A-m-o-r-F-a-t-i/agentdock"
+	agentDockRepositoryURL = "https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench"
 	agentDockDocsURL       = "https://uvwt.github.io/agentdock-docs/"
 	agentDockQQGroup       = "1081337019"
 	agentDockQQGroupURL    = "https://qun.qq.com/universal-share/share?ac=1&authKey=Rp86bSzI7vqm87KoYlKawgsPZ440Ubhyezw6Qkgcn3JISwX3zXxsXkbS5598RrY5&busi_data=eyJncm91cENvZGUiOiIxMDgxMzM3MDE5IiwidG9rZW4iOiJ0Mlg1bUU1ZWtuZzF3SHJDT3pSaGsrOURIMlNYaXBlYllOUjNLZ1BUb1hzM2lJSTZjeVNldzU0ajl0SjRVZkx2IiwidWluIjoiMzIwMjA4ODAzMiJ9&data=W28mWvuqaLf_Fwnf0CgAJXuDs6l3A78V7AoWZnizPboCpKoQMzHzZ-UlluYo47U3tmIBHK2xIgWEVEJbTiGsPQ&svctype=4&tempid=h5_group_info"

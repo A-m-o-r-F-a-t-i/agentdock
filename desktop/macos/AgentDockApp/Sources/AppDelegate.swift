@@ -9,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var currentStatus = ServiceStatus.missing
     private var timer: Timer?
+    private lazy var completionNotifications = WorkbenchCompletionNotifications { [weak self] notification in
+        self?.workbenchWindow.presentTask(notification.taskID)
+    }
     private var isUpdating = false
     private var isCheckingForUpdate = false
     private var trayServiceActionInProgress = false
@@ -23,8 +26,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.startUpdate()
         }
     )
+    private lazy var workbenchWindow: WorkbenchWindowController = {
+        let controller = WorkbenchWindowController(
+            fixtureMode: CommandLine.arguments.contains("--workbench-fixture")
+        )
+        controller.onOpenSettings = { [weak self] in
+            guard let self else { return }
+            self.setupWindow.present(status: self.currentStatus)
+        }
+        controller.onOpenPermissions = { [weak self] in
+            self?.setupWindow.presentPermissions()
+        }
+        return controller
+    }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if CommandLine.arguments.contains("--workbench-fixture") {
+            setStatusItemVisible(false)
+            workbenchWindow.present()
+            return
+        }
         let recoveryReady = DesktopUpdateTransactionRecovery.recoverIfNeeded(paths: service.paths)
         var pendingUpdateResult = DesktopUpdateResult.load(from: service.paths.updateResult)
         var updateResultExists = FileManager.default.fileExists(atPath: service.paths.updateResult.path)
@@ -89,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.refreshStatus()
             }
         }
+        completionNotifications.start()
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshStatus()
@@ -98,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+        completionNotifications.stop()
     }
 
     private func setUpdateInProgress(_ inProgress: Bool, checking: Bool = false) {
@@ -428,9 +451,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.currentStatus = status
                 self.rebuildMenu()
                 if showWindow {
-                    self.setupWindow.present(status: status)
+                    if status.installed {
+                        self.workbenchWindow.present()
+                    } else {
+                        self.setupWindow.present(status: status)
+                    }
                 } else if self.setupWindow.window?.isVisible == true {
                     self.setupWindow.refreshServiceStatus(status)
+                } else if self.workbenchWindow.window?.isVisible == true {
+                    self.workbenchWindow.refresh()
                 }
             }
         }
@@ -445,7 +474,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return true
         }
-        setupWindow.present(status: currentStatus)
+        if currentStatus.installed {
+            workbenchWindow.present()
+        } else {
+            setupWindow.present(status: currentStatus)
+        }
         return true
     }
 
@@ -496,7 +529,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(statusMenuItem)
         menu.addItem(.separator())
 
-        menu.addItem(item(currentStatus.installed ? L10n.text("Open AgentDock") : L10n.text("Set up AgentDock…"), #selector(showSetup)))
+        menu.addItem(item(currentStatus.installed ? L10n.text("Open AgentDock") : L10n.text("Set up AgentDock…"), currentStatus.installed ? #selector(showWorkbench) : #selector(showSetup)))
         menu.addItem(item(L10n.text("Check permissions"), #selector(openPermissions)))
         if currentStatus.installed {
             menu.addItem(.separator())
@@ -527,6 +560,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSetup() { setupWindow.present(status: currentStatus) }
+    @objc private func showWorkbench() { workbenchWindow.present() }
+    @objc func showWorkbenchFromMenu(_ sender: Any?) {
+        if currentStatus.installed || CommandLine.arguments.contains("--workbench-fixture") {
+            workbenchWindow.present()
+        } else {
+            setupWindow.present(status: currentStatus)
+        }
+    }
     @objc private func showUpdateProgress() { updateProgressWindow.present() }
     @objc private func openPermissions() { setupWindow.presentPermissions() }
     @objc private func openLogs() { service.openLogs() }

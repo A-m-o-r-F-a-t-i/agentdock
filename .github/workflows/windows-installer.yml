@@ -99,6 +99,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           go test ./internal/envstore ./internal/fs/securepath
 
+      - name: Test archive normalization and security on Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\ci\parallel-installer\test-setup-archive.ps1
+
       - name: Test Setup runtime diagnostics
         shell: powershell
         run: |

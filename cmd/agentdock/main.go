@@ -19,14 +19,28 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintf(os.Stderr, "agentdock: %v\n", err)
-		os.Exit(1)
+		if !controlErrorReported(err) {
+			fmt.Fprintf(os.Stderr, "agentdock: %v\n", err)
+		}
+		os.Exit(commandExitCode(err))
 	}
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	if handled, err := selfupdate.HandleInternalCommand(ctx, args); handled {
 		return err
+	}
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h") {
+		return runHelpCommand(nil, stdout)
+	}
+	if len(args) > 0 && args[0] == "help" {
+		return runHelpCommand(args[1:], stdout)
+	}
+	if len(args) > 0 && args[0] == "completion" {
+		return runCompletionCommand(args[1:], stdout)
+	}
+	if len(args) > 0 && args[0] == "logs" {
+		return runLogsCommand(ctx, args[1:], stdout, stderr)
 	}
 	if len(args) == 1 && args[0] == "--version" {
 		// Existing 1.1.6 updaters parse this first line as a wire contract.
@@ -66,6 +80,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			return errors.New("用法：agentdock update [--check|--progress-json|--local-archive <zip> --checksum <sha256> --target-version <version>]")
 		}
 	}
+	if len(args) > 0 {
+		switch args[0] {
+		case "status", "task", "activity", "workspace", "conversation", "call", "approval", "permission", "insertion", "doctor":
+			return renderControlCommandError(args[1:], stdout, runControlCommand(ctx, args[0], args[1:], stdout, stderr))
+		}
+	}
 	if len(args) > 0 && args[0] == "service" {
 		return runServiceCommand(ctx, args[1:], stdout, stderr)
 	}
@@ -76,9 +96,15 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		return desktopruntime.RunConfigCommand(ctx, args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "skill" {
+		if isControlSkillCommand(args[1:]) {
+			return renderControlCommandError(args[1:], stdout, runControlCommand(ctx, "skill", args[1:], stdout, stderr))
+		}
 		return runSkillCommand(ctx, args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "plugin" {
+		if isControlPluginCommand(args[1:]) {
+			return renderControlCommandError(args[1:], stdout, runControlCommand(ctx, "plugin", args[1:], stdout, stderr))
+		}
 		return runPluginCommand(ctx, args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "nexus" {

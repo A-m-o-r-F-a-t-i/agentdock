@@ -138,9 +138,13 @@ func RecentlyActive(last *time.Time, now time.Time, terminated bool) bool {
 
 func genuineActivityEvent(kind string) bool {
 	switch kind {
-	case "call.created", "call.bound", "call.pending", "call.started", "call.completed", "call.rpc_returned",
+	case "call.created", "call.pending", "call.started", "call.completed", "call.rpc_returned",
 		"command.started", "command.output", "tool.output", "command.completed", "tool.started", "tool.completed", "file.requested", "file.changed":
 		return true
 	}
 	return false
+}
+
+func genuineInteractionEvent(kind string, rpcAlreadyReturned bool) bool {
+	return !rpcAlreadyReturned && genuineActivityEvent(kind)
 }

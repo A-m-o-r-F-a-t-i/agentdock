@@ -1,0 +1,12 @@
+{
+  "calls": [
+    {
+      "call_id": "call_0123456789abcdef",
+      "status": "succeeded",
+      "tool_name": "agentdock_context"
+    }
+  ],
+  "total": 1,
+  "has_more": false,
+  "next_seq": 42
+}

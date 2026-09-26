@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "server_now": "2026-09-25T12:02:00Z",
+  "recent_interaction_window_ms": 120000,
+  "insertion_eligibility_window_ms": 180000,
+  "unclaimed_insertion_expiry_ms": 300000,
+  "receipt_wait_ms": 30000,
+  "groups": [
+    {
+      "workspace_id": "wsp_a",
+      "recent_count": 1,
+      "execution_count": 2,
+      "conversations": [
+        {
+          "conversation_id": "conv_recent",
+          "is_unattributed": false,
+          "recently_active": true,
+          "in_flight": false,
+          "last_interaction_at": "2026-09-25T12:00:00.001Z",
+          "interaction_expires_at": "2026-09-25T12:02:00.001Z",
+          "last_activity_at": "2026-09-25T12:00:00.001Z",
+          "statistics": {
+            "last_tool_call_at": "2026-09-25T12:00:00.001Z",
+            "last_interaction_at": "2026-09-25T12:00:00.001Z",
+            "last_activity_at": "2026-09-25T12:00:00.001Z",
+            "running": 0,
+            "pending": 0
+          }
+        },
+        {
+          "conversation_id": "conv_daemon",
+          "is_unattributed": false,
+          "recently_active": false,
+          "in_flight": true,
+          "last_interaction_at": "2026-09-25T11:40:00Z",
+          "interaction_expires_at": "2026-09-25T11:42:00Z",
+          "last_activity_at": "2026-09-25T12:01:59.900Z",
+          "statistics": {
+            "last_tool_call_at": "2026-09-25T11:40:00Z",
+            "last_interaction_at": "2026-09-25T11:40:00Z",
+            "last_activity_at": "2026-09-25T12:01:59.900Z",
+            "running": 1,
+            "pending": 0
+          }
+        },
+        {
+          "conversation_id": "conv_approval",
+          "is_unattributed": false,
+          "recently_active": false,
+          "in_flight": true,
+          "last_interaction_at": "2026-09-25T11:50:00.200Z",
+          "interaction_expires_at": "2026-09-25T11:52:00.200Z",
+          "last_activity_at": "2026-09-25T11:50:00.200Z",
+          "statistics": {
+            "last_tool_call_at": "2026-09-25T11:50:00Z",
+            "last_interaction_at": "2026-09-25T11:50:00.200Z",
+            "last_activity_at": "2026-09-25T11:50:00.200Z",
+            "running": 0,
+            "pending": 1
+          }
+        }
+      ]
+    },
+    {
+      "workspace_id": "wsp_b",
+      "recent_count": 1,
+      "execution_count": 0,
+      "conversations": [
+        {
+          "conversation_id": "conv_long_rpc",
+          "is_unattributed": false,
+          "recently_active": true,
+          "in_flight": false,
+          "last_interaction_at": "2026-09-25T12:01:30Z",
+          "interaction_expires_at": "2026-09-25T12:03:30Z",
+          "last_activity_at": "2026-09-25T12:01:30Z",
+          "statistics": {
+            "last_tool_call_at": "2026-09-25T11:56:30Z",
+            "last_interaction_at": "2026-09-25T12:01:30Z",
+            "last_activity_at": "2026-09-25T12:01:30Z",
+            "running": 0,
+            "pending": 0
+          }
+        }
+      ]
+    },
+    {
+      "workspace_id": "unattributed",
+      "recent_count": 0,
+      "execution_count": 0,
+      "conversations": [
+        {
+          "conversation_id": "",
+          "is_unattributed": true,
+          "recently_active": false,
+          "in_flight": false,
+          "last_activity_at": "2026-09-25T11:58:00Z",
+          "statistics": {
+            "last_activity_at": "2026-09-25T11:58:00Z",
+            "running": 0,
+            "pending": 0
+          }
+        }
+      ]
+    }
+  ]
+}

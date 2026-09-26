@@ -11,6 +11,9 @@ import (
 	toolmcp "github.com/uvwt/agentdock/internal/tool/mcp"
 	toolplugin "github.com/uvwt/agentdock/internal/tool/plugin"
 	toolskill "github.com/uvwt/agentdock/internal/tool/skill"
+	tooltask "github.com/uvwt/agentdock/internal/tool/task"
+	toolworkspace "github.com/uvwt/agentdock/internal/tool/workspace"
+	hostworkspace "github.com/uvwt/agentdock/internal/workspace"
 )
 
 const runtimeAPISource = "agentdock-api"
@@ -70,6 +73,46 @@ func (r *Runtime) RuntimeTasks(status string, limit int) (Result, error) {
 
 func (r *Runtime) RuntimeTask(id string) (Result, error) {
 	return r.taskTools.RuntimeTask(id)
+}
+
+func (r *Runtime) RuntimeTaskManage(ctx context.Context, args map[string]any) (Result, error) {
+	result, err := r.Call(WithLocalUserAction(ctx), tooltask.ToolTaskManage, args)
+	if err != nil {
+		return nil, err
+	}
+	result["ok"] = true
+	result["source"] = runtimeAPISource
+	return result, nil
+}
+
+func (r *Runtime) RuntimeWorkspaceManage(ctx context.Context, args map[string]any) (Result, error) {
+	result, err := r.Call(WithLocalUserAction(ctx), toolworkspace.ToolManage, args)
+	if err != nil {
+		return nil, err
+	}
+	result["ok"] = true
+	result["source"] = runtimeAPISource
+	return result, nil
+}
+
+func (r *Runtime) RuntimeWorkspaces(ctx context.Context) (Result, error) {
+	result, err := r.workspaceTools.Manage(ctx, toolworkspace.Request{Action: "list"})
+	if err != nil {
+		return nil, err
+	}
+	result["ok"] = true
+	result["source"] = runtimeAPISource
+	return result, nil
+}
+
+func (r *Runtime) RuntimeWorkspace(ctx context.Context, id, project string) (Result, error) {
+	result, err := r.workspaceTools.Manage(ctx, toolworkspace.Request{Action: "get", RegisterInput: hostworkspace.RegisterInput{WorkspaceID: strings.TrimSpace(id), Project: strings.TrimSpace(project)}})
+	if err != nil {
+		return nil, err
+	}
+	result["ok"] = true
+	result["source"] = runtimeAPISource
+	return result, nil
 }
 
 func (r *Runtime) RuntimeTaskDelete(id string) (Result, error) {

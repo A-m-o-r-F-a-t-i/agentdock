@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -12,6 +14,7 @@ const (
 	sidebarHistoryCapacity = 128
 	sidebarHistoryIDBudget = 1_000_000
 	sidebarHistoryTTL      = 15 * time.Minute
+	sidebarUnattributedKey = "kind:unattributed"
 )
 
 type sidebarHistorySnapshot struct {
@@ -29,6 +32,19 @@ type sidebarHistoryCache struct {
 }
 
 func (cache *sidebarHistoryCache) order(scope, cursor string, current []ConversationItem, now time.Time) (ordered, arrivals []ConversationItem, token string, reset bool, err error) {
+	keys := make([]string, len(current))
+	seen := make(map[string]struct{}, len(current))
+	for index, item := range current {
+		key, keyErr := sidebarNavigationKey(item)
+		if keyErr != nil {
+			return nil, nil, "", false, keyErr
+		}
+		if _, duplicate := seen[key]; duplicate {
+			return nil, nil, "", false, fmt.Errorf("SIDEBAR_NAVIGATION_KEY_DUPLICATE: %s", key)
+		}
+		seen[key] = struct{}{}
+		keys[index] = key
+	}
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 	if cache.entries == nil {
@@ -66,16 +82,16 @@ func (cache *sidebarHistoryCache) order(scope, cursor string, current []Conversa
 		}
 		cursor = hex.EncodeToString(value[:])
 		entry = sidebarHistorySnapshot{scope: scope, ids: make([]string, 0, len(current))}
-		for _, item := range current {
-			entry.ids = append(entry.ids, item.ID)
+		for _, key := range keys {
+			entry.ids = append(entry.ids, key)
 		}
 		cache.ids += len(entry.ids)
 	}
 	entry.used = now
 	cache.entries[cursor] = entry
 	byID := make(map[string]ConversationItem, len(current))
-	for _, item := range current {
-		byID[item.ID] = item
+	for index, item := range current {
+		byID[keys[index]] = item
 	}
 	ordered = make([]ConversationItem, 0, len(entry.ids))
 	for _, id := range entry.ids {
@@ -87,10 +103,26 @@ func (cache *sidebarHistoryCache) order(scope, cursor string, current []Conversa
 	// New conversations are merged separately, so moving live activity cannot
 	// push a previously visible history row across the frozen page boundary.
 	arrivals = make([]ConversationItem, 0, len(byID))
-	for _, item := range current {
-		if _, fresh := byID[item.ID]; fresh {
+	for index, item := range current {
+		if _, fresh := byID[keys[index]]; fresh {
 			arrivals = append(arrivals, item)
 		}
 	}
 	return ordered, arrivals, cursor, reset, nil
+}
+
+func sidebarNavigationKey(item ConversationItem) (string, error) {
+	if item.IsUnattributed {
+		if item.ID != "" || conversationWorkspace(item) != "unattributed" {
+			return "", errors.New("SIDEBAR_UNATTRIBUTED_IDENTITY_INVALID")
+		}
+		return sidebarUnattributedKey, nil
+	}
+	if item.ID == "" {
+		return "", errors.New("SIDEBAR_CONVERSATION_ID_MISSING")
+	}
+	if item.ID == "unattributed" || strings.HasPrefix(item.ID, "footer:") {
+		return "", errors.New("SIDEBAR_RESERVED_KEY")
+	}
+	return item.ID, nil
 }

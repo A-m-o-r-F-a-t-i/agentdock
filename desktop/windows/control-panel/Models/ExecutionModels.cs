@@ -28,6 +28,8 @@ public sealed class WorkspaceGroupKey(string id, string title) : INotifyProperty
 	public bool IsExpanded { get => _expanded; set { if (_expanded == value) return; _expanded = value; PropertyChanged?.Invoke(this, new(nameof(IsExpanded))); } }
 	public string Mode { get; private set; } = "auto";
 	public int RecentCount { get; private set; }
+	public int ExecutionCount { get; private set; }
+	public int VisibleActivityCount => RecentCount + ExecutionCount;
     public string Id { get; } = id;
     public string Title { get; private set; } = title;
     public string Root { get; private set; } = "";
@@ -38,7 +40,7 @@ public sealed class WorkspaceGroupKey(string id, string title) : INotifyProperty
     {
         Title = value.Text("title", Title); Root = value.Text("root");
         Total = (int)value.Number("total"); LastActivityAt = value.Date("last_activity_at");
-		Mode = value.Text("mode", "auto"); RecentCount = (int)value.Number("recent_count");
+		Mode = value.Text("mode", "auto"); RecentCount = (int)value.Number("recent_count"); ExecutionCount = (int)value.Number("execution_count");
         PropertyChanged?.Invoke(this, new(null));
     }
     public override bool Equals(object? value) => value is WorkspaceGroupKey key && key.Id == Id;
@@ -52,6 +54,8 @@ public sealed class ExecutionObject : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     public DateTimeOffset? LastToolCallAt { get; set; }
     public DateTimeOffset? LastActivityAt { get; set; }
+    public DateTimeOffset? LastInteractionAt { get; set; }
+    public DateTimeOffset? InteractionExpiresAt { get; set; }
     public DateTimeOffset? SortActivityAt { get; set; }
     public bool IsGroupFooter { get; set; }
     public bool HasMore { get; set; }
@@ -64,7 +68,23 @@ public sealed class ExecutionObject : INotifyPropertyChanged
     public bool CanLoadMore => IsGroupFooter && HasMore && !IsPaging;
     public bool AutoLoadMore { get; set; }
     public bool InsertionEligible { get; set; }
-	public bool InFlight { get; set; }
+    private bool _inFlight;
+	public bool InFlight
+    {
+        get => _inFlight;
+        set
+        {
+            if (_inFlight == value) return;
+            _inFlight = value;
+            PropertyChanged?.Invoke(this, new(nameof(InFlight)));
+            PropertyChanged?.Invoke(this, new(nameof(VisibleInAuto)));
+            PropertyChanged?.Invoke(this, new(nameof(ExecutionStateText)));
+            PropertyChanged?.Invoke(this, new(nameof(ExecutionStateHint)));
+        }
+    }
+    public bool VisibleInAuto => RecentlyActive || InFlight;
+    public string ExecutionStateText => PendingCount > 0 ? $"待审批 {PendingCount}" : InFlight ? "执行中" : "";
+    public string ExecutionStateHint => PendingCount > 0 ? "存在等待本机审批的根调用；近期交互标识会独立过期。" : InFlight ? "根调用或后台命令仍在运行，可继续查看或停止；近期交互标识会独立过期。" : "";
     public void Apply(ExecutionObject item)
     {
         if (Id != item.Id || Kind != item.Kind) throw new InvalidOperationException("Row identity changed.");
@@ -73,14 +93,21 @@ public sealed class ExecutionObject : INotifyPropertyChanged
         Trashed = item.Trashed; Terminated = item.Terminated; IsUnknown = item.IsUnknown; IsOrphan = item.IsOrphan;
         PendingCount = item.PendingCount; RunningCount = item.RunningCount; Snapshot = item.Snapshot;
 		InFlight = item.InFlight;
-        LastToolCallAt = item.LastToolCallAt; LastActivityAt = item.LastActivityAt; SortActivityAt = item.SortActivityAt;
+        LastToolCallAt = item.LastToolCallAt; LastActivityAt = item.LastActivityAt; LastInteractionAt = item.LastInteractionAt; InteractionExpiresAt = item.InteractionExpiresAt; SortActivityAt = item.SortActivityAt;
+        RecentlyActive = item.RecentlyActive;
         IsGroupFooter = item.IsGroupFooter; HasMore = item.HasMore; IsPaging = item.IsPaging; AutoLoadMore = item.AutoLoadMore;
         PropertyChanged?.Invoke(this, new(null));
     }
     public bool RecentlyActive
     {
         get => _recentlyActive;
-        set { if (_recentlyActive == value) return; _recentlyActive = value; PropertyChanged?.Invoke(this, new(nameof(RecentlyActive))); }
+        set
+        {
+            if (_recentlyActive == value) return;
+            _recentlyActive = value;
+            PropertyChanged?.Invoke(this, new(nameof(RecentlyActive)));
+            PropertyChanged?.Invoke(this, new(nameof(VisibleInAuto)));
+        }
     }
 	public void RefreshActivity() => PropertyChanged?.Invoke(this, new(null));
     public string Id { get; set; } = "";
@@ -110,6 +137,9 @@ public sealed class ExecutionObject : INotifyPropertyChanged
         var workspaces = value.Array("workspace_ids");
         if (workspace.Length == 0 && workspaces.Length > 0 && workspaces[0].ValueKind == JsonValueKind.String) workspace = workspaces[0].GetString() ?? "";
         var stats = value.Field("statistics");
+        var lastToolCall = stats.Date("last_tool_call_at");
+        var lastInteraction = value.Date("last_interaction_at") ?? stats.Date("last_interaction_at") ?? lastToolCall;
+        DateTimeOffset? interactionExpiry = value.Date("interaction_expires_at") ?? (lastInteraction is { } interaction ? interaction + ConversationActivityPolicy.ActivityWindow : null);
         return new ExecutionObject
         {
             Id = value.Text(kind == "task" ? "task_id" : "conversation_id", value.Text("id")), Kind = kind, Title = title,
@@ -117,8 +147,11 @@ public sealed class ExecutionObject : INotifyPropertyChanged
             Detail = kind == "task" ? ExecutionJson.State(value.Text("status")) : value.Text("source"),
             Pinned = value.Flag("pinned"), Archived = value.HasDate("archived_at"), Trashed = value.HasDate("trashed_at"), Terminated = value.HasDate("terminated_at"),
             ManagementDates = created, IsUnknown = value.Flag("is_unattributed"), IsOrphan = value.Flag("is_orphan"),
-			InFlight = value.Flag("in_flight"),
-            PendingCount = stats.Number("pending"), RunningCount = stats.Number("running"), Snapshot = value.Clone(), LastToolCallAt = stats.Date("last_tool_call_at"), LastActivityAt = stats.Date("last_activity_at") ?? stats.Date("last_tool_call_at"), SortActivityAt = value.Date("last_activity_at") ?? stats.Date("last_activity_at") ?? value.Date("created_at")
+			InFlight = value.Flag("in_flight"), RecentlyActive = value.Flag("recently_active"),
+            PendingCount = stats.Number("pending"), RunningCount = stats.Number("running"), Snapshot = value.Clone(),
+            LastToolCallAt = lastToolCall, LastInteractionAt = lastInteraction, InteractionExpiresAt = interactionExpiry,
+            LastActivityAt = stats.Date("last_activity_at") ?? lastToolCall,
+            SortActivityAt = value.Date("last_activity_at") ?? stats.Date("last_activity_at") ?? value.Date("created_at")
         };
     }
 }
@@ -156,7 +189,9 @@ public sealed partial class ExecutionCallRow : INotifyPropertyChanged
     public string TitleTooltip => Title + (OriginalLabel.Length > 0 && OriginalLabel != Title ? "\n原始说明：" + OriginalLabel : "");
     public DateTimeOffset? RequestReceivedAt => _value.Date("request_received_at");
     public DateTimeOffset? LastActivityAt => _value.Date("last_activity_at");
+    public DateTimeOffset? LastInteractionAt => _value.Date("last_interaction_at");
     public long? RpcElapsedMs => _value.OptionalNumber("rpc_elapsed_ms");
+    public long? ProcessElapsedMs => _value.OptionalNumber("process_elapsed_ms");
     public long? TotalElapsedMs => RpcElapsedMs is >= 0 ? RpcElapsedMs : _value.OptionalNumber("elapsed_ms") is >= 0 ? _value.OptionalNumber("elapsed_ms") : _value.OptionalNumber("operation_elapsed_ms") is >= 0 ? _value.OptionalNumber("operation_elapsed_ms") : null;
     public string DurationSource => RpcElapsedMs is >= 0 ? "rpc" : _value.OptionalNumber("elapsed_ms") is >= 0 ? "legacy" : _value.OptionalNumber("operation_elapsed_ms") is >= 0 ? "operation" : "unknown";
     public string Duration => IsInsertion ? "" : FormatDuration(TotalElapsedMs);
@@ -169,6 +204,8 @@ public sealed partial class ExecutionCallRow : INotifyPropertyChanged
     };
     public string ExecutionDuration => FormatDuration(_value.OptionalNumber("execution_elapsed_ms"));
     public string WaitDuration => FormatDuration(_value.OptionalNumber("wait_elapsed_ms"));
+    public string ProcessDuration => ProcessElapsedMs is >= 0 ? FormatDuration(ProcessElapsedMs) : RpcElapsedMs is >= 0 && CanStop ? "仍在运行" : "未记录";
+    public string ProcessTimingDetails => ProcessElapsedMs is >= 0 ? "后台命令进程：" + FormatDuration(ProcessElapsedMs) : RpcElapsedMs is >= 0 && CanStop ? "后台命令进程：仍在运行（RPC 已返回）" : "后台命令进程：未记录";
     public string ActualTool => Tool;
 	public bool HasEditStatistics => _value.Text("parent_call_id").Length == 0 && _value.Field("file_edit").ValueKind == JsonValueKind.Object;
 	public bool EditPreview => HasEditStatistics && _value.Field("file_edit").Flag("dry_run");
@@ -187,7 +224,7 @@ public sealed partial class ExecutionCallRow : INotifyPropertyChanged
         "执行阶段：" + ExecutionDuration,
         "执行前等待：" + WaitDuration + "（含已观测到的准备及审批等待）",
         "操作完成耗时：" + FormatDuration(_value.OptionalNumber("operation_elapsed_ms")),
-        "后台命令进程：" + FormatDuration(_value.OptionalNumber("process_elapsed_ms")),
+        ProcessTimingDetails,
         "RPC 与后台命令分别计时。并发调用的累计耗时不等于实际经过时间。"
     });
     public string FileEditDetails

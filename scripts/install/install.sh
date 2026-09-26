@@ -7,8 +7,8 @@ set -eu
 
 umask 077
 
-DEFAULT_BASE_URL="https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/latest/download"
-GITHUB_RELEASES_URL="https://github.com/A-m-o-r-F-a-t-i/agentdock/releases"
+DEFAULT_BASE_URL="https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench/releases/latest/download"
+GITHUB_RELEASES_URL="https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench/releases"
 CLOUDFLARED_BASE_URL="${AGENTDOCK_CLOUDFLARED_RELEASE_BASE_URL:-https://github.com/cloudflare/cloudflared/releases/latest/download}"
 BASE_URL="${AGENTDOCK_INSTALLER_BASE_URL:-$DEFAULT_BASE_URL}"
 RELEASE_VERSION="${AGENTDOCK_RELEASE_VERSION:-latest}"

@@ -24,7 +24,7 @@ func MethodAllowed(method, path string) bool {
 		_, ok := runtimeTaskID(cleanPath)
 		return ok
 	}
-	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/skills" || cleanPath == "/internal/runtime/plugins" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/evolve")
+	return method == http.MethodPost && (cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/skills" || cleanPath == "/internal/runtime/plugins" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/evolve" || cleanPath == "/internal/runtime/tasks" || cleanPath == "/internal/runtime/workspaces")
 }
 
 func AllowHeader(path string) string {
@@ -32,7 +32,7 @@ func AllowHeader(path string) string {
 	if _, ok := runtimeTaskID(cleanPath); ok {
 		return "GET, DELETE"
 	}
-	if cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/skills" || cleanPath == "/internal/runtime/plugins" || cleanPath == "/internal/runtime/mcp" {
+	if cleanPath == "/internal/runtime/capabilities" || cleanPath == "/internal/runtime/skills" || cleanPath == "/internal/runtime/plugins" || cleanPath == "/internal/runtime/mcp" || cleanPath == "/internal/runtime/tasks" || cleanPath == "/internal/runtime/workspaces" {
 		return "GET, POST"
 	}
 	if cleanPath == "/internal/runtime/evolve" {
@@ -136,6 +136,19 @@ func Dispatch(ctx context.Context, runtime Runtime, request Request) (map[string
 		}
 		result, err := runtime.RuntimePlugin(ctx, name)
 		return map[string]any(result), err
+	case path == "/internal/runtime/tasks" && method == http.MethodPost:
+		args, err := decodeRuntimeObject(request.Body, "task")
+		if err != nil {
+			return nil, err
+		}
+		manager, ok := runtime.(interface {
+			RuntimeTaskManage(context.Context, map[string]any) (app.Result, error)
+		})
+		if !ok {
+			return nil, &app.ToolError{Code: "NOT_FOUND", Message: "task management route is unavailable", Category: "not_found"}
+		}
+		result, err := manager.RuntimeTaskManage(ctx, args)
+		return map[string]any(result), err
 	case path == "/internal/runtime/tasks":
 		limit, err := parseRuntimeTaskLimit(request.queryValue("limit"))
 		if err != nil {
@@ -148,6 +161,41 @@ func Dispatch(ctx context.Context, runtime Runtime, request Request) (map[string
 		return map[string]any(result), err
 	case isTaskPath:
 		result, err := runtime.RuntimeTask(taskID)
+		return map[string]any(result), err
+	case path == "/internal/runtime/workspaces" && method == http.MethodPost:
+		args, err := decodeRuntimeObject(request.Body, "workspace")
+		if err != nil {
+			return nil, err
+		}
+		manager, ok := runtime.(interface {
+			RuntimeWorkspaceManage(context.Context, map[string]any) (app.Result, error)
+		})
+		if !ok {
+			return nil, &app.ToolError{Code: "NOT_FOUND", Message: "workspace management route is unavailable", Category: "not_found"}
+		}
+		result, err := manager.RuntimeWorkspaceManage(ctx, args)
+		return map[string]any(result), err
+	case path == "/internal/runtime/workspaces":
+		reader, ok := runtime.(interface {
+			RuntimeWorkspaces(context.Context) (app.Result, error)
+		})
+		if !ok {
+			return nil, &app.ToolError{Code: "NOT_FOUND", Message: "workspace route is unavailable", Category: "not_found"}
+		}
+		result, err := reader.RuntimeWorkspaces(ctx)
+		return map[string]any(result), err
+	case strings.HasPrefix(path, "/internal/runtime/workspaces/"):
+		id, ok := runtimeWorkspaceID(path)
+		if !ok {
+			return nil, &app.ToolError{Code: "WORKSPACE_NOT_FOUND", Message: "workspace not found", Category: "not_found"}
+		}
+		reader, ok := runtime.(interface {
+			RuntimeWorkspace(context.Context, string, string) (app.Result, error)
+		})
+		if !ok {
+			return nil, &app.ToolError{Code: "NOT_FOUND", Message: "workspace route is unavailable", Category: "not_found"}
+		}
+		result, err := reader.RuntimeWorkspace(ctx, id, request.queryValue("project"))
 		return map[string]any(result), err
 	default:
 		return nil, &app.ToolError{Code: "NOT_FOUND", Message: "runtime API route not found", Category: "not_found"}
@@ -309,4 +357,32 @@ func parseRuntimeTaskLimit(raw string) (int, error) {
 		}
 	}
 	return limit, nil
+}
+
+func decodeRuntimeObject(body []byte, label string) (map[string]any, error) {
+	if len(body) == 0 || len(body) > 64*1024 {
+		return nil, &app.ToolError{Code: "INVALID_ARGUMENT", Message: label + " request body must be a JSON object up to 64 KiB", Category: "validation"}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	var result map[string]any
+	if err := decoder.Decode(&result); err != nil || result == nil {
+		return nil, &app.ToolError{Code: "INVALID_ARGUMENT", Message: "invalid " + label + " request body", Category: "validation"}
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return nil, &app.ToolError{Code: "INVALID_ARGUMENT", Message: label + " request body must contain exactly one JSON object", Category: "validation"}
+	}
+	return result, nil
+}
+
+func runtimeWorkspaceID(path string) (string, bool) {
+	const prefix = "/internal/runtime/workspaces/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", false
+	}
+	id := strings.TrimSpace(strings.TrimPrefix(path, prefix))
+	if id == "" || strings.Contains(id, "/") {
+		return "", false
+	}
+	return id, true
 }

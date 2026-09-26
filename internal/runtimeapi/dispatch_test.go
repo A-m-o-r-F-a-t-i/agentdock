@@ -12,13 +12,17 @@ import (
 )
 
 type runtimeStub struct {
-	skillTarget   string
-	skillFilePath string
-	taskStatus    string
-	taskLimit     int
-	skillArgs     map[string]any
-	pluginArgs    map[string]any
-	mcpArgs       map[string]any
+	skillTarget      string
+	skillFilePath    string
+	taskStatus       string
+	taskLimit        int
+	skillArgs        map[string]any
+	pluginArgs       map[string]any
+	mcpArgs          map[string]any
+	taskManageArgs   map[string]any
+	workspaceArgs    map[string]any
+	workspaceID      string
+	workspaceProject string
 }
 
 func (r *runtimeStub) RuntimeStatus() app.Result          { return app.Result{"status": "ok"} }
@@ -45,6 +49,21 @@ func (r *runtimeStub) RuntimeTasks(status string, limit int) (app.Result, error)
 }
 func (r *runtimeStub) RuntimeTask(string) (app.Result, error)       { return app.Result{}, nil }
 func (r *runtimeStub) RuntimeTaskDelete(string) (app.Result, error) { return app.Result{}, nil }
+func (r *runtimeStub) RuntimeTaskManage(_ context.Context, args map[string]any) (app.Result, error) {
+	r.taskManageArgs = args
+	return app.Result{"changed": true}, nil
+}
+func (r *runtimeStub) RuntimeWorkspaces(context.Context) (app.Result, error) {
+	return app.Result{"workspaces": []any{}}, nil
+}
+func (r *runtimeStub) RuntimeWorkspaceManage(_ context.Context, args map[string]any) (app.Result, error) {
+	r.workspaceArgs = args
+	return app.Result{"changed": true}, nil
+}
+func (r *runtimeStub) RuntimeWorkspace(_ context.Context, id, project string) (app.Result, error) {
+	r.workspaceID, r.workspaceProject = id, project
+	return app.Result{"workspace_id": id}, nil
+}
 func (r *runtimeStub) RuntimeCapabilities(context.Context, bool) (app.Result, error) {
 	return app.Result{}, nil
 }
@@ -84,6 +103,9 @@ func TestMethodContract(t *testing.T) {
 		{"POST", "/internal/runtime/skills", "GET, POST", true},
 		{"POST", "/internal/runtime/plugins", "GET, POST", true},
 		{"GET", "/internal/runtime/plugins/pcb", "GET", true},
+		{"POST", "/internal/runtime/tasks", "GET, POST", true},
+		{"GET", "/internal/runtime/workspaces", "GET, POST", true},
+		{"POST", "/internal/runtime/workspaces", "GET, POST", true},
 		{"DELETE", "/internal/runtime/tasks/task-1", "GET, DELETE", true},
 		{"POST", "/internal/runtime/tasks/task-1", "GET, DELETE", false},
 		{"GET", "/internal/runtime/evolve", "POST", true},
@@ -115,6 +137,42 @@ func TestDispatchParsesTaskQuery(t *testing.T) {
 	}
 	if result["status"] != "active" || result["limit"] != 25 {
 		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestDispatchTaskManagementAndWorkspaceReads(t *testing.T) {
+	runtime := &runtimeStub{}
+	result, err := Dispatch(context.Background(), runtime, Request{
+		Method: "POST", Path: "/internal/runtime/tasks",
+		Body: []byte(`{"action":"checkpoint","task_id":"tsk_demo","summary":"saved","completed_step_ids":["S1"]}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["changed"] != true || runtime.taskManageArgs["action"] != "checkpoint" || runtime.taskManageArgs["task_id"] != "tsk_demo" {
+		t.Fatalf("task management dispatch = result %#v args %#v", result, runtime.taskManageArgs)
+	}
+
+	result, err = Dispatch(context.Background(), runtime, Request{
+		Method: "POST", Path: "/internal/runtime/workspaces",
+		Body: []byte(`{"action":"register","workspace_id":"wsp_0123456789abcdef","name":"AgentDock","expected_revision":4}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["changed"] != true || runtime.workspaceArgs["action"] != "register" || runtime.workspaceArgs["workspace_id"] != "wsp_0123456789abcdef" {
+		t.Fatalf("workspace management dispatch = result %#v args %#v", result, runtime.workspaceArgs)
+	}
+
+	result, err = Dispatch(context.Background(), runtime, Request{
+		Method: "GET", Path: "/internal/runtime/workspaces/wsp_0123456789abcdef",
+		Query: url.Values{"project": {"agentdock"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.workspaceID != "wsp_0123456789abcdef" || runtime.workspaceProject != "agentdock" || result["workspace_id"] != runtime.workspaceID {
+		t.Fatalf("workspace dispatch = result %#v id=%q project=%q", result, runtime.workspaceID, runtime.workspaceProject)
 	}
 }
 

@@ -6,6 +6,68 @@
 review_threshold_lines: 300
 
 scripts:
+  - path: scripts/ci/parallel-activity/verify_contract.py
+    class: test
+    owner: WB04
+    public_contract: false
+    deletable: false
+    notes: Activity domain schema and boundary fixture validation.
+
+  - path: scripts/ci/parallel-installer/build-runtime-split-candidate.ps1
+    class: test
+    owner: WB05
+    public_contract: false
+    deletable: false
+    notes: Build and measure candidate archives without installation or publication.
+
+  - path: scripts/ci/parallel-installer/test-setup-archive.ps1
+    class: test
+    owner: WB05
+    public_contract: false
+    deletable: false
+    notes: Isolated Setup archive validation and adversarial payload tests.
+
+  - path: scripts/ci/parallel-macos/run-workbench-tests.sh
+    class: test
+    owner: WB06
+    public_contract: false
+    deletable: false
+    notes: Native model, transport, contract and UI regression entry point.
+
+  - path: scripts/ci/parallel-core-cli/index_candidates.py
+    class: ci
+    owner: WB01
+    public_contract: false
+    deletable: true
+    notes: 校验同一候选提交的 amd64/arm64 非发布产物清单、摘要和平台集合，并生成跨架构候选索引。
+
+  - path: scripts/ci/parallel-core-cli/mock_core.py
+    class: test
+    owner: WB01
+    public_contract: false
+    deletable: true
+    notes: 仅在 GitHub Actions 隔离 runner 内提供带认证的本机 mock Core，供真实 CLI 子进程验收。
+
+  - path: scripts/ci/parallel-core-cli/smoke_cli.sh
+    class: test
+    owner: WB01
+    public_contract: false
+    deletable: true
+    notes: 对候选 CLI 的认证、JSON/JSONL、分页、流式恢复、安全写入和不支持能力退出码执行真实进程冒烟测试。
+
+  - path: scripts/ci/parallel-core-cli/verify_candidate.py
+    class: ci
+    owner: WB01
+    public_contract: false
+    deletable: true
+    notes: 校验 Linux tar、DEB、RPM 的摘要、身份、安装卸载结果与既有用户目录保留证据，禁止发布。
+
+  - path: scripts/ci/parallel-core-cli/verify_contract.py
+    class: ci
+    owner: WB01
+    public_contract: false
+    deletable: true
+    notes: 校验 Workbench v1 契约、fixtures、CLI 命令矩阵、专属工作流只读权限与无发布步骤。
   - path: scripts/test/test-linux-native-packages.py
     class: test
     owner: release
@@ -265,6 +327,7 @@ scripts:
     owner: installer
     public_contract: false
     deletable: false
+    oversize_justification: Isolated native migration and rollback fixture retains bounded scalar diagnostics for asynchronous terminal-state failures.
     notes: 在隔离 runtime 中验证旧 flat Windows 安装可一次性迁移到 committed generation，且不触碰宿主生产实例。
 
   - path: scripts/test/run-windows-installer-e2e-as-standard-user.ps1

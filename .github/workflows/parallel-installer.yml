@@ -1,0 +1,324 @@
+name: WB05 Parallel Installer
+
+on:
+  push:
+    branches:
+      - parallel/20260925/installer
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wb05-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+  INSTALLATION_TESTS: 'false'
+
+jobs:
+  linux-contracts:
+    if: github.repository_id == '1370391430'
+    name: Linux retention and transaction contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify source identity and formatting
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          formatted="$(find internal/generationretention internal/installer internal/selfupdate -name '*.go' -print0 | xargs -0 gofmt -l)"
+          if [[ -n "$formatted" ]]; then
+            printf 'gofmt required:\n%s\n' "$formatted" >&2
+            exit 1
+          fi
+
+      - name: Run retention, installer, and self-update tests
+        run: go test ./internal/generationretention ./internal/installer ./internal/selfupdate -count=1 -timeout=12m
+
+      - name: Record Linux evidence
+        if: always()
+        shell: bash
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          mkdir -p artifacts/parallel-installer/linux
+          python3 - <<'PY'
+          import json, os, pathlib
+          report = {
+              "schema_version": 1,
+              "lane": "05-installer",
+              "source_commit": os.environ["SOURCE_COMMIT"],
+              "platform": "linux",
+              "job_status": os.environ["JOB_STATUS"],
+              "installation_tests": False,
+              "release": False,
+              "publish": False,
+          }
+          pathlib.Path("artifacts/parallel-installer/linux/contracts.json").write_text(
+              json.dumps(report, indent=2) + "\n", encoding="utf-8"
+          )
+          PY
+
+      - name: Upload Linux evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wb05-installer-linux-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/parallel-installer/linux
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-candidate:
+    if: github.repository_id == '1370391430'
+    name: Windows ${{ matrix.architecture }} candidate
+    runs-on: windows-2022
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [amd64, arm64]
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - name: Checkout immutable source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Verify immutable source
+        env:
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          $actual = (& git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -ne $env:EXPECTED_COMMIT) {
+            throw "Source identity mismatch: expected $env:EXPECTED_COMMIT, got $actual"
+          }
+
+      - name: Test Windows generation retention contracts
+        id: test_generation_retention
+        if: matrix.architecture == 'amd64'
+        continue-on-error: true
+        run: |
+          $directory = Join-Path $PWD 'artifacts\parallel-installer\amd64\diagnostics'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          go test ./internal/generationretention -count=1 -timeout=12m *>&1 |
+            Tee-Object -FilePath (Join-Path $directory 'generationretention.log')
+          exit $LASTEXITCODE
+
+      - name: Test Windows installer contracts
+        id: test_installer
+        if: matrix.architecture == 'amd64'
+        continue-on-error: true
+        run: |
+          $directory = Join-Path $PWD 'artifacts\parallel-installer\amd64\diagnostics'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          go test ./internal/installer -count=1 -timeout=12m *>&1 |
+            Tee-Object -FilePath (Join-Path $directory 'installer.log')
+          exit $LASTEXITCODE
+
+      - name: Test Windows self-update contracts
+        id: test_selfupdate
+        if: matrix.architecture == 'amd64'
+        continue-on-error: true
+        run: |
+          $directory = Join-Path $PWD 'artifacts\parallel-installer\amd64\diagnostics'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          go test ./internal/selfupdate -count=1 -timeout=12m *>&1 |
+            Tee-Object -FilePath (Join-Path $directory 'selfupdate.log')
+          exit $LASTEXITCODE
+
+      - name: Test Setup archive contracts
+        id: test_setup_archive
+        if: matrix.architecture == 'amd64'
+        continue-on-error: true
+        run: |
+          $directory = Join-Path $PWD 'artifacts\parallel-installer\amd64\diagnostics'
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          $log = Join-Path $directory 'setup-archive.log'
+          try {
+            & ./scripts/ci/parallel-installer/test-setup-archive.ps1 *>&1 |
+              Tee-Object -FilePath $log
+          } catch {
+            ($_ | Out-String) | Add-Content -LiteralPath $log -Encoding UTF8
+            Write-Error -ErrorRecord $_
+          }
+
+      - name: Gate native Windows contracts
+        if: ${{ always() && matrix.architecture == 'amd64' }}
+        env:
+          GENERATION_RETENTION_OUTCOME: ${{ steps.test_generation_retention.outcome }}
+          INSTALLER_OUTCOME: ${{ steps.test_installer.outcome }}
+          SELFUPDATE_OUTCOME: ${{ steps.test_selfupdate.outcome }}
+          SETUP_ARCHIVE_OUTCOME: ${{ steps.test_setup_archive.outcome }}
+        run: |
+          $directory = Join-Path $PWD 'artifacts\parallel-installer\amd64\diagnostics'
+          $contracts = @(
+            [pscustomobject]@{ Name = 'generation retention'; Outcome = $env:GENERATION_RETENTION_OUTCOME; Log = 'generationretention.log' },
+            [pscustomobject]@{ Name = 'installer'; Outcome = $env:INSTALLER_OUTCOME; Log = 'installer.log' },
+            [pscustomobject]@{ Name = 'self-update'; Outcome = $env:SELFUPDATE_OUTCOME; Log = 'selfupdate.log' },
+            [pscustomobject]@{ Name = 'Setup archive'; Outcome = $env:SETUP_ARCHIVE_OUTCOME; Log = 'setup-archive.log' }
+          )
+          $failed = @($contracts | Where-Object Outcome -ne 'success')
+          foreach ($contract in $failed) {
+            $path = Join-Path $directory $contract.Log
+            $tail = if (Test-Path -LiteralPath $path -PathType Leaf) {
+              @(Get-Content -LiteralPath $path -Tail 60)
+            } else {
+              @('Diagnostic log was not created.')
+            }
+            $message = (($tail -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A'))
+            Write-Host "::error title=WB05 $($contract.Name) contracts::$message"
+          }
+          if ($failed.Count -gt 0) {
+            throw "Windows contract failures: $($failed.Name -join ', ')"
+          }
+
+      - name: Cross-compile ARM64 contracts
+        if: matrix.architecture == 'arm64'
+        env:
+          GOOS: windows
+          GOARCH: arm64
+        run: |
+          $output = Join-Path $PWD 'artifacts\parallel-installer\arm64\compiled-tests'
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          go test -c ./internal/generationretention -o (Join-Path $output 'generationretention.test.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64 generation retention test compile failed.' }
+          go test -c ./internal/installer -o (Join-Path $output 'installer.test.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64 installer test compile failed.' }
+          go test -c ./internal/selfupdate -o (Join-Path $output 'selfupdate.test.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'ARM64 self-update test compile failed.' }
+
+      - name: Compile Windows Core candidate
+        env:
+          GOOS: windows
+          GOARCH: ${{ matrix.architecture }}
+        run: |
+          $output = Join-Path $PWD "artifacts\parallel-installer\${{ matrix.architecture }}\core"
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          go build -trimpath -o (Join-Path $output 'agentdock.exe') ./cmd/agentdock
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Core candidate compile failed.' }
+
+      - name: Build and measure WPF runtime-split candidate
+        run: |
+          $directory = Join-Path $PWD "artifacts\parallel-installer\${{ matrix.architecture }}\diagnostics"
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          $log = Join-Path $directory 'runtime-split.log'
+          try {
+            & ./scripts/ci/parallel-installer/build-runtime-split-candidate.ps1 `
+              -Architecture '${{ matrix.architecture }}' `
+              -SourceCommit '${{ github.sha }}' *>&1 |
+                Tee-Object -FilePath $log
+          } catch {
+            ($_ | Out-String) | Add-Content -LiteralPath $log -Encoding UTF8
+            $tail = @(Get-Content -LiteralPath $log -Tail 80)
+            $message = (($tail -join "`n").Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A'))
+            Write-Host "::error title=WB05 runtime-split ${{ matrix.architecture }}::$message"
+            throw
+          }
+
+      - name: Publish runtime-split evidence summary
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          $reportPath = Join-Path $PWD "artifacts\parallel-installer\$env:ARCHITECTURE\reports\runtime-split-report.json"
+          if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) {
+            throw "Runtime-split evidence report is missing: $reportPath"
+          }
+          $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+          $evidence = [ordered]@{
+            source_commit = [string] $report.source_commit
+            architecture = [string] $report.architecture
+            baseline_archive_bytes = [Int64] $report.baseline.archive_bytes
+            runtime_split_archive_bytes = [Int64] $report.runtime_split.archive_bytes
+            archive_reduction_bytes = [Int64] $report.delta.archive_reduction_bytes
+            archive_reduction_mib = [double] $report.delta.archive_reduction_mib
+            meets_target_window = [bool] $report.delta.meets_target_window
+            required_launch_dependencies = @($report.runtime_split.required_launch_dependencies)
+            localized_satellite_resources = @($report.runtime_split.localized_satellite_resources)
+            runtime_requirement = @($report.runtime_requirement)
+          }
+          $json = $evidence | ConvertTo-Json -Depth 8 -Compress
+          $escaped = $json.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+          $architecture = $env:ARCHITECTURE
+          Write-Host "::notice title=WB05 runtime-split evidence ${architecture}::$escaped"
+          @(
+            "## WB05 runtime-split evidence — $env:ARCHITECTURE"
+            ''
+            '| Metric | Value |'
+            '| --- | ---: |'
+            "| Source commit | ``$($evidence.source_commit)`` |"
+            "| Baseline ZIP bytes | $($evidence.baseline_archive_bytes) |"
+            "| Runtime-split ZIP bytes | $($evidence.runtime_split_archive_bytes) |"
+            "| Reduction MiB | $($evidence.archive_reduction_mib) |"
+            "| Meets 90–160 MiB exploration window | $($evidence.meets_target_window) |"
+            ''
+            '```json'
+            $json
+            '```'
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding UTF8
+
+      - name: Record candidate policy evidence
+        if: always()
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+          JOB_STATUS: ${{ job.status }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          $directory = Join-Path $PWD "artifacts\parallel-installer\$env:ARCHITECTURE\reports"
+          New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          [ordered]@{
+            schema_version = 1
+            lane = '05-installer'
+            source_commit = $env:SOURCE_COMMIT
+            architecture = $env:ARCHITECTURE
+            job_status = $env:JOB_STATUS
+            installation_tests = $false
+            signed = $false
+            release = $false
+            publish = $false
+            self_hosted_runner = $false
+          } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $directory 'workflow-policy.json') -Encoding utf8NoBOM
+
+      - name: Upload Windows candidate and evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wb05-installer-${{ matrix.architecture }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/parallel-installer/${{ matrix.architecture }}
+          if-no-files-found: error
+          retention-days: 14

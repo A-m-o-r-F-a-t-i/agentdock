@@ -223,6 +223,7 @@ try {
     $coreShimHash = (Get-FileHash -LiteralPath (Join-Path $extractRoot 'agentdock-shim.exe') -Algorithm SHA256).Hash
     $trayShimHash = (Get-FileHash -LiteralPath (Join-Path $extractRoot 'agentdock-tray-shim.exe') -Algorithm SHA256).Hash
     $health = $null
+    $lastCheckpoint = 'active-version.json absent'
     do {
         Start-Sleep -Milliseconds 500
         if (-not (Test-Path -LiteralPath $activePath -PathType Leaf)) {
@@ -230,32 +231,37 @@ try {
         }
         try {
             $active = Get-Content -LiteralPath $activePath -Raw | ConvertFrom-Json
+            $lastCheckpoint = "generation state=$($active.state) version=$($active.active_version)"
             if ($active.state -ne 'committed' -or $active.active_version -ne "v$Version") {
                 continue
             }
             # active-version.json is committed before stable entries are replaced on purpose.
             # Wait for the entire migration terminal state, not merely the crash-safe source
             # generation checkpoint.
+            $lastCheckpoint = 'stable shim replacement or compatibility-manager cleanup incomplete'
             if ((Get-FileHash -LiteralPath $core -Algorithm SHA256).Hash -ne $coreShimHash -or
                 (Get-FileHash -LiteralPath $tray -Algorithm SHA256).Hash -ne $trayShimHash -or
                 (Test-Path -LiteralPath $compatManagerPath)) {
                 continue
             }
             $stableVersion = (& $core --version | Out-String).Trim()
+            $lastCheckpoint = "stable Core version=$stableVersion exit=$LASTEXITCODE"
             if ($LASTEXITCODE -ne 0 -or $stableVersion -notmatch ("AgentDock(?: Workbench)? v" + [regex]::Escape($Version))) {
                 continue
             }
             $health = Invoke-RestMethod -UseBasicParsing -Uri "http://127.0.0.1:$port/healthz" -TimeoutSec 2
+            $lastCheckpoint = "health ok=$($health.ok) version=$($health.version)"
             if ($health.ok -eq $true -and $health.version -eq $Version) {
                 break
             }
         } catch {
+            $lastCheckpoint += "; exception=$($_.Exception.GetType().Name)"
             $health = $null
         }
     } while ([DateTime]::UtcNow -lt $deadline)
 
     if ($null -eq $health -or $health.ok -ne $true -or $health.version -ne $Version) {
-        throw 'generation migration did not reach committed healthy state'
+        throw "generation migration did not reach committed healthy state; $lastCheckpoint"
     }
 
     $generation = Join-Path $runtimeRoot "versions\v$Version"

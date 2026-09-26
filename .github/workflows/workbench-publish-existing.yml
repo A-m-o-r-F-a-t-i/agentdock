@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock' && github.ref == 'refs/heads/main'
+    if: github.repository_id == '1370391430' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:

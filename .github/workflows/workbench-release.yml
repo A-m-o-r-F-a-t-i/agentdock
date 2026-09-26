@@ -32,7 +32,7 @@ jobs:
   resolve-source:
     # Explicit same-version replacement uses the verified-build publisher.
     # A moved tag must not dispatch a second automatic release.
-    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock' && (github.event_name != 'push' || (github.event.forced != true && github.event.deleted != true))
+    if: github.repository_id == '1370391430' && (github.event_name != 'push' || (github.event.forced != true && github.event.deleted != true))
     runs-on: ubuntu-24.04
     outputs:
       commit: ${{ steps.identity.outputs.commit }}

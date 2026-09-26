@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "action": "list",
+  "tasks": [
+    {
+      "id": "tsk_0123456789abcdef",
+      "title": "Example",
+      "status": "active"
+    }
+  ],
+  "count": 1
+}

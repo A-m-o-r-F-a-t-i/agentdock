@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "source": "agentdock-api",
+  "workspace": {
+    "workspace_id": "wsp_0123456789abcdef",
+    "name": "AgentDock",
+    "rules_revision": 8
+  }
+}

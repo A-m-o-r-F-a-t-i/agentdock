@@ -51,11 +51,26 @@ enum L10n {
     }
 
     private static func localizationBundle(for preference: UILanguagePreference) -> Bundle {
-        guard preference != .system,
-              let path = Bundle.main.path(forResource: preference.rawValue, ofType: "lproj"),
-              let bundle = Bundle(path: path) else {
-            return .main
+        #if SWIFT_PACKAGE
+        let resources = Bundle.module
+        #else
+        let resources = Bundle.main
+        #endif
+        guard preference != .system else { return resources }
+        // SwiftPM normalizes locale directory names (for example zh-hans).
+        // Resolve the real localization before constructing its bundle directly;
+        // path(forResource:) can otherwise fall back to the runner's English.
+        let actual = resources.localizations.first {
+            $0.caseInsensitiveCompare(preference.rawValue) == .orderedSame
+        } ?? preference.rawValue
+        for root in [resources.resourceURL, resources.bundleURL].compactMap({ $0 }) {
+            for name in [actual, preference.rawValue, preference.rawValue.lowercased()] {
+                let url = root.appendingPathComponent(name + ".lproj", isDirectory: true)
+                if FileManager.default.fileExists(atPath: url.path), let bundle = Bundle(url: url) {
+                    return bundle
+                }
+            }
         }
-        return bundle
+        return resources
     }
 }

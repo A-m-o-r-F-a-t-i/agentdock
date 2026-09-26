@@ -27,6 +27,8 @@ func registerRuntimeAPI(mux *http.ServeMux, runtime runtimeapi.Runtime, cfg conf
 	mux.HandleFunc("/internal/runtime/plugins/", h)
 	mux.HandleFunc("/internal/runtime/tasks", h)
 	mux.HandleFunc("/internal/runtime/tasks/", h)
+	mux.HandleFunc("/internal/runtime/workspaces", h)
+	mux.HandleFunc("/internal/runtime/workspaces/", h)
 	for _, path := range []string{"execution", "conversations", "calls", "permissions", "approvals"} {
 		mux.HandleFunc("/internal/runtime/"+path, h)
 		mux.HandleFunc("/internal/runtime/"+path+"/", h)
@@ -45,7 +47,7 @@ func runtimeAPIHandler(runtime runtimeapi.Runtime, cfg config.Config, oauthStore
 	authRequired := cfg.AuthRequired()
 	return func(w http.ResponseWriter, r *http.Request) {
 		managementPath := strings.TrimSuffix(r.URL.Path, "/")
-		managementWrite := managementPath == "/internal/runtime/skills" || managementPath == "/internal/runtime/plugins" || managementPath == "/internal/runtime/mcp" || managementPath == "/internal/runtime/evolve" || managementPath == "/internal/runtime/workflow-templates"
+		managementWrite := managementPath == "/internal/runtime/skills" || managementPath == "/internal/runtime/plugins" || managementPath == "/internal/runtime/mcp" || managementPath == "/internal/runtime/evolve" || managementPath == "/internal/runtime/workflow-templates" || managementPath == "/internal/runtime/tasks" || managementPath == "/internal/runtime/workspaces"
 		if r.Method == http.MethodPost && managementWrite && !directLoopbackRequest(r) {
 			writeRuntimeAPIError(w, 403, "LOCAL_ONLY", "runtime management writes require a direct authenticated local client")
 			return

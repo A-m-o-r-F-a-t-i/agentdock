@@ -34,7 +34,7 @@ func TestRestrictedProfileAcknowledgesOnlyReceivedControlSupplement(t *testing.T
 	}
 	r.FinishToolResponse(ctx, response, true)
 	messages := response.CompletedAdditions().UserMessages
-	if len(messages) != 1 || messages[0].InsertionID != queued["insertion"].(insertion.Item).ID {
+	if len(messages) != 1 || messages[0].InsertionID != queued["insertion"].(insertion.PublicItem).ID {
 		t.Fatal("scoped supplement not delivered")
 	}
 	args := map[string]any{"receipts": []map[string]any{{"insertion_id": messages[0].InsertionID, "receipt_token": messages[0].ReceiptToken}}}
@@ -42,7 +42,7 @@ func TestRestrictedProfileAcknowledgesOnlyReceivedControlSupplement(t *testing.T
 		t.Fatalf("control-plane acknowledgement denied: %v %v", result, err)
 	}
 	view, err := r.RuntimeInsertions(local, conversation)
-	if err != nil || view["insertions"].([]insertion.Item)[0].Status != "acknowledged" {
+	if err != nil || view["insertions"].([]insertion.PublicItem)[0].Status != "acknowledged" {
 		t.Fatal("receipt not durable")
 	}
 	if _, err = r.Call(host, "exec_command", map[string]any{"cmd": "echo should-not-run"}); err == nil {

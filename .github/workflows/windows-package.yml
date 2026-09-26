@@ -76,7 +76,7 @@ concurrency:
 
 jobs:
   resolve-source:
-    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
+    if: github.repository_id == '1370391430'
     name: Resolve requested ref once
     runs-on: ubuntu-latest
     outputs:
@@ -95,7 +95,7 @@ jobs:
 
   linux-contracts:
     needs: resolve-source
-    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
+    if: github.repository_id == '1370391430'
     name: Linux transaction and concurrency regression
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -138,7 +138,7 @@ jobs:
 
   build:
     needs: [resolve-source, linux-contracts, native-acceptance]
-    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
+    if: github.repository_id == '1370391430'
     name: Build verified unsigned Windows packages
     runs-on: windows-latest
     timeout-minutes: 45

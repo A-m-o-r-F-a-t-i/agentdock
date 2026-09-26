@@ -13,10 +13,10 @@ English | [简体中文](./README.zh-CN.md)
 Open ChatGPT in your browser and manage multiple computers and servers from one conversation. Write code, change configuration, run commands, and deploy in the real environment where the work belongs—without consuming a dedicated Codex coding quota.
 
 
-[Documentation](https://uvwt.github.io/agentdock-docs/) · [Download](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases) · [Community](https://qun.qq.com/universal-share/share?ac=1&authKey=Rp86bSzI7vqm87KoYlKawgsPZ440Ubhyezw6Qkgcn3JISwX3zXxsXkbS5598RrY5&busi_data=eyJncm91cENvZGUiOiIxMDgxMzM3MDE5IiwidG9rZW4iOiJ0Mlg1bUU1ZWtuZzF3SHJDT3pSaGsrOURIMlNYaXBlYllOUjNLZ1BUb1hzM2lJSTZjeVNldzU0ajl0SjRVZkx2IiwidWluIjoiMzIwMjA4ODAzMiJ9&data=W28mWvuqaLf_Fwnf0CgAJXuDs6l3A78V7AoWZnizPboCpKoQMzHzZ-UlluYo47U3tmIBHK2xIgWEVEJbTiGsPQ&svctype=4&tempid=h5_group_info)
+[Documentation](https://uvwt.github.io/agentdock-docs/) · [Download](https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench/releases) · [Community](https://qun.qq.com/universal-share/share?ac=1&authKey=Rp86bSzI7vqm87KoYlKawgsPZ440Ubhyezw6Qkgcn3JISwX3zXxsXkbS5598RrY5&busi_data=eyJncm91cENvZGUiOiIxMDgxMzM3MDE5IiwidG9rZW4iOiJ0Mlg1bUU1ZWtuZzF3SHJDT3pSaGsrOURIMlNYaXBlYllOUjNLZ1BUb1hzM2lJSTZjeVNldzU0ajl0SjRVZkx2IiwidWluIjoiMzIwMjA4ODAzMiJ9&data=W28mWvuqaLf_Fwnf0CgAJXuDs6l3A78V7AoWZnizPboCpKoQMzHzZ-UlluYo47U3tmIBHK2xIgWEVEJbTiGsPQ&svctype=4&tempid=h5_group_info)
 
-[![CI](https://github.com/A-m-o-r-F-a-t-i/agentdock/actions/workflows/ci.yml/badge.svg)](https://github.com/A-m-o-r-F-a-t-i/agentdock/actions/workflows/ci.yml)
-[![GitHub Release](https://img.shields.io/github/v/release/A-m-o-r-F-a-t-i/agentdock?display_name=tag&logo=github)](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases)
+[![CI](https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench/actions/workflows/ci.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/A-m-o-r-F-a-t-i/AgentDock-Workbench?display_name=tag&logo=github)](https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench/releases)
 [![License](https://img.shields.io/github/license/uvwt/agentdock)](./LICENSE)
 
 </div>
@@ -205,7 +205,7 @@ User documentation is maintained separately in [`uvwt/agentdock-docs`](https://g
 
 Changes involving device pairing, cross-node tool routing, Recall, or Workflow integrations may also require coordinated changes in [`uvwt/nexusdock`](https://github.com/uvwt/nexusdock). The shared protocol is maintained in [`uvwt/agentdock-protocol`](https://github.com/uvwt/agentdock-protocol). When changing shared interfaces or data structures, update the protocol definitions first, then align both implementations and their protocol dependency versions, check compatibility, update the corresponding documentation, and link related cross-repository changes in the PR.
 
-Submit bugs and feature requests through [GitHub Issues](https://github.com/A-m-o-r-F-a-t-i/agentdock/issues).
+Submit bugs and feature requests through [GitHub Issues](https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench/issues).
 
 ## Support the project
 
@@ -232,7 +232,7 @@ Submit bugs and feature requests through [GitHub Issues](https://github.com/A-m-
 
 - [Documentation](https://uvwt.github.io/agentdock-docs/)
 - [Documentation source](https://github.com/uvwt/agentdock-docs)
-- [GitHub Releases](https://github.com/A-m-o-r-F-a-t-i/agentdock/releases)
+- [GitHub Releases](https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench/releases)
 - [GitHub Container Registry](https://github.com/uvwt/agentdock/pkgs/container/agentdock)
 - [Docker Hub](https://hub.docker.com/r/agentdockio/agentdock)
 - [Linux Do](https://linux.do/)
