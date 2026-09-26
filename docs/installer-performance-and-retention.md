@@ -142,18 +142,27 @@ self-hosted runner.
 
 ## 5. Evidence status
 
-The following values must be copied from the successful Actions artifacts after
-this branch is pushed. They are intentionally not estimated locally.
+GitHub Actions run `36211780509` measured the immutable source commit
+`2e516fb698dbc4906878aaa4e96ecc7e92ae580e` on GitHub-hosted `windows-2022`
+runners. The values below come from the generated runtime-split reports rather
+than local estimates.
 
 | Evidence | x64 | ARM64 |
 | --- | ---: | ---: |
-| Source commit | pending | pending |
-| Baseline WPF ZIP bytes | pending | pending |
-| Runtime-split ZIP bytes | pending | pending |
-| ZIP reduction MiB | pending | pending |
-| Required launch dependencies | pending | pending |
-| Localized satellite resources | pending | pending |
-| Actions job result | pending | pending |
+| Source commit | `2e516fb698dbc4906878aaa4e96ecc7e92ae580e` | `2e516fb698dbc4906878aaa4e96ecc7e92ae580e` |
+| Baseline WPF ZIP bytes | 74,879,537 | 70,262,140 |
+| Runtime-split ZIP bytes | 7,315,086 | 7,305,132 |
+| ZIP reduction MiB | 64.43 | 60.04 |
+| 90–160 MiB exploration window | Not met | Not met |
+| Required launch dependencies | `agentdock-tray.exe`, `agentdock-tray.dll`, `agentdock-tray.deps.json`, `agentdock-tray.runtimeconfig.json`, `System.Security.Cryptography.ProtectedData.dll` | Same as x64 |
+| Localized satellite resources | `zh-CN/agentdock-tray.resources.dll` | `zh-CN/agentdock-tray.resources.dll` |
+| Required frameworks | `Microsoft.NETCore.App 8.0.0`; `Microsoft.WindowsDesktop.App 8.0.0` | `Microsoft.NETCore.App 8.0.0`; `Microsoft.WindowsDesktop.App 8.0.0` |
+| Actions job result | Success | Success |
+
+The measured reduction is substantial but below the exploration window on both
+architectures. This result does not change the production self-contained
+single-file default and does not approve the runtime-split candidate for a
+release.
 
 Real installation time and cold/warm first-ready latency are **not** measured by
 this CI workflow. Build duration, ZIP compression time, and test duration are
