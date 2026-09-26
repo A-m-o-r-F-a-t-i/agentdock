@@ -20,7 +20,7 @@ env:
 jobs:
   contract:
     name: Source and bridge contracts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       short_sha: ${{ steps.identity.outputs.short_sha }}
@@ -133,7 +133,7 @@ jobs:
   build:
     name: Android lint, unit tests and APKs
     needs: contract
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:
       candidate_artifact: ${{ steps.identity.outputs.candidate_artifact }}
@@ -185,12 +185,26 @@ jobs:
           echo "$(dirname "$sdkmanager_path")" >> "$GITHUB_PATH"
           "$sdkmanager_path" --version
 
-      - name: Install Android SDK packages
+      - name: Prepare Android SDK packages
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}"
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          platform="$sdk_root/platforms/android-${ANDROID_COMPILE_SDK}"
+          if [[ ! -d "$platform" ]]; then
+            candidate="$sdk_root/platforms/android-${ANDROID_COMPILE_SDK}.0"
+            if [[ ! -d "$candidate" ]]; then
+              candidate="$(find "$sdk_root/platforms" -maxdepth 1 -type d -name "android-${ANDROID_COMPILE_SDK}.*" ! -name '*beta*' | sort -V | head -1)"
+            fi
+            test -n "$candidate"
+            test -d "$candidate"
+            relative="$(basename "$candidate")"
+            ln -s "$relative" "$platform" 2>/dev/null || sudo ln -s "$relative" "$platform"
+          fi
+          test -d "$platform"
+          test -d "$sdk_root/build-tools/${ANDROID_BUILD_TOOLS}"
+          test -x "$sdk_root/platform-tools/adb"
+          printf 'platform=%s\nbuild_tools=%s\n' "$platform" "$sdk_root/build-tools/${ANDROID_BUILD_TOOLS}"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -286,7 +300,7 @@ jobs:
   emulator:
     name: Emulator API ${{ matrix.api }}
     needs: [contract, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 55
     strategy:
       fail-fast: false
@@ -338,12 +352,26 @@ jobs:
           echo "$(dirname "$sdkmanager_path")" >> "$GITHUB_PATH"
           "$sdkmanager_path" --version
 
-      - name: Install Android SDK packages
+      - name: Prepare Android SDK packages
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-${ANDROID_COMPILE_SDK}" "build-tools;${ANDROID_BUILD_TOOLS}"
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          platform="$sdk_root/platforms/android-${ANDROID_COMPILE_SDK}"
+          if [[ ! -d "$platform" ]]; then
+            candidate="$sdk_root/platforms/android-${ANDROID_COMPILE_SDK}.0"
+            if [[ ! -d "$candidate" ]]; then
+              candidate="$(find "$sdk_root/platforms" -maxdepth 1 -type d -name "android-${ANDROID_COMPILE_SDK}.*" ! -name '*beta*' | sort -V | head -1)"
+            fi
+            test -n "$candidate"
+            test -d "$candidate"
+            relative="$(basename "$candidate")"
+            ln -s "$relative" "$platform" 2>/dev/null || sudo ln -s "$relative" "$platform"
+          fi
+          test -d "$platform"
+          test -d "$sdk_root/build-tools/${ANDROID_BUILD_TOOLS}"
+          test -x "$sdk_root/platform-tools/adb"
+          printf 'platform=%s\nbuild_tools=%s\n' "$platform" "$sdk_root/build-tools/${ANDROID_BUILD_TOOLS}"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -383,7 +411,7 @@ jobs:
     name: Aggregate candidate evidence
     if: always()
     needs: [contract, build, emulator]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout exact candidate SHA
