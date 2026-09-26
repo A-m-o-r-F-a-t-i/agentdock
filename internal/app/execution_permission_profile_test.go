@@ -236,3 +236,43 @@ func TestExecutionProfileSearchNeverInvokesExternalHelperOrGitConfig(t *testing.
 		t.Fatal("restricted directory listing read repository ignore configuration")
 	}
 }
+
+func TestExecutionCustomPermissionsDisabledUsesModeAndRetainsHistory(t *testing.T) {
+	r := executionTestRuntime(t)
+	ctx := scopeHost("custom-permission-disabled")
+	if _, err := r.Call(ctx, "agentdock_context", nil); err != nil {
+		t.Fatal(err)
+	}
+	settings := permission.DefaultSettings()
+	settings.Profile.Filesystem = permission.Deny
+	settings.Profile.Network = permission.Deny
+	settings.Approval.Mode = permission.Never
+	settings.Reviewer = permission.ReviewerAuto
+	disabled := false
+	policy, err := r.permissions.Update(ctx, permission.Change{
+		Scope: "global", Mode: permission.Full, ConfirmFull: true, ExpectedRevision: 1,
+		Settings: &settings, CustomPermissionsEnabled: &disabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := r.Call(ctx, "file_edit", map[string]any{"action": "add", "path": "mode-controlled.txt", "content": "allowed by full mode"})
+	if err != nil || resultReportsFailure(result) {
+		t.Fatalf("disabled custom profile still blocked full mode: %+v %v", result, err)
+	}
+	effective, err := r.permissions.Effective(ctx, activity.Binding{})
+	if err != nil || effective.CustomPermissionsEnabled || effective.Settings.Profile.Filesystem != permission.FileWrite || effective.ConfiguredSettings.Profile.Filesystem != permission.Deny {
+		t.Fatalf("runtime effective/history split mismatch: %+v %v", effective, err)
+	}
+	enabled := true
+	if _, err = r.permissions.Update(ctx, permission.Change{Scope: "global", ExpectedRevision: policy.Revision, CustomPermissionsEnabled: &enabled}); err != nil {
+		t.Fatal(err)
+	}
+	denied, err := r.Call(ctx, "file_edit", map[string]any{"action": "add", "path": "profile-denied.txt", "content": "must not write"})
+	if err == nil && !resultReportsFailure(denied) {
+		t.Fatalf("enabled custom profile did not block a write: %+v", denied)
+	}
+	if _, err = os.Stat(filepath.Join(r.cfg.AgentDockDefaultDir, "profile-denied.txt")); !os.IsNotExist(err) {
+		t.Fatal("profile-denied file exists")
+	}
+}

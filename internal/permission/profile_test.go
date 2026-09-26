@@ -156,7 +156,7 @@ func TestProfileLegacyUpgradeInheritanceAndReset(t *testing.T) {
 	settings := DefaultSettings()
 	settings.Profile.Network = Deny
 	policy, err := s.Update(ctx, Change{Scope: "workspace", ScopeID: "wsp_other", ExpectedRevision: 7, Settings: &settings})
-	if err != nil || policy.SchemaVersion != 2 {
+	if err != nil || policy.SchemaVersion != CurrentSchemaVersion {
 		t.Fatal(policy, err)
 	}
 	a, _ := s.Effective(ctx, activity.Binding{WorkspaceID: "wsp_other", ConversationID: "conv_a"})
