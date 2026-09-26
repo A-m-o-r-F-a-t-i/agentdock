@@ -160,8 +160,30 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Use runner Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$sdk_root"
+          test -d "$sdk_root"
+          sdkmanager_path="$(command -v sdkmanager || true)"
+          if [[ -z "$sdkmanager_path" ]]; then
+            for candidate in \
+              "$sdk_root/cmdline-tools/latest/bin/sdkmanager" \
+              "$sdk_root/cmdline-tools/bin/sdkmanager" \
+              "$sdk_root/tools/bin/sdkmanager"; do
+              if [[ -x "$candidate" ]]; then
+                sdkmanager_path="$candidate"
+                break
+              fi
+            done
+          fi
+          test -x "$sdkmanager_path"
+          echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$sdk_root" >> "$GITHUB_ENV"
+          echo "$(dirname "$sdkmanager_path")" >> "$GITHUB_PATH"
+          "$sdkmanager_path" --version
 
       - name: Install Android SDK packages
         shell: bash
@@ -291,8 +313,30 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Use runner Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$sdk_root"
+          test -d "$sdk_root"
+          sdkmanager_path="$(command -v sdkmanager || true)"
+          if [[ -z "$sdkmanager_path" ]]; then
+            for candidate in \
+              "$sdk_root/cmdline-tools/latest/bin/sdkmanager" \
+              "$sdk_root/cmdline-tools/bin/sdkmanager" \
+              "$sdk_root/tools/bin/sdkmanager"; do
+              if [[ -x "$candidate" ]]; then
+                sdkmanager_path="$candidate"
+                break
+              fi
+            done
+          fi
+          test -x "$sdkmanager_path"
+          echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$sdk_root" >> "$GITHUB_ENV"
+          echo "$(dirname "$sdkmanager_path")" >> "$GITHUB_PATH"
+          "$sdkmanager_path" --version
 
       - name: Install Android SDK packages
         shell: bash
