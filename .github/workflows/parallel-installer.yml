@@ -250,6 +250,47 @@ jobs:
             throw
           }
 
+      - name: Publish runtime-split evidence summary
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          $reportPath = Join-Path $PWD "artifacts\parallel-installer\$env:ARCHITECTURE\reports\runtime-split-report.json"
+          if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) {
+            throw "Runtime-split evidence report is missing: $reportPath"
+          }
+          $report = Get-Content -LiteralPath $reportPath -Raw -Encoding UTF8 | ConvertFrom-Json
+          $evidence = [ordered]@{
+            source_commit = [string] $report.source_commit
+            architecture = [string] $report.architecture
+            baseline_archive_bytes = [Int64] $report.baseline.archive_bytes
+            runtime_split_archive_bytes = [Int64] $report.runtime_split.archive_bytes
+            archive_reduction_bytes = [Int64] $report.delta.archive_reduction_bytes
+            archive_reduction_mib = [double] $report.delta.archive_reduction_mib
+            meets_target_window = [bool] $report.delta.meets_target_window
+            required_launch_dependencies = @($report.runtime_split.required_launch_dependencies)
+            localized_satellite_resources = @($report.runtime_split.localized_satellite_resources)
+            runtime_requirement = @($report.runtime_requirement)
+          }
+          $json = $evidence | ConvertTo-Json -Depth 8 -Compress
+          $escaped = $json.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+          $architecture = $env:ARCHITECTURE
+          Write-Host "::notice title=WB05 runtime-split evidence ${architecture}::$escaped"
+          @(
+            "## WB05 runtime-split evidence — $env:ARCHITECTURE"
+            ''
+            '| Metric | Value |'
+            '| --- | ---: |'
+            "| Source commit | ``$($evidence.source_commit)`` |"
+            "| Baseline ZIP bytes | $($evidence.baseline_archive_bytes) |"
+            "| Runtime-split ZIP bytes | $($evidence.runtime_split_archive_bytes) |"
+            "| Reduction MiB | $($evidence.archive_reduction_mib) |"
+            "| Meets 90–160 MiB exploration window | $($evidence.meets_target_window) |"
+            ''
+            '```json'
+            $json
+            '```'
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding UTF8
+
       - name: Record candidate policy evidence
         if: always()
         env:
