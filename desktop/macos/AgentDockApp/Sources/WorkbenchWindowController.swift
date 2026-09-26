@@ -92,6 +92,7 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
     }
 
     func refresh() { model.refresh() }
+    func presentTask(_ id: String) { present(); manager.presentTask(id) }
 
     func capturePNG(to url: URL) throws {
         guard let content = window?.contentView else {
