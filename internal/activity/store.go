@@ -38,8 +38,8 @@ type Store struct {
 	projection       *callProjection
 	root             string
 	options          Options
-	mu               sync.Mutex
-	payloadMu        sync.Mutex
+	mu               resourceMutex
+	payloadMu        resourceMutex
 	appendQueueMu    sync.Mutex
 	appendQueue      []*appendRequest
 	appendWorker     bool
@@ -120,22 +120,11 @@ func (s *Store) lockPayload(ctx context.Context) (func(), error) {
 	return s.lockResource(ctx, &s.payloadMu, ".payload.lock")
 }
 
-func (s *Store) lockResource(ctx context.Context, mutex *sync.Mutex, name string) (func(), error) {
+func (s *Store) lockResource(ctx context.Context, mutex *resourceMutex, name string) (func(), error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	if err := ctx.Err(); err != nil {
+	if err := mutex.LockContext(ctx); err != nil {
 		return nil, err
-	}
-	if !mutex.TryLock() {
-		tick := time.NewTicker(2 * time.Millisecond)
-		defer tick.Stop()
-		for !mutex.TryLock() {
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-tick.C:
-			}
-		}
 	}
 	release, err := filelock.Acquire(ctx, filepath.Join(s.root, name))
 	if err != nil {

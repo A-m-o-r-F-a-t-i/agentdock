@@ -55,6 +55,10 @@ jobs:
             exit 1
           fi
 
+      - name: Repeated parallel conversation audit regression
+        timeout-minutes: 3
+        run: go test ./internal/app -run '^TestExecutionTwentyConcurrentCallsPerConversation$' -count=5 -timeout=150s
+
       - name: Test
         # Windows packages spawn Node, PowerShell and desktop fixtures; avoid
         # starving their bounded handshakes with repository-wide process fan-out.
