@@ -229,11 +229,14 @@ class WorkbenchViewModel(
     }
 
     fun saveConnection(endpoint: String, remoteEnabled: Boolean, bearer: String) {
+        if (_state.value.fixture) { fixtureBlocked(); return }
         viewModelScope.launch {
             try {
-                dev.agentdock.workbench.data.EndpointPolicy.resolve(endpoint, remoteEnabled)
+                val origin = dev.agentdock.workbench.data.EndpointPolicy.resolve(endpoint, remoteEnabled)
                 stopStreams()
-                withContext(Dispatchers.IO) { if (bearer.isNotBlank()) graph.credentials.put("core_bearer", bearer.trim()) }
+                refreshJob?.cancel()
+                detailJob?.cancel()
+                withContext(Dispatchers.IO) { if (bearer.isNotBlank()) graph.credentials.putCore(origin, bearer.trim()) }
                 graph.settings.update { it.copy(endpoint = endpoint.trim().trimEnd('/'), remoteEndpointEnabled = remoteEnabled) }
                 refresh()
             } catch (error: CancellationException) { throw error } catch (error: Exception) { showError(error) }
@@ -241,9 +244,15 @@ class WorkbenchViewModel(
     }
 
     fun clearBearer() {
+        if (_state.value.fixture) { fixtureBlocked(); return }
         stopStreams()
-        graph.credentials.clear("core_bearer")
-        _state.update { it.copy(message = "Core Bearer 已删除") }
+        refreshJob?.cancel()
+        detailJob?.cancel()
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { graph.credentials.clear("core_bearer") }
+            _state.update { it.copy(message = "本机保存的 Core Bearer 已删除；服务器凭据未撤销") }
+            refresh()
+        }
     }
 
     fun setInsertionDraft(text: String) {

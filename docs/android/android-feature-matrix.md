@@ -19,7 +19,7 @@
 | WB-A13 | 权限配置；PermissionSettingsEditor.cs | permissions/effective、revisioned POST permissions | ViewModel：识别 custom_permissions_enabled；缺少字段报 pending_integration | permissions.png；工作区作用域、配置/有效值完整回读未完成 |
 | WB-A14 | Skill 管理；RuntimeService.Capabilities.cs | runtime skills | Pages.kt：库存和启停请求 | skills.png；发现/安装/更新/配置与服务能力检测不完整 |
 | WB-A15 | 插件/MCP；RuntimeService.Capabilities.cs | plugins、mcp | Pages.kt：库存和启停请求；不加载 MCP UI | plugins.png；完整连接、配置、更新和错误恢复未完成 |
-| WB-A16 | Core 连接；RuntimeService.cs | Origin/Bearer、Termux 生命周期 | Pages.kt：端点校验、显式凭据保存/删除 | connections.png、EndpointPolicyTest；自动配对未完成 |
+| WB-A16 | Core 连接；RuntimeService.cs | Origin/Bearer、Termux 生命周期 | Pages.kt：端点校验、Origin绑定凭据保存/删除、旧密文保留但不发送 | connections.png、EndpointPolicyTest、CoreCredentialBindingTest、CoreCredentialStoreTest；自动配对未完成 |
 | WB-A17 | 安装更新；平台专属 | RUN_COMMAND、受信清单、PRoot | 固定桥、有界输入、签名校验及安全解包 | install.png、test-termux-bridge.sh；完整 journal/schema 回退/保留策略未完成 |
 | WB-A18 | 工程与文件；平台专属 | SAF URI 与 Termux 路径分别授权 | Pages.kt：选择并持久化 Project/Artifacts URI | projects.png；双端探针、创建工程和实际导入导出未完成 |
 | WB-A19 | 日志诊断；ExecutionWindow.Actions.cs: SaveExportAsync | Core 摘要、Termux 诊断包 | Pages.kt：诊断入口、最近调用/操作 | diagnostics.png；分页搜索、清理策略和导出预览未完成 |

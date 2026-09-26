@@ -343,7 +343,7 @@ private fun ConnectionsPage(state: WorkbenchUiState, viewModel: WorkbenchViewMod
         OutlinedTextField(
             bearer,
             { bearer = it },
-            label = { Text("Bearer（留空表示不更改）") },
+            label = { Text("Bearer（同节点留空保留）") },
             modifier = Modifier.fillMaxWidth().testTag("core-bearer"),
             singleLine = true,
             visualTransformation = PasswordVisualTransformation()
@@ -356,7 +356,7 @@ private fun ConnectionsPage(state: WorkbenchUiState, viewModel: WorkbenchViewMod
             )
         )
         InfoCard("连接状态", state.snapshot.connectionMessage)
-        InfoCard("凭据存储", "Core、配对和公网访问凭据只进入 Android Keystore 包封的应用私有存储，不写入 DataStore、日志、Intent 或 Termux 参数。")
+        InfoCard("凭据存储", "凭据只在保存时绑定的 scheme、host 和 port 使用。切换节点或旧凭据尚未绑定时需重新配置；不会把原节点 Bearer 发送到新地址。密文保存在 Android Keystore 包封的应用私有存储。")
     }
 }
 

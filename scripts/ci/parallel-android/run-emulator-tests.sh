@@ -58,7 +58,7 @@ for path in (root / 'reports').rglob('TEST-*.xml'):
         parse_errors.append(f'{path.name}: {error}')
 actual_api = (root / 'actual-api.txt').read_text(errors='replace').strip()
 passed = sum(value == 'passed' for value in cases.values())
-valid = rc == 0 and passed >= 7 and all(value == 'passed' for value in cases.values()) and not missing and not invalid_images and not parse_errors and actual_api == str(api)
+valid = rc == 0 and passed >= 9 and all(value == 'passed' for value in cases.values()) and not missing and not invalid_images and not parse_errors and actual_api == str(api)
 result = {
     'schema_version': 2, 'lane': 'WB07', 'source_sha': os.environ['GITHUB_SHA'],
     'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],

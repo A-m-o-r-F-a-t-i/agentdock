@@ -9,6 +9,8 @@ import dev.agentdock.workbench.model.WorkbenchItem
 import dev.agentdock.workbench.model.WorkbenchSettings
 import dev.agentdock.workbench.model.WorkbenchSnapshot
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import org.json.JSONArray
@@ -193,9 +195,9 @@ class WorkbenchRepository(
         Result.failure(error)
     }
 
-    private fun client(settings: WorkbenchSettings): CoreClient {
+    private suspend fun client(settings: WorkbenchSettings): CoreClient = withContext(Dispatchers.IO) {
         val origin = EndpointPolicy.resolve(settings.endpoint, settings.remoteEndpointEnabled)
-        return CoreClient(CoreEndpoint(origin, credentials.get("core_bearer")))
+        CoreClient(CoreEndpoint(origin, credentials.getCore(origin)))
     }
 
     private fun sidebarRequest() = JSONObject()

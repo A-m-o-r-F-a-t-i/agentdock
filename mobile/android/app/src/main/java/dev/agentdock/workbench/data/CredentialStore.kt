@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.nio.charset.StandardCharsets
+import java.net.URI
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -15,6 +16,10 @@ import javax.crypto.spec.GCMParameterSpec
 class CredentialStore(context: Context) {
     private val preferences = context.getSharedPreferences("agentdock_credentials", Context.MODE_PRIVATE)
     private val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+
+    fun putCore(origin: URI, bearer: String) = put("core_bearer", CoreCredentialBinding.encode(origin, bearer))
+
+    fun getCore(origin: URI): String = CoreCredentialBinding.decode(get("core_bearer"), origin)
 
     fun put(name: String, value: String) {
         require(name in ALLOWED_KEYS)

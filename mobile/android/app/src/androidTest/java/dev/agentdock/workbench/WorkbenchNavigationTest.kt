@@ -86,6 +86,12 @@ class WorkbenchNavigationTest {
             assertTrue(model.state.value.message.contains("禁止实际写入"))
             model.manage("tasks", listOf("tsk_android"), "delete", confirmed = true)
             assertNull(model.state.value.batchResult)
+            val endpoint = model.state.value.settings.endpoint
+            model.saveConnection("https://fixture.invalid", true, "fixture-do-not-store")
+            assertEquals(endpoint, model.state.value.settings.endpoint)
+            assertTrue(model.state.value.message.contains("禁止实际写入"))
+            model.clearBearer()
+            assertTrue(model.state.value.message.contains("禁止实际写入"))
         }
     }
 

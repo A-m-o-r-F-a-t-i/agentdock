@@ -6,6 +6,10 @@ Core Bearer, pairing and public-access secrets use an Android Keystore AES-GCM k
 
 The bridge does not return a Bearer through Intent extras. Android rejects credential fields at any nesting depth, expired callbacks and replay after a terminal result. Pairing through a dedicated authenticated Core channel remains pending integration; the existing explicit connection editor stores user-entered credentials with Keystore. Invalid JSON, raw stderr and plugin error text are never copied into operation summaries.
 
+Core Bearer records bind the credential to its scheme, lowercased host and effective port inside the encrypted envelope. Only host case and the default HTTP/HTTPS port are normalized; localhost and its numeric aliases remain distinct scopes. Changing origins never reuses the previous node's credential. Legacy unbound ciphertext is preserved but not transmitted until the user explicitly saves a scoped credential. Removing a locally saved Bearer does not revoke that credential at the server.
+
+CoreCredentialBindingTest covers origin changes, malformed envelopes and invalid token inputs. CoreCredentialStoreTest verifies real Android Keystore encryption, exact-origin reads and legacy preservation without publishing secret values.
+
 ## Network
 
 - Loopback HTTP/HTTPS is allowed.

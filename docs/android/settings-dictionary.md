@@ -7,7 +7,7 @@
 | theme | system；light/dark | APK DataStore | WorkbenchTheme 实际生效 |
 | density | comfortable；compact | APK DataStore | 页面内边距生效，完整组件密度适配仍待补 |
 | language | system | APK 偏好 | 仅保存，文字本地化未实现 |
-| endpoint、remoteEndpointEnabled | http://127.0.0.1:8765；false | APK 连接配置 | CoreClient校验Origin；远程必须显式HTTPS |
+| endpoint、remoteEndpointEnabled | http://127.0.0.1:8765；false | APK 连接配置 | CoreClient校验Origin；远程必须显式HTTPS；Bearer仅在绑定Origin生效 |
 | notificationsEnabled | true | APK 偏好＋系统授权 | 请求POST_NOTIFICATIONS；不能静默替代系统决定；可选通知开关消费未完整 |
 | guardianEnabled、guardianPaused | false、false | APK DataStore | GuardianScheduler、前台服务和Tile消费；暂停不停止Core |
 | autoRepairEnabled | false | APK意图＋Termux进程事实 | 仅desired=running时请求受限恢复；持久熔断未完成 |
@@ -31,7 +31,7 @@
 
 ## 秘密与运行状态
 
-Core Bearer、配对及公网秘密不进入本词典对应DataStore。CredentialStore使用Android Keystore AES-GCM包封应用私有密文；桥回执不传凭据，旧桥包含凭据字段时拒绝导入。当前可用入口为明确的Core连接配置，自动配对待独立契约实现。
+Core Bearer、配对及公网秘密不进入本词典对应DataStore。CredentialStore使用Android Keystore AES-GCM包封应用私有密文；桥回执不传凭据，旧桥包含凭据字段时拒绝导入。Origin的scheme、host和实际port与Bearer一并保存在密文中，仅同一Origin可取出。切换地址不会沿用旧凭据，旧未绑定密文保留但不发送，需在明确的Core连接配置中重新保存。本机删除不等于服务器撤销。自动配对仍待独立契约实现。
 
 任务、对话、调用、审批、插入和最终有效权限只从Core读取。页面资源ID、已提交筛选、返回路径、插入草稿使用SavedStateHandle/Compose状态恢复，恢复后重新读取Core。Termux操作摘要独立保存在APK私有目录，不复制Core业务数据库。
 
