@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AgentDock Workbench</string>
+    <string name="guardian_channel">AgentDock 节点状态</string>
+    <string name="guardian_channel_description">用户启用的本地节点健康检查、恢复入口与显式停止控制</string>
+    <string name="guardian_running">AgentDock Workbench 正在管理本地节点</string>
+    <string name="guardian_paused">守护已暂停；Core 状态未被更改</string>
+    <string name="action_open">打开</string>
+    <string name="action_pause">暂停守护</string>
+    <string name="action_resume">恢复守护</string>
+    <string name="action_stop">停止 Core</string>
+    <string name="tile_label">AgentDock</string>
+</resources>

@@ -1,0 +1,10 @@
+#!/data/data/com.termux/files/usr/bin/sh
+set -eu
+umask 077
+# A fixed argv-only entry. The companion module is the single deployment authority.
+base="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+if ! command -v python3 >/dev/null 2>&1 || [ ! -f "$base/agentdock_workbench.py" ]; then
+  printf '%s\n' '{"schema_version":1,"status":"requires_user_action","message":"Export the complete bridge bundle and run bootstrap in Termux"}'
+  exit 1
+fi
+exec python3 "$base/agentdock_workbench.py" "$@"
