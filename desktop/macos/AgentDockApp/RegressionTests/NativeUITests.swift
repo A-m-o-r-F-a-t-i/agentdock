@@ -61,6 +61,22 @@ final class NativeUITests: XCTestCase {
         XCTAssertTrue(controller.window === original)
         controller.close()
     }
+    @MainActor func testCompletionPanelsAreBoundedAndDeduplicated() async throws {
+        _ = NSApplication.shared
+        let initial = NSApp.windows.filter { $0.isVisible && $0.title == L10n.text("Task completed") }.count
+        let observer = WorkbenchCompletionNotifications { _ in }
+        for index in 0..<8 {
+            let item = try XCTUnwrap(WorkbenchCompletion(json: .object([
+                "id": .string("notification_\(index)"), "task_id": .string("task_\(index)"),
+                "title": .string("Completed fixture \(index)")])))
+            observer.show(item); observer.show(item)
+        }
+        let visible = NSApp.windows.filter { $0.isVisible && $0.title == L10n.text("Task completed") }
+        XCTAssertEqual(visible.count - initial, 3)
+        if let window = visible.first { try capture(window, name: "xctest-task-completion.png") }
+        observer.stop()
+        XCTAssertEqual(NSApp.windows.filter { $0.isVisible && $0.title == L10n.text("Task completed") }.count, initial)
+    }
     @MainActor func testNativeResourceNavigationAndScreenshots() async throws {
         _ = NSApplication.shared
         RuntimeProtocol.configure { request in
