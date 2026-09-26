@@ -68,7 +68,7 @@ func runApprovalControl(ctx context.Context, args []string, stdout, stderr io.Wr
 			result, requestErr := client.request(waitCtx, http.MethodGet, base, nil, nil)
 			if requestErr != nil {
 				if waitCtx.Err() != nil {
-					return &controlError{code: controlExitTimeout, stableCode: "WAIT_TIMEOUT", message: "等待审批结果超时"}
+					return controlWaitContextError(waitCtx, "等待审批结果超时")
 				}
 				return requestErr
 			}
@@ -83,7 +83,7 @@ func runApprovalControl(ctx context.Context, args []string, stdout, stderr io.Wr
 			select {
 			case <-waitCtx.Done():
 				timer.Stop()
-				return &controlError{code: controlExitTimeout, stableCode: "WAIT_TIMEOUT", message: "等待审批结果超时"}
+				return controlWaitContextError(waitCtx, "等待审批结果超时")
 			case <-timer.C:
 			}
 		}

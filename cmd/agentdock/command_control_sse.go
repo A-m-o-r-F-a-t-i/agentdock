@@ -17,6 +17,7 @@ const (
 	controlStreamRetryMin        = 250 * time.Millisecond
 	controlStreamRetryMax        = 5 * time.Second
 	controlStreamMaxColdFailures = 8
+	controlStreamMaxEventBytes   = 2 << 20
 )
 
 type controlSSEEvent struct {
@@ -135,8 +136,10 @@ func (c *controlClient) watchSSEOnce(ctx context.Context, path string, query url
 	encoder.SetEscapeHTML(false)
 	current := controlSSEEvent{}
 	dataLines := []string{}
+	eventBytes := 0
 	received := false
 	flush := func() error {
+		eventBytes = 0
 		if current.ID == "" && current.Event == "" && len(dataLines) == 0 {
 			return nil
 		}
@@ -171,6 +174,7 @@ func (c *controlClient) watchSSEOnce(ctx context.Context, path string, query url
 		}
 		received = true
 		current = controlSSEEvent{}
+		clear(dataLines)
 		dataLines = dataLines[:0]
 		return nil
 	}
@@ -190,6 +194,14 @@ func (c *controlClient) watchSSEOnce(ctx context.Context, path string, query url
 			continue
 		}
 		value = strings.TrimPrefix(value, " ")
+		if field == "id" || field == "event" || field == "data" {
+			// The scanner bounds each line, not the aggregate event. Count wire
+			// bytes before retaining fields so many small data lines stay bounded.
+			if len(line)+1 > controlStreamMaxEventBytes-eventBytes {
+				return received, false, controlErrorf(controlExitService, "activity stream 单个事件超过 2 MiB")
+			}
+			eventBytes += len(line) + 1
+		}
 		switch field {
 		case "id":
 			current.ID = value
@@ -202,6 +214,9 @@ func (c *controlClient) watchSSEOnce(ctx context.Context, path string, query url
 	if err := scanner.Err(); err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 			return received, false, nil
+		}
+		if errors.Is(err, bufio.ErrTooLong) {
+			return received, false, controlWrap(controlExitService, "activity stream 行超过大小上限", err)
 		}
 		return received, true, controlWrap(controlExitService, "读取 activity stream 失败", err)
 	}

@@ -120,7 +120,7 @@ func runInsertionControl(ctx context.Context, args []string, stdout, stderr io.W
 			item, fetchErr := fetch(waitCtx)
 			if fetchErr != nil {
 				if waitCtx.Err() != nil {
-					return &controlError{code: controlExitTimeout, stableCode: "WAIT_TIMEOUT", message: "等待插入终态超时"}
+					return controlWaitContextError(waitCtx, "等待插入终态超时")
 				}
 				return fetchErr
 			}
@@ -141,7 +141,7 @@ func runInsertionControl(ctx context.Context, args []string, stdout, stderr io.W
 			select {
 			case <-waitCtx.Done():
 				timer.Stop()
-				return &controlError{code: controlExitTimeout, stableCode: "WAIT_TIMEOUT", message: "等待插入终态超时"}
+				return controlWaitContextError(waitCtx, "等待插入终态超时")
 			case <-timer.C:
 			}
 		}

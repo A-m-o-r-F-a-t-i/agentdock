@@ -182,6 +182,9 @@ func handleWindowsDesktopRepairCommand(ctx context.Context, args []string) (bool
 		if mutex != 0 {
 			_ = windows.CloseHandle(mutex)
 		}
+		if strings.TrimSpace(*localArchivePath) != "" {
+			return true, errors.New("Windows desktop repair is busy; the requested local archive was not applied")
+		}
 		return true, nil
 	}
 	if err != nil {
