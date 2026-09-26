@@ -9,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var currentStatus = ServiceStatus.missing
     private var timer: Timer?
+    private lazy var completionNotifications = WorkbenchCompletionNotifications { [weak self] notification in
+        self?.workbenchWindow.presentTask(notification.taskID)
+    }
     private var isUpdating = false
     private var isCheckingForUpdate = false
     private var trayServiceActionInProgress = false
@@ -107,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.refreshStatus()
             }
         }
+        completionNotifications.start()
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 self?.refreshStatus()
@@ -116,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         timer?.invalidate()
+        completionNotifications.stop()
     }
 
     private func setUpdateInProgress(_ inProgress: Bool, checking: Bool = false) {

@@ -73,6 +73,23 @@ final class WorkbenchManagementWindow: NSWindowController, NSWindowDelegate, NST
         if !busy { resourceControl.selectItem(at: WorkbenchResource.allCases.firstIndex(of: value) ?? 0); changeResource() }
         showWindow(nil); window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
+    func presentTask(_ id: String) {
+        present(.tasks)
+        detailRequest?.cancel()
+        let current = generation
+        detailRequest = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let value = try await client.task(id)
+                try Task.checkCancellation(); guard generation == current else { return }
+                detail = value; text.1.string = value.prettyPrinted
+                status.stringValue = "task_id=" + id
+            } catch {
+                guard generation == current, !Task.isCancelled else { return }
+                status.stringValue = error.localizedDescription
+            }
+        }
+    }
     func windowWillClose(_ notification: Notification) {
         generation += 1; selectionGeneration += 1
         request?.cancel(); detailRequest?.cancel(); writeRequest?.cancel()
@@ -102,7 +119,7 @@ final class WorkbenchManagementWindow: NSWindowController, NSWindowDelegate, NST
             (L10n.text("Move to Trash"), "trash"), (L10n.text("Restore"), "restore"), (L10n.text("Permanently delete"), "delete")]
         case .approvals: choices = [(L10n.text("View original request"), "detail"), (L10n.text("Approve this request"), "approve"), (L10n.text("Reject this request"), "reject")]
         case .skills: choices = [(L10n.text("View content"), "detail"), (L10n.text("Enable"), "enable"), (L10n.text("Disable"), "disable")]
-        case .plugins: choices = [(L10n.text("Details"), "detail"), (L10n.text("Install local package"), "install"), (L10n.text("Update local package"), "update"),
+        case .plugins: choices = [(L10n.text("Details"), "detail"), (L10n.text("Validate package"), "validate"), (L10n.text("Install local package"), "install"), (L10n.text("Update local package"), "update"),
             (L10n.text("Enable"), "enable"), (L10n.text("Disable"), "disable"), (L10n.text("Load on demand"), "heavy_enable"), (L10n.text("Normal loading"), "heavy_disable"),
             (L10n.text("Enable member"), "member_enable"), (L10n.text("Disable member"), "member_disable"), (L10n.text("Remove"), "remove")]
         case .mcp: choices = [(L10n.text("Details"), "detail"), (L10n.text("Enable"), "enable"), (L10n.text("Disable"), "disable"),
@@ -217,11 +234,11 @@ final class WorkbenchManagementWindow: NSWindowController, NSWindowDelegate, NST
         }
         if type == .display { editDisplay(); return }
         var fields: [String: WorkbenchJSON] = ["action": .string(action)]
-        if !["install", "add", "register"].contains(action) {
+        if !["install", "validate", "add", "register"].contains(action) {
             guard ids.count == 1 else { status.stringValue = L10n.text("Select one resource for this operation."); return }
             fields[type == .skills ? "skill" : "name"] = .string(type == .skills ? (selected[0].optionalText("skill_ref") ?? ids[0]) : ids[0])
         }
-        if action == "install" || action == "update" {
+        if action == "validate" || action == "install" || action == "update" {
             let panel = NSOpenPanel(); panel.canChooseFiles = true; panel.canChooseDirectories = true; panel.allowsMultipleSelection = false
             guard panel.runModal() == .OK, let url = panel.url else { return }; fields["source"] = .string(url.path)
         }
