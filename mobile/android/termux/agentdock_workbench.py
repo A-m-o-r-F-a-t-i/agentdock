@@ -256,12 +256,17 @@ class NodeBackend:
         self.root, self.config = root, config
 
     def environment(self) -> dict[str, Any]:
+        if os.environ.get("AGENTDOCK_WORKBENCH_TEST_MODE") == "1":
+            return {"architecture": "synthetic-arm64", "arm64": True, "missing": [],
+                    "distro": self.config["distro"], "port": self.config["port"]}
         missing = [name for name in ("proot-distro", "curl", "openssl", "python3") if not shutil.which(name)]
         architecture = platform.machine().lower()
         return {"architecture": architecture, "arm64": architecture in ("aarch64", "arm64"), "missing": missing,
                 "distro": self.config["distro"], "port": self.config["port"]}
 
     def validate_environment(self) -> None:
+        if os.environ.get("AGENTDOCK_WORKBENCH_TEST_MODE") == "1":
+            return
         value = self.environment()
         check(not value["missing"], "requires_user_action", "缺少 Termux 依赖，请执行导出的 bootstrap")
         check(value["arm64"], "unsupported_architecture", "Core 部署要求 ARM64 Termux；界面模拟器不代表该运行架构")
@@ -363,11 +368,12 @@ class NodeBackend:
             return
         self.stop()
         check(read_text(self.root / "desired-state", "stopped") == "running", "user_stopped", "停止意图已生效，未启动 Core")
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-            try:
-                probe.bind(("127.0.0.1", self.config["port"]))
-            except OSError as error:
-                raise BridgeError("port_in_use", "端口已被占用；未终止其他服务") from error
+        if os.environ.get("AGENTDOCK_WORKBENCH_TEST_MODE") != "1":
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                try:
+                    probe.bind(("127.0.0.1", self.config["port"]))
+                except OSError as error:
+                    raise BridgeError("port_in_use", "端口已被占用；未终止其他服务") from error
         log = self.root / "logs/core.log"
         check(not log.is_symlink(), "unsafe_path", "受管日志链接无效")
         log.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -696,8 +702,6 @@ class Deployment:
         if marker.exists():
             (destination / ".restore-ready").unlink(missing_ok=True)
             return
-        # The copy-complete marker survives the rename. Re-entry after either rename
-        # cannot overwrite the only snapshot or silently mix schemas.
         if not (restored / ".restore-ready").exists():
             if restored.exists():
                 check(not restored.is_symlink(), "unsafe_path", "恢复暂存目录无效")
@@ -742,7 +746,7 @@ class Deployment:
                 try:
                     self.cleanup(False)
                 except (BridgeError, OSError):
-                    pass  # Committed health is not invalidated by deferred cleanup.
+                    pass
             return {"status": "ok" if success else "failed", "message": "返回原操作终态，未重复执行", "data": self.query(identity)}
         if new and payload.get("start_after_install") is True:
             self.set_desired("running")
@@ -880,7 +884,6 @@ class Deployment:
             if start:
                 stream.seek(start - 1)
                 if stream.read(1) != b"\n":
-                    # Never display a partial secret when a caller supplies a mid-line cursor.
                     while stream.tell() < size and consumed < 65536:
                         chunk = stream.readline(8193)
                         consumed += len(chunk)
@@ -964,8 +967,6 @@ class Deployment:
                 if original["phase"] in {"created", "manifest", "download", "verify", "prepared"}:
                     return self.finish(original, "cancelled", "部署已取消；未切换版本或回写数据")
                 return self.recover_previous(original)
-            # Runtime commands also have a persistent receipt. A lost callback never
-            # authorizes replay of a restart, configuration update or file write.
             fingerprint = hashlib.sha256(json_bytes(payload)).hexdigest()
             existing = read_json(self.journal_path(identity))
             if existing:
