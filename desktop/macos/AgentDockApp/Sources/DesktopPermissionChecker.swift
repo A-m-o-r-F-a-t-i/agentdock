@@ -140,6 +140,11 @@ enum DesktopPermissionChecker {
 
     private static func openPrivacySettings(pane: String) {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") else { return }
-        NSWorkspace.shared.open(url)
+        if !NSWorkspace.shared.open(url) {
+            let alert = NSAlert()
+            alert.messageText = L10n.text("Unable to open System Settings")
+            alert.informativeText = L10n.format("Open System Settings → Privacy & Security → the relevant permission (%@). This check applies to the management app; Core, helper and Skill processes require verification through their actual calls.", String(describing: pane))
+            alert.runModal()
+        }
     }
 }

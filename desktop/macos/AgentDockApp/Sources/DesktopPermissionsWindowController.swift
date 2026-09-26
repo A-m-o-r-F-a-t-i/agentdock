@@ -58,6 +58,9 @@ final class DesktopPermissionsWindowController: NSWindowController {
         intro.widthAnchor.constraint(equalToConstant: 580).isActive = true
         contentStack.addArrangedSubview(title)
         contentStack.addArrangedSubview(intro)
+        let attribution = PermissionUI.detailLabel(L10n.format("The basic node, ordinary CLI/MCP and task center do not require Screen Recording or Accessibility permission. These checks apply only to the current management app (%@). Permission ownership for Core, helpers and optional Skills must be verified by an actual call; inheritance is not assumed.", String(describing: ProcessInfo.processInfo.processName)))
+        attribution.widthAnchor.constraint(equalToConstant: 580).isActive = true
+        contentStack.addArrangedSubview(attribution)
         contentStack.addArrangedSubview(PermissionUI.separator())
 
         for kind in DesktopPermissionKind.allCases {

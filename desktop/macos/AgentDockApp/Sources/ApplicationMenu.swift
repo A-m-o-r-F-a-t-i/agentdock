@@ -4,7 +4,7 @@ import AppKit
 enum ApplicationMenu {
     private static var quitMenuItem: NSMenuItem?
 
-    static func install() {
+    static func install(target: AppDelegate) {
         let mainMenu = NSMenu(title: "AgentDock Workbench")
 
         let applicationMenuItem = NSMenuItem()
@@ -16,6 +16,15 @@ enum ApplicationMenu {
                 title: L10n.text("About AgentDock"),
                 action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                 keyEquivalent: ""
+            )
+        )
+        applicationMenu.addItem(.separator())
+        applicationMenu.addItem(
+            item(
+                title: "Open Workbench",
+                action: #selector(AppDelegate.showWorkbenchFromMenu(_:)),
+                keyEquivalent: "0",
+                target: target
             )
         )
         applicationMenu.addItem(.separator())
@@ -59,10 +68,11 @@ enum ApplicationMenu {
         title: String,
         action: Selector,
         keyEquivalent: String,
-        modifiers: NSEvent.ModifierFlags = [.command]
+        modifiers: NSEvent.ModifierFlags = [.command],
+        target: AnyObject? = nil
     ) -> NSMenuItem {
         let menuItem = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
-        menuItem.target = nil
+        menuItem.target = target
         menuItem.keyEquivalentModifierMask = modifiers
         return menuItem
     }
