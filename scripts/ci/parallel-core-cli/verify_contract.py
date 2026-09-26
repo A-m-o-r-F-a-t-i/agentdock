@@ -29,7 +29,7 @@ def validate_contract() -> None:
     contract = load_json(API / "contract.json")
     if not isinstance(contract, dict):
         fail("contract root must be an object")
-    if contract.get("schema_version") != 1 or contract.get("contract_revision") != 2:
+    if contract.get("schema_version") != 1 or contract.get("contract_revision") != 3:
         fail("unexpected control contract version")
 
     expected_exit_codes = {
@@ -104,6 +104,26 @@ def validate_contract() -> None:
     ]:
         if required not in unavailable:
             fail(f"unavailable capability is not explicit: {required}")
+
+
+    domains = contract.get("domain_contracts", {})
+    for name, source, fields in [
+        ("permissions", "internal/permission/policy.go", "effective_fields"),
+        ("insertions", "internal/insertion/view.go", "public_fields"),
+    ]:
+        definition = domains.get(name, {})
+        text = (ROOT / source).read_text(encoding="utf-8")
+        if name == "insertions":
+            text += (ROOT / "internal/insertion/store.go").read_text(encoding="utf-8")
+        if not definition.get(fields):
+            fail(f"missing integrated domain fields: {name}")
+        for field in definition[fields]:
+            if f'json:"{field}' not in text:
+                fail(f"domain field is not implemented by its authority: {name}.{field}")
+    activity = domains.get("activity", {})
+    for key in ["schema", "fixture", "boundaries_fixture"]:
+        if not activity.get(key) or not (API / activity[key]).is_file():
+            fail(f"missing integrated activity contract: {key}")
 
 
 def validate_fixtures() -> None:

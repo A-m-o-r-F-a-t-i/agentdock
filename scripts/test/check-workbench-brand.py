@@ -38,7 +38,7 @@ def main() -> None:
         assert PRODUCT in text(f'desktop/macos/AgentDockApp/Resources/{language}.lproj/Localizable.strings')
     for path in ['README.md','README.zh-CN.md']:
         assert re.search(r'^# AgentDock Workbench\b',text(path),re.MULTILINE), path
-    assert 'A-m-o-r-F-a-t-i/agentdock/releases' in text('scripts/install/install.sh')
+    assert 'A-m-o-r-F-a-t-i/AgentDock-Workbench/releases' in text('scripts/install/install.sh')
     assert 'module github.com/uvwt/agentdock' in text('go.mod')
     print(f'{PRODUCT} {version}: display branding and stable upgrade identities verified')
 

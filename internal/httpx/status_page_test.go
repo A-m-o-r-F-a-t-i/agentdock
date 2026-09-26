@@ -40,7 +40,7 @@ func TestStatusPageRendersConnectionAndResourceLinks(t *testing.T) {
 	for _, expected := range []string{
 		"AgentDock Workbench",
 		"https://agentdock.example.com/mcp",
-		"github.com/A-m-o-r-F-a-t-i/agentdock",
+		"github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench",
 		"uvwt.github.io/agentdock-docs",
 		"1081337019",
 		`class="state-enabled"`,

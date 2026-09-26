@@ -6,6 +6,34 @@
 review_threshold_lines: 300
 
 scripts:
+  - path: scripts/ci/parallel-activity/verify_contract.py
+    class: test
+    owner: WB04
+    public_contract: false
+    deletable: false
+    notes: Activity domain schema and boundary fixture validation.
+
+  - path: scripts/ci/parallel-installer/build-runtime-split-candidate.ps1
+    class: test
+    owner: WB05
+    public_contract: false
+    deletable: false
+    notes: Build and measure candidate archives without installation or publication.
+
+  - path: scripts/ci/parallel-installer/test-setup-archive.ps1
+    class: test
+    owner: WB05
+    public_contract: false
+    deletable: false
+    notes: Isolated Setup archive validation and adversarial payload tests.
+
+  - path: scripts/ci/parallel-macos/run-workbench-tests.sh
+    class: test
+    owner: WB06
+    public_contract: false
+    deletable: false
+    notes: Native model, transport, contract and UI regression entry point.
+
   - path: scripts/ci/parallel-core-cli/index_candidates.py
     class: ci
     owner: WB01

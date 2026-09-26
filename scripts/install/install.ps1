@@ -113,14 +113,14 @@ function Get-ReleaseBaseUrl {
     }
 
     if ($RequestedVersion -eq 'latest') {
-        return 'https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/latest/download'
+        return 'https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench/releases/latest/download'
     }
 
     $normalizedVersion = $RequestedVersion
     if (-not $normalizedVersion.StartsWith('v')) {
         $normalizedVersion = "v$normalizedVersion"
     }
-    return "https://github.com/A-m-o-r-F-a-t-i/agentdock/releases/download/$normalizedVersion"
+    return "https://github.com/A-m-o-r-F-a-t-i/AgentDock-Workbench/releases/download/$normalizedVersion"
 }
 
 function Get-CloudflaredReleaseBaseUrl {
@@ -2013,9 +2013,10 @@ try {
 
     $agentDockHome = $runtimeAgentDockHome
     $workspace = $runtimeAgentDockDefaultDir
-    foreach ($directory in @($agentDockHome, $workspace)) {
-        New-Item -ItemType Directory -Path $directory -Force | Out-Null
-    }
+    # The Installer Engine must observe and exclusively create a new Home before
+    # initializing clean-install permissions. Precreating it here would erase that
+    # evidence; an existing Home (even without policy.json) must remain untouched.
+    New-Item -ItemType Directory -Path $workspace -Force | Out-Null
 
     # Windows Tunnel has a long-lived supervisor that will immediately restart cloudflared after
     # an external process kill. Stop that supervisor through the currently committed generation

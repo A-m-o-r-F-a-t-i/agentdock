@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "contract_revision": 2,
+  "contract_revision": 3,
   "name": "AgentDock Workbench Local Control API",
   "base_path": "/internal/runtime",
   "architecture": {
@@ -530,5 +530,54 @@
     "nexus",
     "tunnel",
     "server startup without a subcommand"
-  ]
+  ],
+  "domain_contracts": {
+    "permissions": {
+      "authority": "internal/permission",
+      "schema_version": 3,
+      "effective_fields": [
+        "custom_permissions_enabled",
+        "configured_settings",
+        "settings_source",
+        "settings_scope",
+        "settings_scope_id",
+        "custom_permissions_scope",
+        "custom_permissions_scope_id"
+      ],
+      "write_fields": [
+        "custom_permissions_enabled",
+        "expected_revision",
+        "inherit_settings"
+      ],
+      "disabled_custom_settings": "Preserve configured_settings; derive effective settings from execution mode. Never erase saved custom settings.",
+      "fresh_install_default": "full only after installer proves a pristine Home and no previous installation; never infer fresh install from missing policy.json."
+    },
+    "insertions": {
+      "authority": "internal/insertion",
+      "public_fields": [
+        "receipt_type",
+        "next_retry_at",
+        "automatic_attempts_remaining",
+        "total_attempts_remaining",
+        "manual_retry_available",
+        "delivery_reason"
+      ],
+      "unconfirmed_receipt_type": "none",
+      "maximum_automatic_deliveries": 3,
+      "maximum_total_deliveries": 6,
+      "receipt_wait_ms": 30000,
+      "original_lifetime_ms": 300000,
+      "retry_invariant": "Server-owned retry budgets; redeliver supplement only, never repeat the original tool operation or extend original expiry.",
+      "receipt_invariant": "receiver_receipt is not model-context confirmation; host_context_committed is not execution completion."
+    },
+    "activity": {
+      "authority": "internal/activity",
+      "schema": "activity/conversation-status.schema.json",
+      "fixture": "activity/conversation-status.fixture.json",
+      "boundaries_fixture": "activity/activity-boundaries.fixture.json",
+      "recent_interaction_window_ms": 120000,
+      "insertion_eligibility_window_ms": 180000,
+      "clock": "server_now with monotonic elapsed time; detached output and rendering do not renew last_interaction_at."
+    }
+  }
 }

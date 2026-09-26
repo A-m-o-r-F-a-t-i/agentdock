@@ -88,6 +88,17 @@ final class ContractTests: XCTestCase {
         XCTAssertEqual(state.settings["permission_profile"].text("filesystem"), "write")
         XCTAssertEqual(state.configuredSettings["permission_profile"].text("filesystem"), "deny")
     }
+    func testCanonicalNoneReceiptIsUnconfirmedNotUnknown() {
+        for kind in ["", "none"] {
+            let item = WorkbenchInsertion(json: .object([
+                "insertion_id": .string("ins_none"), "status": .string("delivery_unknown"),
+                "receipt_type": .string(kind), "manual_retry_available": .bool(true),
+                "automatic_attempts_remaining": .integer(0), "total_attempts_remaining": .integer(3)]))
+            XCTAssertEqual(item.receiptDescription, L10n.text("Receipt unconfirmed"))
+            XCTAssertTrue(item.manualRetryAvailable)
+            XCTAssertFalse(item.terminal)
+        }
+    }
     func testReceiptTypesDoNotAssertModelExecution() {
         for kind in ["receiver_receipt", "outer_forwarded", "host_context_committed", "new_unknown_kind"] {
             let item = WorkbenchInsertion(json: .object(["insertion_id": .string("ins_1"),

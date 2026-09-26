@@ -200,6 +200,7 @@ func (engine Engine) recoverInterrupted(ctx context.Context, store *Store, reque
 func (engine Engine) install(ctx context.Context, store *Store, request Request) (Result, error) {
 	platform := currentPlatform()
 	sourceVersion := existingVersion(request)
+	freshPermissionHome := provenFreshPermissionHome(request)
 	if request.Version == "" {
 		// repair 没有新 payload 时，目标就是当前还在跑的版本，不能改用当前进程的 buildinfo。
 		if request.Action == ActionRepair && request.PayloadDir == "" && sourceVersion != "" {
@@ -315,6 +316,9 @@ func (engine Engine) install(ctx context.Context, store *Store, request Request)
 	timing.begin(InstallStageConfigSkillBootstrap)
 	syncTiming()
 	if err := store.WriteTransaction(transaction); err != nil {
+		return fail(PhaseActivate, err, staged)
+	}
+	if err := initializeInstallPermissions(ctx, request, freshPermissionHome, staged.Journal); err != nil {
 		return fail(PhaseActivate, err, staged)
 	}
 	activated, err := activateInstall(ctx, request, staged)

@@ -532,7 +532,7 @@ struct WorkbenchInsertion: Equatable, Identifiable, Sendable {
         case "receiver_receipt": return L10n.text("Receiver receipt (not model-context confirmation)")
         case "outer_forwarded": return L10n.text("Host forwarded (model context unconfirmed)")
         case "host_context_committed": return L10n.text("Host confirmed model-context commit (not execution completion)")
-        case "": return L10n.text("Receipt unconfirmed")
+        case "", "none": return L10n.text("Receipt unconfirmed")
         default: return L10n.format("Unknown receipt type: %@", String(describing: receiptType))
         }
     }

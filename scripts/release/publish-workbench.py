@@ -12,7 +12,7 @@ import subprocess
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[2]
-REPOSITORY = 'A-m-o-r-F-a-t-i/agentdock'
+REPOSITORY = 'A-m-o-r-F-a-t-i/AgentDock-Workbench'
 PRODUCT = 'AgentDock Workbench'
 
 

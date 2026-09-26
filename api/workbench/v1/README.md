@@ -20,3 +20,7 @@ Clients ignore unknown response fields and preserve continuation fields. Existin
 - `fixtures/`: representative envelopes and stream records used by candidate CI tests.
 - `docs/cli/workbench.md`: operator guide.
 - `docs/cli/command-matrix.md`: implemented, derived, legacy, partial, and unavailable commands.
+
+## Integrated domain contracts (revision 3)
+
+`contract.json.domain_contracts` binds the permission, insertion and activity fields to their existing Core authorities. Permission schema 3 separates configured settings from effective settings. Receipt type `none` means unconfirmed, not an unknown error; clients render retry availability and budgets from the server. Activity uses the shared `activity/` schema and independent 120/180/300/30-second boundaries. The CLI preserves these additive fields and native clients must not recreate their state machines.

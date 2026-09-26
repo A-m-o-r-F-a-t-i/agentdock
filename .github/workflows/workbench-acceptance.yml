@@ -15,7 +15,7 @@ permissions:
   contents: read
 jobs:
   native-windows:
-    if: github.repository == 'A-m-o-r-F-a-t-i/agentdock'
+    if: github.repository_id == '1370391430'
     strategy:
       fail-fast: false
       matrix:
