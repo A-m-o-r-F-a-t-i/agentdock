@@ -36,7 +36,16 @@ api = int(sys.argv[2]); rc = int(sys.argv[3])
 required = {name + '.png' for name in (
     'home workspaces conversations tasks activity calls insert approvals permissions skills plugins '
     'connections install projects diagnostics settings tasks-empty tasks-error').split()}
-shots = sorted(p.name for p in (root / 'screenshots').rglob('*.png') if p.stat().st_size > 0)
+shots = []
+invalid_images = []
+for path in (root / 'screenshots').rglob('*.png'):
+    with path.open('rb') as image:
+        header = image.read(24)
+    if len(header) == 24 and header[:8] == bytes([137, 80, 78, 71, 13, 10, 26, 10]) and header[12:16] == b'IHDR' and int.from_bytes(header[16:20], 'big') > 0 and int.from_bytes(header[20:24], 'big') > 0:
+        shots.append(path.name)
+    else:
+        invalid_images.append(path.name)
+shots.sort()
 missing = sorted(required - set(shots))
 cases = {}
 parse_errors = []
@@ -49,7 +58,7 @@ for path in (root / 'reports').rglob('TEST-*.xml'):
         parse_errors.append(f'{path.name}: {error}')
 actual_api = (root / 'actual-api.txt').read_text(errors='replace').strip()
 passed = sum(value == 'passed' for value in cases.values())
-valid = rc == 0 and passed >= 7 and all(value == 'passed' for value in cases.values()) and not missing and not parse_errors and actual_api == str(api)
+valid = rc == 0 and passed >= 7 and all(value == 'passed' for value in cases.values()) and not missing and not invalid_images and not parse_errors and actual_api == str(api)
 result = {
     'schema_version': 2, 'lane': 'WB07', 'source_sha': os.environ['GITHUB_SHA'],
     'run_id': os.environ['GITHUB_RUN_ID'], 'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
@@ -57,7 +66,7 @@ result = {
     'system_image_api_level': os.environ.get('ANDROID_SYSTEM_IMAGE_API_LEVEL', str(api)),
     'architecture': 'x86_64 emulator', 'connected_test_exit_code': rc,
     'attempt_exit_codes': [rc], 'tests': len(cases), 'passed': passed,
-    'screenshots': shots, 'missing_screenshots': missing, 'report_errors': parse_errors,
+    'screenshots': shots, 'missing_screenshots': missing, 'invalid_images': invalid_images, 'report_errors': parse_errors,
     'evidence_gate': 'passed' if valid else 'failed',
     'fixture_scope': 'navigation, presentation, client lifecycle and write isolation',
     'physical_arm64_termux_scope': 'not exercised'
@@ -68,7 +77,7 @@ if not valid:
     log = (root / 'connected-test.log').read_text(errors='replace').splitlines()
     pattern = re.compile(r'FAILURE|FAILED|Exception|Caused by:|AssertionError|WorkbenchNavigationTest|No node|INSTRUMENTATION', re.I)
     selected = [line for line in log if pattern.search(line)][-80:]
-    message += '\nMissing screenshots: ' + ', '.join(missing) + '\n' + '\n'.join(parse_errors + selected)
+    message += '\nMissing screenshots: ' + ', '.join(missing) + '\nInvalid PNG files: ' + ', '.join(invalid_images) + '\n' + '\n'.join(parse_errors + selected)
 (root / 'failure-summary.txt' if not valid else root / 'summary.txt').write_text(message + '\n')
 escaped = message[-24000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
 print(f'::{"notice" if valid else "error"} title=Android evidence gate::{escaped}')

@@ -41,7 +41,9 @@ class WorkbenchNavigationTest {
         // Instrumentation executes with the target UID, not the test APK's UID.
         // Shell-owned CI evidence survives orchestrator app-data clearing.
         val directory = "/sdcard/Download/agentdock-wb07-screenshots"
-        shell("mkdir -p $directory && echo ready").let { check(it.trim() == "ready") }
+        // UiAutomation uses Runtime.exec: no shell operators or quote parsing.
+        shell("mkdir -p $directory")
+        assertEquals(directory, shell("ls -d $directory").trim())
         WorkbenchScreen.entries.forEach { screen ->
             navigate(screen)
             capture(directory, screen, screen.route)
@@ -110,8 +112,10 @@ class WorkbenchNavigationTest {
         compose.waitForIdle()
         compose.onNodeWithTag("screen-${screen.route}").assertIsDisplayed()
         val path = "$directory/$name.png"
-        val result = shell("screencap -p $path && test -s $path && echo captured")
-        check(result.trim() == "captured") { "Screenshot was not saved: $name" }
+        shell("rm -f $path")
+        shell("screencap -p $path")
+        val length = shell("stat -c %s $path").trim().toLongOrNull()
+        check(length != null && length > 8) { "Screenshot was not saved: $name" }
     }
 
     private fun shell(command: String): String {
