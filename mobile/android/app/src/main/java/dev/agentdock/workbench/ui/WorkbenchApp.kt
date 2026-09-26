@@ -1,5 +1,6 @@
 package dev.agentdock.workbench.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -46,6 +48,10 @@ fun WorkbenchApp(state: WorkbenchUiState, viewModel: WorkbenchViewModel) {
     val drawerState = androidx.compose.material3.rememberDrawerState(DrawerValue.Closed)
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val savedPages = rememberSaveableStateHolder()
+    BackHandler(drawerState.isOpen || state.screen != WorkbenchScreen.Home) {
+        if (drawerState.isOpen) scope.launch { drawerState.close() } else viewModel.back()
+    }
     LaunchedEffect(state.message) {
         if (state.message.isNotBlank()) {
             snackbar.showSnackbar(state.message)
@@ -129,12 +135,14 @@ fun WorkbenchApp(state: WorkbenchUiState, viewModel: WorkbenchViewModel) {
                                 }
                             }
                         }
+                        savedPages.SaveableStateProvider(state.screen.route) {
                         WorkbenchPage(
                             state = state,
                             viewModel = viewModel,
                             modifier = Modifier.fillMaxSize().testTag("screen-${state.screen.route}"),
                             contentPadding = padding
                         )
+                        }
                     }
                     if (state.loading) LinearProgressIndicator()
                 }

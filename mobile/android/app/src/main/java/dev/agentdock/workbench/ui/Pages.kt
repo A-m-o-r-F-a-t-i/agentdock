@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -59,12 +58,27 @@ fun WorkbenchPage(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues()
 ) {
-    val pageModifier = modifier.padding(contentPadding).padding(horizontal = 16.dp, vertical = 12.dp)
+    val pageModifier = modifier.padding(contentPadding).padding(horizontal = 16.dp, vertical = if (state.settings.density == "compact") 6.dp else 12.dp)
+    val errorKeys = when (state.screen) {
+        WorkbenchScreen.CallDetail -> listOf("calls")
+        WorkbenchScreen.Plugins -> listOf("plugins", "mcp")
+        WorkbenchScreen.InsertAndStop -> listOf("conversations", "insert")
+        else -> listOf(state.screen.route)
+    }
+    val errors = errorKeys.mapNotNull { state.snapshot.errors[it] }
+    if (state.screen != WorkbenchScreen.Home && errors.isNotEmpty()) {
+        Column(pageModifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Core 数据读取失败", modifier = Modifier.testTag("resource-error"), style = MaterialTheme.typography.titleLarge)
+            errors.forEach { Text(it) }
+            Button(onClick = viewModel::refresh) { Text("重新读取") }
+        }
+        return
+    }
     when (state.screen) {
         WorkbenchScreen.Home -> HomePage(state, viewModel, pageModifier)
         WorkbenchScreen.Workspaces -> WorkspacesPage(state, viewModel, pageModifier)
-        WorkbenchScreen.Conversations -> ConversationsPage(state, viewModel, pageModifier)
-        WorkbenchScreen.Tasks -> TasksPage(state, viewModel, pageModifier)
+        WorkbenchScreen.Conversations -> ManagementPage("conversations", state, viewModel, pageModifier)
+        WorkbenchScreen.Tasks -> ManagementPage("tasks", state, viewModel, pageModifier)
         WorkbenchScreen.Activity -> ActivityPage(state, viewModel, pageModifier)
         WorkbenchScreen.CallDetail -> CallDetailPage(state, viewModel, pageModifier)
         WorkbenchScreen.InsertAndStop -> InsertAndStopPage(state, viewModel, pageModifier)
@@ -129,45 +143,8 @@ private fun WorkspacesPage(state: WorkbenchUiState, viewModel: WorkbenchViewMode
     ItemListPage(
         modifier, "工作区", "按 Core 返回的项目分组展示；Android 不重排服务端历史游标。",
         state.snapshot.workspaces, "Core 尚未返回工作区",
-        onClick = { viewModel.navigate(WorkbenchScreen.Conversations) }
+        onClick = viewModel::selectWorkspace
     )
-}
-
-@Composable
-private fun ConversationsPage(state: WorkbenchUiState, viewModel: WorkbenchViewModel, modifier: Modifier) {
-    val selected = state.snapshot.conversations.firstOrNull { it.id == state.selectedConversationId }
-    LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { PageHeader("对话", "活动状态、终止状态和最近工具时间均由 Core 决定。") }
-        if (selected != null) {
-            item {
-                SelectedCard(selected) {
-                    HorizontalActions(
-                        listOf(
-                            "插入 / 停止" to { viewModel.navigate(WorkbenchScreen.InsertAndStop) },
-                            "查看调用" to { viewModel.navigate(WorkbenchScreen.Activity) }
-                        )
-                    )
-                }
-            }
-        }
-        if (state.snapshot.conversations.isEmpty()) item { EmptyCard("没有可显示的对话") }
-        lazyItems(state.snapshot.conversations, key = { it.id }) { item ->
-            WorkbenchItemCard(item, selected = item.id == state.selectedConversationId) { viewModel.selectConversation(item) }
-        }
-    }
-}
-
-@Composable
-private fun TasksPage(state: WorkbenchUiState, viewModel: WorkbenchViewModel, modifier: Modifier) {
-    val selected = state.snapshot.tasks.firstOrNull { it.id == state.selectedTaskId }
-    LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { PageHeader("独立任务中心", "任务、线程和进度由 Core 持久化；页面不会把对话临时状态伪造成任务。") }
-        if (selected != null) item { SelectedCard(selected) }
-        if (state.snapshot.tasks.isEmpty()) item { EmptyCard("没有任务；这不是“加载成功但为空”的推断，连接状态见首页。") }
-        lazyItems(state.snapshot.tasks, key = { it.id }) { item ->
-            WorkbenchItemCard(item, selected = item.id == state.selectedTaskId) { viewModel.selectTask(item) }
-        }
-    }
 }
 
 @Composable
@@ -197,18 +174,30 @@ private fun CallDetailPage(state: WorkbenchUiState, viewModel: WorkbenchViewMode
             HorizontalActions(
                 listOf(
                     "停止" to { viewModel.callAction("stop") },
-                    "重试" to { viewModel.callAction("retry") },
                     "返回活动" to { viewModel.navigate(WorkbenchScreen.Activity) }
                 )
             )
-            RawJsonCard(item)
+            if (state.detailError.isNotBlank()) Text(state.detailError)
+            state.detail?.let { DetailFields(it) }
+            if (state.settings.detailedCalls) RawJsonCard(item)
+            if (state.settings.toolOutputEnabled) {
+                HorizontalActions(listOf(
+                    "读取请求" to { viewModel.loadPayload("request") },
+                    "读取响应" to { viewModel.loadPayload("response") },
+                    "读取源输出" to { viewModel.loadPayload("source") }
+                ))
+                state.payload?.let { payload ->
+                    Text(payload.optString("text", ""))
+                    if (payload.optBoolean("has_more")) TextButton(onClick = { viewModel.loadPayload(state.payloadKind, payload.getLong("next_offset")) }) { Text("读取下一段") }
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun InsertAndStopPage(state: WorkbenchUiState, viewModel: WorkbenchViewModel, modifier: Modifier) {
-    var text by rememberSaveable(state.selectedConversationId) { mutableStateOf("") }
+    val text = state.insertionDraft
     val selected = state.snapshot.conversations.firstOrNull { it.id == state.selectedConversationId }
     val bytes = text.toByteArray(StandardCharsets.UTF_8).size
     LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -221,7 +210,7 @@ private fun InsertAndStopPage(state: WorkbenchUiState, viewModel: WorkbenchViewM
             item {
                 OutlinedTextField(
                     value = text,
-                    onValueChange = { text = it },
+                    onValueChange = viewModel::setInsertionDraft,
                     modifier = Modifier.fillMaxWidth().testTag("insertion-text"),
                     label = { Text("补充要求") },
                     supportingText = { Text("$bytes / 8192 UTF-8 字节") },
@@ -233,12 +222,11 @@ private fun InsertAndStopPage(state: WorkbenchUiState, viewModel: WorkbenchViewM
                     listOf(
                         "发送插入" to {
                             viewModel.sendInsertion(text)
-                            if (bytes in 1..8192) text = ""
                         },
                         "停止对话" to viewModel::terminateConversation,
                         "刷新回执" to viewModel::refresh
                     ),
-                    enabled = !state.loading
+                    enabled = !state.loading && !state.actionBusy
                 )
             }
             item { SectionTitle("插入回执") }
@@ -320,8 +308,8 @@ private fun PermissionsPage(state: WorkbenchUiState, viewModel: WorkbenchViewMod
                 CheckSetting("管理操作", settings.granularManagement) { viewModel.updateSettings { s -> s.copy(granularManagement = it) } }
                 CheckSetting("其他", settings.granularOther) { viewModel.updateSettings { s -> s.copy(granularOther = it) } }
             }
-            Button(onClick = viewModel::savePermissions, modifier = Modifier.testTag("save-permissions")) { Text("按 Core 修订号保存") }
         }
+        Button(onClick = viewModel::savePermissions, enabled = !state.actionBusy, modifier = Modifier.testTag("save-permissions")) { Text("按 Core 修订号保存") }
     }
 }
 
@@ -346,7 +334,7 @@ private fun PluginsPage(state: WorkbenchUiState, viewModel: WorkbenchViewModel, 
 @Composable
 private fun ConnectionsPage(state: WorkbenchUiState, viewModel: WorkbenchViewModel, modifier: Modifier) {
     var endpoint by remember(state.settings.endpoint) { mutableStateOf(state.settings.endpoint) }
-    var bearer by rememberSaveable { mutableStateOf("") }
+    var bearer by remember { mutableStateOf("") }
     var remote by remember(state.settings.remoteEndpointEnabled) { mutableStateOf(state.settings.remoteEndpointEnabled) }
     Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         PageHeader("Core 与连接", "默认仅允许 loopback 明文；远程节点必须显式启用并使用 HTTPS。")
