@@ -115,6 +115,7 @@ $manifest = [ordered]@{
 # 真实安装会绑定凭据用户 SID；RUNNER_TEMP 的继承 ACL 不保证显式包含 runner 用户。
 [IO.File]::WriteAllText((Join-Path $runtimeRoot 'credential-owner-sid.txt'), ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value + [Environment]::NewLine), $utf8NoBom)
 
+$startupMigrationGuard = $null
 try {
     if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch ("AgentDock(?: Workbench)? v" + [regex]::Escape($Version))) {
         throw "flat Core version mismatch: $versionOutput"
@@ -123,6 +124,16 @@ try {
     # Published v0.8.2/v0.8.3 updater starts the new flat Core and waits for this health
     # endpoint before it finishes its own commit. Reproduce that state rather than invoking
     # the migration helper against a stopped fixture.
+    # Until health is ready, suppress the automatic ONLINE bridge through its
+    # existing in-progress guard. Core checks this synchronously before serving
+    # HTTP. The local candidate can share its version with GitHub Latest, so an
+    # online helper could otherwise replace its shims with different same-version
+    # release bytes before the explicit local-archive test takes ownership.
+    $createdGuard = $false
+    $startupMigrationGuard = [Threading.Mutex]::new($false, 'Local\AgentDockLegacyMigration', [ref] $createdGuard)
+    if (-not $createdGuard) {
+        throw 'Another legacy migration is active; refuse to share the isolated fixture.'
+    }
     & $core service start --runtime-root $runtimeRoot
     if ($LASTEXITCODE -ne 0) {
         $coreLog = Join-Path $runtimeRoot 'logs\agentdock.err.log'
@@ -137,9 +148,10 @@ try {
         throw "flat Core health mismatch before migration: $($flatHealth | ConvertTo-Json -Compress)"
     }
 
-    # The Core startup also launches the normal same-version background repair. On this
-    # unreleased E2E build it exits after observing that GitHub latest is a different
-    # version. Wait for it so the explicit local-archive repair owns the migration mutex.
+    # Health proves Core has passed its synchronous automatic-repair admission.
+    # Release only this fixture's guard before exercising real local migration.
+    $startupMigrationGuard.Dispose()
+    $startupMigrationGuard = $null
     Wait-NoDesktopRepairProcess -ExecutablePath $core
 
     # The hidden repair entrypoint is the same one launched automatically by Core startup;
@@ -238,10 +250,11 @@ try {
             # active-version.json is committed before stable entries are replaced on purpose.
             # Wait for the entire migration terminal state, not merely the crash-safe source
             # generation checkpoint.
-            $lastCheckpoint = 'stable shim replacement or compatibility-manager cleanup incomplete'
-            if ((Get-FileHash -LiteralPath $core -Algorithm SHA256).Hash -ne $coreShimHash -or
-                (Get-FileHash -LiteralPath $tray -Algorithm SHA256).Hash -ne $trayShimHash -or
-                (Test-Path -LiteralPath $compatManagerPath)) {
+            $coreMatches = (Get-FileHash -LiteralPath $core -Algorithm SHA256).Hash -eq $coreShimHash
+            $trayMatches = (Get-FileHash -LiteralPath $tray -Algorithm SHA256).Hash -eq $trayShimHash
+            $managerRemains = Test-Path -LiteralPath $compatManagerPath
+            $lastCheckpoint = "candidate core shim=$coreMatches tray shim=$trayMatches compatibility manager present=$managerRemains"
+            if (-not $coreMatches -or -not $trayMatches -or $managerRemains) {
                 continue
             }
             $stableVersion = (& $core --version | Out-String).Trim()
@@ -292,6 +305,7 @@ try {
 
     Write-Host "Windows legacy flat -> generation migration E2E passed on v$Version."
 } finally {
+    if ($null -ne $startupMigrationGuard) { $startupMigrationGuard.Dispose() }
     try {
         if (Test-Path -LiteralPath $core -PathType Leaf) {
             & $core service stop --runtime-root $runtimeRoot 2>$null | Out-Null
