@@ -76,18 +76,18 @@ fun WorkbenchPage(
     }
     when (state.screen) {
         WorkbenchScreen.Home -> HomePage(state, viewModel, pageModifier)
-        WorkbenchScreen.Workspaces -> WorkspacesPage(state, viewModel, pageModifier)
+        WorkbenchScreen.Workspaces -> WorkspacePage(state, viewModel, pageModifier)
         WorkbenchScreen.Conversations -> ManagementPage("conversations", state, viewModel, pageModifier)
         WorkbenchScreen.Tasks -> ManagementPage("tasks", state, viewModel, pageModifier)
         WorkbenchScreen.Activity -> ActivityPage(state, viewModel, pageModifier)
-        WorkbenchScreen.CallDetail -> CallDetailPage(state, viewModel, pageModifier)
+        WorkbenchScreen.CallDetail -> CallManagementPage(state, viewModel, pageModifier)
         WorkbenchScreen.InsertAndStop -> InsertAndStopPage(state, viewModel, pageModifier)
         WorkbenchScreen.Approvals -> ApprovalsPage(state, viewModel, pageModifier)
         WorkbenchScreen.Permissions -> PermissionsPage(state, viewModel, pageModifier)
         WorkbenchScreen.Skills -> SkillsPage(state, viewModel, pageModifier)
         WorkbenchScreen.Plugins -> PluginsPage(state, viewModel, pageModifier)
         WorkbenchScreen.CoreConnections -> ConnectionsPage(state, viewModel, pageModifier)
-        WorkbenchScreen.InstallUpdate -> InstallUpdatePage(state, viewModel, pageModifier)
+        WorkbenchScreen.InstallUpdate -> DeploymentPage(state, viewModel, pageModifier)
         WorkbenchScreen.ProjectsFiles -> ProjectsFilesPage(state, viewModel, pageModifier)
         WorkbenchScreen.LogsDiagnostics -> LogsDiagnosticsPage(state, viewModel, pageModifier)
         WorkbenchScreen.Settings -> SettingsPage(state, viewModel, pageModifier)
@@ -139,15 +139,6 @@ private fun HomePage(state: WorkbenchUiState, viewModel: WorkbenchViewModel, mod
 }
 
 @Composable
-private fun WorkspacesPage(state: WorkbenchUiState, viewModel: WorkbenchViewModel, modifier: Modifier) {
-    ItemListPage(
-        modifier, "工作区", "按 Core 返回的项目分组展示；Android 不重排服务端历史游标。",
-        state.snapshot.workspaces, "Core 尚未返回工作区",
-        onClick = viewModel::selectWorkspace
-    )
-}
-
-@Composable
 private fun ActivityPage(state: WorkbenchUiState, viewModel: WorkbenchViewModel, modifier: Modifier) {
     LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { PageHeader("活动与调用", state.liveStatus) }
@@ -158,39 +149,6 @@ private fun ActivityPage(state: WorkbenchUiState, viewModel: WorkbenchViewModel,
         if (state.snapshot.calls.isEmpty()) item { EmptyCard("暂无调用") }
         lazyItems(state.snapshot.calls, key = { "call-${it.id}" }) { item ->
             WorkbenchItemCard(item, selected = item.id == state.selectedCallId) { viewModel.selectCall(item) }
-        }
-    }
-}
-
-@Composable
-private fun CallDetailPage(state: WorkbenchUiState, viewModel: WorkbenchViewModel, modifier: Modifier) {
-    val item = state.snapshot.calls.firstOrNull { it.id == state.selectedCallId }
-    Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        PageHeader("调用详情", "逐条命令、输出截断、耗时和子调用关系以 Core 原始记录为准。")
-        if (item == null) {
-            EmptyCard("请先从“活动流”选择一个调用")
-        } else {
-            SelectedCard(item)
-            HorizontalActions(
-                listOf(
-                    "停止" to { viewModel.callAction("stop") },
-                    "返回活动" to { viewModel.navigate(WorkbenchScreen.Activity) }
-                )
-            )
-            if (state.detailError.isNotBlank()) Text(state.detailError)
-            state.detail?.let { DetailFields(it) }
-            if (state.settings.detailedCalls) RawJsonCard(item)
-            if (state.settings.toolOutputEnabled) {
-                HorizontalActions(listOf(
-                    "读取请求" to { viewModel.loadPayload("request") },
-                    "读取响应" to { viewModel.loadPayload("response") },
-                    "读取源输出" to { viewModel.loadPayload("source") }
-                ))
-                state.payload?.let { payload ->
-                    Text(payload.optString("text", ""))
-                    if (payload.optBoolean("has_more")) TextButton(onClick = { viewModel.loadPayload(state.payloadKind, payload.getLong("next_offset")) }) { Text("读取下一段") }
-                }
-            }
         }
     }
 }
@@ -357,48 +315,6 @@ private fun ConnectionsPage(state: WorkbenchUiState, viewModel: WorkbenchViewMod
         )
         InfoCard("连接状态", state.snapshot.connectionMessage)
         InfoCard("凭据存储", "凭据只在保存时绑定的 scheme、host 和 port 使用。切换节点或旧凭据尚未绑定时需重新配置；不会把原节点 Bearer 发送到新地址。密文保存在 Android Keystore 包封的应用私有存储。")
-    }
-}
-
-@Composable
-private fun InstallUpdatePage(state: WorkbenchUiState, viewModel: WorkbenchViewModel, modifier: Modifier) {
-    val exportBridge = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-sh")) { uri ->
-        if (uri != null) viewModel.exportBundledAsset(uri, "agentdock-workbench")
-    }
-    val exportBootstrap = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-sh")) { uri ->
-        if (uri != null) viewModel.exportBundledAsset(uri, "agentdock-workbench-bootstrap.sh")
-    }
-    LazyColumn(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        item { PageHeader("安装与更新", "APK 管理外部 Termux + Debian PRoot；不内嵌 Termux、RootFS 或 Go Core。") }
-        item {
-            InfoCard(
-                "当前信任状态",
-                "Linux ARM64 基线只有 SHA-256 文件，尚无统一发布签名公钥/签名清单。安装与更新会返回 pending_manifest，不会下载未签名 Core。"
-            )
-        }
-        item {
-            HorizontalActions(
-                listOf(
-                    "导出桥脚本" to { exportBridge.launch("agentdock-workbench") },
-                    "导出 Bootstrap" to { exportBootstrap.launch("agentdock-workbench-bootstrap.sh") }
-                )
-            )
-        }
-        item {
-            InfoCard(
-                "首次设置",
-                "在官方 Termux 中运行导出的 bootstrap，按提示启用 allow-external-apps，并在 Android 设置中授予 RUN_COMMAND。无需 ADB、root、Shizuku 或无障碍自动化。"
-            )
-        }
-        item {
-            OperationButtons(
-                listOf("probe", "bootstrap", "status", "start", "stop", "restart", "repair", "update", "rollback", "export_diagnostics"),
-                viewModel
-            )
-        }
-        item { SectionTitle("最近操作") }
-        if (state.operations.isEmpty()) item { EmptyCard("暂无 Termux 操作") }
-        lazyItems(state.operations, key = { it.operationId }) { OperationCard(it) }
     }
 }
 
