@@ -1,6 +1,8 @@
 package dev.agentdock.workbench.data
 
 import dev.agentdock.workbench.model.ActionOutcome
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -32,7 +34,7 @@ object EndpointPolicy {
         require(uri.path.isNullOrEmpty() && uri.query == null && uri.fragment == null && uri.userInfo == null) {
             "Core 地址只能包含 scheme、host 和 port"
         }
-        val host = uri.host?.lowercase() ?: throw IllegalArgumentException("Core 地址缺少 host")
+        val host = uri.host?.removeSurrounding("[", "]")?.lowercase() ?: throw IllegalArgumentException("Core 地址缺少 host")
         val loopback = isLoopbackHost(host)
         if (loopback) {
             require(uri.scheme == "http" || uri.scheme == "https") { "本机 Core 仅支持 HTTP/HTTPS" }
@@ -57,19 +59,16 @@ class CoreClient(private val endpoint: CoreEndpoint) {
     suspend fun get(path: String): JSONObject = request("GET", path, null)
     suspend fun post(path: String, body: JSONObject = JSONObject()): JSONObject = request("POST", path, body)
 
-    suspend fun action(path: String, body: JSONObject = JSONObject()): ActionOutcome = runCatching {
-        val value = post(path, body)
-        ActionOutcome(
-            accepted = true,
-            status = value.optString("status", "accepted"),
-            message = value.optString("message", "Core 已接受请求"),
-            serverValue = value
-        )
-    }.getOrElse { error ->
-        ActionOutcome(false, "rejected", error.message ?: "Core 拒绝了请求")
+    suspend fun action(path: String, body: JSONObject = JSONObject()): ActionOutcome = try {
+        ManagementContract.outcome(post(path, body))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        ActionOutcome(false, if (error is CoreRequestException) error.errorCode else "transport_error", ManagementContract.failure(error))
     }
 
     private suspend fun request(method: String, path: String, body: JSONObject?): JSONObject = withContext(Dispatchers.IO) {
+        coroutineContext.ensureActive()
         require(path.startsWith('/') && !path.startsWith("//")) { "Core path 必须是绝对站内路径" }
         val url = endpoint.origin.resolve(path).toURL()
         val connection = open(url)
@@ -101,12 +100,14 @@ class CoreClient(private val endpoint: CoreEndpoint) {
                 val error = parsed?.optJSONObject("error")
                 throw CoreRequestException(
                     status,
-                    error?.optString("code")?.ifBlank { "HTTP_$status" } ?: "HTTP_$status",
+                    error?.optString("code")?.takeIf { it.isNotBlank() } ?: parsed?.optString("code")?.takeIf { it.isNotBlank() } ?: "HTTP_$status",
                     error?.optString("message")?.takeIf { it.isNotBlank() }
                         ?: parsed?.optString("message")?.takeIf { it.isNotBlank() }
+                        ?: (parsed?.opt("error") as? String)?.takeIf { it.isNotBlank() }
                         ?: "Core 请求失败（HTTP $status）"
                 )
             }
+            coroutineContext.ensureActive()
             if (text.isBlank()) return@withContext JSONObject()
             runCatching { JSONObject(text) }.getOrElse { throw IOException("Core 返回了无效 JSON", it) }
         } finally {
@@ -119,7 +120,7 @@ class CoreClient(private val endpoint: CoreEndpoint) {
         initialCursor: Long = 0,
         receive: suspend (SseMessage) -> Unit
     ) = withContext(Dispatchers.IO) {
-        require(path.startsWith('/'))
+        require(path.startsWith('/') && !path.startsWith("//"))
         var cursor = initialCursor.coerceAtLeast(0)
         var failures = 0
         while (coroutineContext.isActive) {
@@ -135,25 +136,33 @@ class CoreClient(private val endpoint: CoreEndpoint) {
                 connection.setRequestProperty("Last-Event-ID", cursor.toString())
                 if (endpoint.bearerToken.isNotBlank()) connection.setRequestProperty("Authorization", "Bearer ${endpoint.bearerToken}")
                 val status = connection.responseCode
-                if (status !in 200..299) throw IOException("SSE 连接失败（HTTP $status）")
+                if (status !in 200..299) throw CoreRequestException(status, "SSE_HTTP_$status", "SSE 连接失败（HTTP $status）")
                 val type = connection.contentType.orEmpty().substringBefore(';').trim()
-                if (type != "text/event-stream") throw IOException("Core 未返回 text/event-stream")
-                failures = 0
+                if (type != "text/event-stream") throw CoreRequestException(status, "SSE_CONTENT_TYPE", "Core 未返回 text/event-stream")
                 connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { reader ->
                     val parser = BoundedSseParser(reader)
                     while (coroutineContext.isActive) {
                         val message = parser.read() ?: throw IOException("Core SSE 已结束")
+                        failures = 0
                         if (message.event == "heartbeat") continue
                         if (message.id <= cursor && message.event !in setOf("reset", "gap")) continue
                         receive(message)
-                        if (message.event in setOf("activity", "call", "cursor", "gap", "reset")) cursor = maxOf(cursor, message.id)
+                        cursor = if (message.event == "reset") message.id else maxOf(cursor, message.id)
                     }
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
-                if (!coroutineContext.isActive) break
-                failures = (failures + 1).coerceAtMost(5)
-                receive(SseMessage("disconnected", cursor, error.message.orEmpty()))
-                delay((failures * 2_000L).coerceAtMost(10_000L))
+                coroutineContext.ensureActive()
+                failures++
+                val terminal = error is CoreRequestException &&
+                    (error.errorCode == "SSE_CONTENT_TYPE" || (error.statusCode < 500 && error.statusCode != 429))
+                if (terminal || failures >= 8) {
+                    receive(SseMessage("stopped", cursor, ManagementContract.failure(error)))
+                    return@withContext
+                }
+                receive(SseMessage("disconnected", cursor, ManagementContract.failure(error)))
+                delay((250L * (1L shl failures.coerceAtMost(5))).coerceAtMost(5000L))
             } finally {
                 connection.disconnect()
             }

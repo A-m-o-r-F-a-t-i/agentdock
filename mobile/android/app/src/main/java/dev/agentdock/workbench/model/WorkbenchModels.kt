@@ -1,6 +1,7 @@
 package dev.agentdock.workbench.model
 
 import org.json.JSONObject
+import dev.agentdock.workbench.data.ResourcePage
 
 /** Every Windows Workbench capability has a mobile destination; compact layout never deletes a page. */
 enum class WorkbenchScreen(val route: String, val title: String, val section: String) {
@@ -125,7 +126,10 @@ data class WorkbenchSnapshot(
     val effectivePermissionSummary: String = "由 Core 提供有效权限",
     val effectivePermission: JSONObject? = null,
     val updatedAtEpochMs: Long = 0L,
-    val fixture: Boolean = false
+    val fixture: Boolean = false,
+    val errors: Map<String, String> = emptyMap(),
+    val taskPage: ResourcePage = ResourcePage(),
+    val conversationPage: ResourcePage = ResourcePage()
 )
 
 data class ActionOutcome(
