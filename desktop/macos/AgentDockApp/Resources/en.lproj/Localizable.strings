@@ -709,3 +709,9 @@
 "Enable full permission?" = "Enable full permission?";
 "This reduces Core approval prompts for business tools. Explicit deny rules and macOS system permissions remain effective." = "This reduces Core approval prompts for business tools. Explicit deny rules and macOS system permissions remain effective.";
 "Enable full permission" = "Enable full permission";
+"Calls and child calls" = "Calls and child calls";
+"Child calls" = "Child calls";
+"All calls" = "All calls";
+"Isolate" = "Isolate";
+"Remove isolation" = "Remove isolation";
+"Steps: %@ / %@" = "Steps: %@ / %@";

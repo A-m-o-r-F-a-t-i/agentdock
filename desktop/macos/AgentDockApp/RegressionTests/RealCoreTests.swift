@@ -14,7 +14,13 @@ final class RealCoreTests: XCTestCase {
     }
     func testAuthenticatedNativeReadsAndPayload() async throws {
         let value = try fixture(), api = client(try fixture())
-        let page = try await api.sidebar(WorkbenchSidebarRequest())
+        var sidebarRequest = WorkbenchSidebarRequest()
+        let discovery = try await api.sidebar(sidebarRequest)
+        for group in discovery.groups {
+            sidebarRequest.modes[group.id] = "history"
+            sidebarRequest.limits[group.id] = 20
+        }
+        let page = try await api.sidebar(sidebarRequest)
         let all = page.groups.flatMap(\.conversations)
         XCTAssertTrue(all.contains { $0.id == value.text("conversation_a") })
         XCTAssertTrue(all.contains { $0.id == value.text("conversation_b") })

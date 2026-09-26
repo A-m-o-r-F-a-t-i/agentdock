@@ -124,7 +124,7 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
         titleLabel.stringValue = conversation?.title ?? L10n.text("Select a conversation")
         metadataLabel.stringValue = conversation?.metadataText ?? L10n.text("Select a conversation in the left workspace pane to inspect its tasks, calls, approvals and supplements.")
         if let task = snapshot.task {
-            taskBadge.stringValue = L10n.format("Task · %@ · %@", String(describing: task.title), String(describing: WorkbenchFormatting.state(task.status)))
+            taskBadge.stringValue = L10n.format("Task · %@ · %@", String(describing: task.title), String(describing: WorkbenchFormatting.state(task.status))) + " · " + task.progressText
             taskBadge.isHidden = false
         } else if let conversation, !conversation.activeTaskID.isEmpty {
             taskBadge.stringValue = L10n.format("Task · %@", String(describing: conversation.activeTaskID))
@@ -138,12 +138,19 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
         statusBanner.textColor = snapshot.stale ? WorkbenchPalette.warning : WorkbenchPalette.secondaryText
         statusBanner.toolTip = snapshot.lastLoadedAt.map { L10n.format("Last synchronized: %@", String(describing: WorkbenchFormatting.shortDate($0))) }
 
-        entries = Self.timeline(calls: snapshot.calls.calls, insertions: snapshot.insertions.items)
-        selectedEntryID = selectedInsertionID.map { "insertion:\($0)" }
+        let nextEntries = Self.timeline(calls: snapshot.calls.calls, insertions: snapshot.insertions.items)
+        let nextSelection = selectedInsertionID.map { "insertion:\($0)" }
             ?? snapshot.selectedCall.map { "call:\($0.id)" }
             ?? ""
-        table.reloadData()
-        restoreSelection()
+        let selectionChanged = selectedEntryID != nextSelection
+        selectedEntryID = nextSelection
+        if nextEntries != entries {
+            let origin = scroll.contentView.bounds.origin
+            entries = nextEntries
+            suppressSelection = true; table.reloadData(); suppressSelection = false
+            restoreSelection()
+            if !selectionChanged { scroll.contentView.scroll(to: origin); scroll.reflectScrolledClipView(scroll.contentView) }
+        } else if selectionChanged { restoreSelection() }
         loadOlderButton.isHidden = !snapshot.calls.hasMore
         loadOlderButton.isEnabled = !model.isOperating && !model.isRefreshing
 
@@ -229,8 +236,8 @@ final class WorkbenchTimelineViewController: NSViewController, NSTableViewDataSo
     }
 }
 
-private struct WorkbenchTimelineEntry {
-    enum Kind {
+private struct WorkbenchTimelineEntry: Equatable {
+    enum Kind: Equatable {
         case call(WorkbenchCall)
         case insertion(WorkbenchInsertion)
     }

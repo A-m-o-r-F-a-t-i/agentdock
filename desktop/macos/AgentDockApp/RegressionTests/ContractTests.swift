@@ -110,6 +110,16 @@ final class ContractTests: XCTestCase {
         XCTAssertTrue(item.caption.contains("字节"))
         XCTAssertThrowsError(try WorkbenchPayloadSlice(json: .object(["text": .string(text), "next_offset": .integer(-1)])))
     }
+    func testCallPagingMovesBackwardAndScopedSkillsRemainDistinct() throws {
+        let calls: WorkbenchJSON = .object(["calls": .array([.object(["call_id": .string("call_1")])]),
+            "has_more": .bool(true), "next_before": .integer(80)])
+        XCTAssertEqual(try WorkbenchManagementPage(calls, resource: .calls, offset: 100).nextOffset, 80)
+        XCTAssertThrowsError(try WorkbenchManagementPage(calls, resource: .calls, offset: 80))
+        let skills: WorkbenchJSON = .object(["skills": .array([
+            .object(["name": .string("shared"), "skill_ref": .string("skill://managed/shared")]),
+            .object(["name": .string("shared"), "skill_ref": .string("skill://plugin/example/shared")])])])
+        XCTAssertEqual(try WorkbenchManagementPage(skills, resource: .skills, offset: 0).items.count, 2)
+    }
     func testNumericOverflowAndUnknownFields() throws {
         XCTAssertNil(WorkbenchJSON.number(Double(Int64.max)).int64Value)
         let decoded = try WorkbenchJSON.decode(Data(#"{"unknown":{"x":1},"large":9223372036854775807}"#.utf8))

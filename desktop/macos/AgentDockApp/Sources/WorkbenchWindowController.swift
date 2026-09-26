@@ -204,6 +204,7 @@ final class WorkbenchWindowController: NSWindowController, NSWindowDelegate, NST
         }
         timeline.onLoadOlder = { [weak self] in self?.model.loadOlderCalls() }
 
+        detail.onChildCalls = { [weak self] id in self?.manager.present(.calls, parentCallID: id) }
         detail.onStopCall = { [weak self] in self?.model.stopSelectedCall() }
         detail.onApprovalDecision = { [weak self] approved in
             self?.model.decideSelectedApproval(approve: approved)

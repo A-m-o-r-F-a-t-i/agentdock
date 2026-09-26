@@ -427,6 +427,16 @@ struct WorkbenchTaskSummary: Equatable, Sendable {
         raw = json
     }
 
+    var progressText: String {
+        let task = raw["task"].isNull ? raw : raw["task"]
+        let rows = task.values("steps")
+        let total = task["step_count"].int64Value.map(Int.init) ?? rows.count
+        let completed = task["completed_step_count"].int64Value.map(Int.init)
+            ?? task["completed_steps"].int64Value.map(Int.init)
+            ?? rows.filter { $0.text("status") == "completed" }.count
+        return L10n.format("Steps: %@ / %@", String(completed), String(total))
+    }
+
     var detailText: String {
         var sections = [String]()
         sections.append(L10n.format("State: %@", String(describing: WorkbenchFormatting.state(status))))

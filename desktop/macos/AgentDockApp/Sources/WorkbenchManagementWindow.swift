@@ -15,6 +15,7 @@ final class WorkbenchManagementWindow: NSWindowController, NSWindowDelegate, NST
     private let actions = NSPopUpButton()
     private let previous = NSButton(), next = NSButton()
     private var resource: WorkbenchResource = .tasks
+    private var parentCallID = ""
     private var page: WorkbenchManagementPage?
     private var detail: WorkbenchJSON = .null
     private var offset = 0, generation = 0, selectionGeneration = 0
@@ -67,7 +68,8 @@ final class WorkbenchManagementWindow: NSWindowController, NSWindowDelegate, NST
     }
     required init?(coder: NSCoder) { nil }
     deinit { request?.cancel(); detailRequest?.cancel(); writeRequest?.cancel() }
-    func present(_ value: WorkbenchResource = .tasks) {
+    func present(_ value: WorkbenchResource = .tasks, parentCallID: String = "") {
+        self.parentCallID = parentCallID
         if !busy { resourceControl.selectItem(at: WorkbenchResource.allCases.firstIndex(of: value) ?? 0); changeResource() }
         showWindow(nil); window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
@@ -78,6 +80,11 @@ final class WorkbenchManagementWindow: NSWindowController, NSWindowDelegate, NST
     @objc private func changeResource() {
         guard !busy else { return }
         resource = WorkbenchResource.allCases[resourceControl.indexOfSelectedItem]
+        if resource != .calls { parentCallID = "" }
+        let previousFilter = filter.titleOfSelectedItem ?? "active"
+        filter.removeAllItems()
+        filter.addItems(withTitles: resource == .calls ? ["active", "all", "archived", "trash", "isolated"] : ["active", "all", "archived", "trash"])
+        if filter.itemTitles.contains(previousFilter) { filter.selectItem(withTitle: previousFilter) }
         offset = 0; offsets.removeAll(); page = nil; detail = .null
         table.reloadData(); text.1.string = ""; configureActions(); load()
     }
@@ -89,6 +96,10 @@ final class WorkbenchManagementWindow: NSWindowController, NSWindowDelegate, NST
             choices = [(L10n.text("Open details"), "detail"), (L10n.text("Rename"), "rename"), (L10n.text("Tags"), "tags"), (L10n.text("Pin"), "pin"),
                 (L10n.text("Unpin"), "unpin"), (L10n.text("Archive"), "archive"), (L10n.text("Unarchive"), "unarchive"),
                 (L10n.text("Move to Trash"), "trash"), (L10n.text("Restore"), "restore"), (L10n.text("Permanently delete"), "delete")]
+        case .calls: choices = [(L10n.text("Open details"), "detail"), (L10n.text("Child calls"), "children"),
+            (L10n.text("All calls"), "all_calls"), (L10n.text("Archive"), "archive"), (L10n.text("Unarchive"), "unarchive"),
+            (L10n.text("Isolate"), "isolate"), (L10n.text("Remove isolation"), "unisolate"),
+            (L10n.text("Move to Trash"), "trash"), (L10n.text("Restore"), "restore"), (L10n.text("Permanently delete"), "delete")]
         case .approvals: choices = [(L10n.text("View original request"), "detail"), (L10n.text("Approve this request"), "approve"), (L10n.text("Reject this request"), "reject")]
         case .skills: choices = [(L10n.text("View content"), "detail"), (L10n.text("Enable"), "enable"), (L10n.text("Disable"), "disable")]
         case .plugins: choices = [(L10n.text("Details"), "detail"), (L10n.text("Install local package"), "install"), (L10n.text("Update local package"), "update"),
@@ -109,16 +120,17 @@ final class WorkbenchManagementWindow: NSWindowController, NSWindowDelegate, NST
         request?.cancel(); detailRequest?.cancel(); generation += 1; selectionGeneration += 1
         let current = generation, type = resource
         let requestedOffset = offset, query = search.stringValue, view = filter.titleOfSelectedItem ?? "active"
-        let workspace = workspaceFilter.stringValue
+        let workspace = workspaceFilter.stringValue, parent = parentCallID
         stale = true; actions.isEnabled = false
         status.stringValue = L10n.format("Reading %@…", String(describing: type.title))
         request = Task { [weak self] in
             guard let self else { return }
             do {
-                let loaded = try await client.managementPage(type, offset: requestedOffset, search: query, view: view, workspaceID: workspace)
+                let loaded = try await client.managementPage(type, offset: requestedOffset, search: query, view: view, workspaceID: workspace, parentCallID: parent)
                 try Task.checkCancellation(); guard current == generation else { return }
                 page = loaded; stale = false; table.reloadData()
                 status.stringValue = L10n.format("Loaded %@ items · Offset %@ · Total %@", String(describing: loaded.items.count), String(describing: requestedOffset), String(describing: loaded.total.map(String.init) ?? L10n.text("Unknown")))
+                if !parent.isEmpty { status.stringValue += " · parent_call_id=" + parent }
                 if type == .workspaces { status.stringValue += L10n.text(" · Writes require the WB01 interface to be integrated") }
                 actions.isEnabled = true; previous.isEnabled = !offsets.isEmpty; next.isEnabled = loaded.hasMore
                 if type == .display { detail = loaded.items.first ?? .null; text.1.string = detail.prettyPrinted }
@@ -178,7 +190,12 @@ final class WorkbenchManagementWindow: NSWindowController, NSWindowDelegate, NST
         let selected = selectedItems(), type = resource
         let ids = selected.map(type.identity).filter { !$0.isEmpty }
         if action == "detail" { showDetail(); return }
-        if type == .tasks || type == .conversations {
+        if action == "children" || action == "all_calls" {
+            guard action == "all_calls" || ids.count == 1 else { return }
+            parentCallID = action == "children" ? ids[0] : ""
+            offset = 0; offsets.removeAll(); load(); return
+        }
+        if type == .tasks || type == .conversations || type == .calls {
             guard !ids.isEmpty, ids.count == selected.count else { return }
             var title = "", tags = [String]()
             if action == "rename" || action == "tags" {
@@ -188,7 +205,7 @@ final class WorkbenchManagementWindow: NSWindowController, NSWindowDelegate, NST
                 tags = action == "tags" ? value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } : []
             }
             guard WorkbenchForms.confirm(L10n.text("Confirm batch operation?"), L10n.format("%@ · %@ · %@ items\n", String(describing: type.title), String(describing: action), String(describing: ids.count)) + ids.joined(separator: "\n")) else { return }
-            mutate { [client] in try await client.manage(kind: type == .tasks ? "task" : "conversation", ids: ids, action: action,
+            mutate { [client] in try await client.manage(kind: type == .tasks ? "task" : (type == .calls ? "call" : "conversation"), ids: ids, action: action,
                 title: title, tags: tags, confirmPermanent: action == "delete") }; return
         }
         if type == .approvals {

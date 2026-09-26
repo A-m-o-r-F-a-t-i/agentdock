@@ -228,8 +228,9 @@ final class WorkbenchViewModel {
                 let value = try await client.call(id)
                 try Task.checkCancellation()
                 guard currentEpoch == epoch, id == selectedCallID else { return }
-                snapshot.selectedCall = value
-                snapshot.calls.calls = Self.mergeCalls(snapshot.calls.calls, [value]); notify()
+                snapshot.calls.calls = Self.mergeCalls(snapshot.calls.calls, [value])
+                snapshot.selectedCall = snapshot.calls.calls.first { $0.id == id }
+                notify()
             } catch {
                 guard currentEpoch == epoch, id == selectedCallID, !Task.isCancelled else { return }
                 snapshot.message = L10n.format("Call details unavailable: %@", String(describing: error.localizedDescription)); notify()

@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class WorkbenchDetailViewController: NSViewController {
+    var onChildCalls: ((String) -> Void)?
     var onStopCall: (() -> Void)?
     var onApprovalDecision: ((Bool) -> Void)?
     var onConversationAction: ((String) -> Void)?
@@ -89,6 +90,7 @@ final class WorkbenchDetailViewController: NSViewController {
         header.addArrangedSubview(subtitleLabel)
         header.addArrangedSubview(headerActions)
         header.addArrangedSubview(conversationMenu)
+        header.addArrangedSubview(WorkbenchUI.button(L10n.text("Child calls"), target: self, action: #selector(openChildren)))
 
         tabs.addTabViewItem(tab(label: L10n.text("Call and output"), view: executionView()))
         tabs.addTabViewItem(tab(label: L10n.text("Task"), view: textTab(taskText, identifier: "workbench.detail.task")))
@@ -342,6 +344,7 @@ final class WorkbenchDetailViewController: NSViewController {
         }
     }
 
+    @objc private func openChildren() { if let id = currentCall?.id { onChildCalls?(id) } }
     @objc private func stopCall(_ sender: Any?) { onStopCall?() }
     @objc private func readRequest() { onReadPayload?("request") }
     @objc private func readOutput() { onReadPayload?("response") }

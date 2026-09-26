@@ -709,3 +709,9 @@
 "Enable full permission?" = "启用完全权限？";
 "This reduces Core approval prompts for business tools. Explicit deny rules and macOS system permissions remain effective." = "这会减少 Core 对业务工具的审批。显式禁止规则与 macOS 系统权限仍然有效。";
 "Enable full permission" = "启用完全权限";
+"Calls and child calls" = "调用与子调用";
+"Child calls" = "子调用";
+"All calls" = "全部调用";
+"Isolate" = "隔离";
+"Remove isolation" = "取消隔离";
+"Steps: %@ / %@" = "步骤：%@ / %@";
