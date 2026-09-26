@@ -46,6 +46,7 @@ data class WorkbenchUiState(
     val detailError: String = "",
     val payload: JSONObject? = null,
     val payloadKind: String = "response",
+    val payloadCallId: String = "",
     val children: List<WorkbenchItem> = emptyList(),
     val batchResult: JSONObject? = null,
     val insertionDraft: String = "",
@@ -75,10 +76,15 @@ class WorkbenchViewModel(
         insertionDraft = saved["draft"] ?: ""
     ))
     val state: StateFlow<WorkbenchUiState> = _state.asStateFlow()
+    val resources = CoreResourceController(viewModelScope, { graph.repository.managementClient() },
+        { _state.value.fixture }, { _state.value.snapshot }, ::showNotice, ::refresh)
+
     private var activityStream: Job? = null
     private var callStream: Job? = null
     private var refreshJob: Job? = null
     private var detailJob: Job? = null
+    private var payloadJob: Job? = null
+    private var payloadGeneration = 0L
     private var refreshDebounce: Job? = null
     private var refreshGeneration = 0L
 
@@ -87,6 +93,12 @@ class WorkbenchViewModel(
             graph.settings.settings.collectLatest { settings ->
                 _state.update { it.copy(settings = settings) }
                 if (!_state.value.fixture) GuardianScheduler.configure(getApplication(), settings)
+            }
+        }
+        viewModelScope.launch {
+            graph.operations.changes.collectLatest {
+                val records = withContext(Dispatchers.IO) { graph.operations.list() }
+                _state.update { it.copy(operations = records) }
             }
         }
         refresh()
@@ -212,15 +224,18 @@ class WorkbenchViewModel(
         }
     }
 
-    fun loadPayload(kind: String, offset: Long = 0) {
+    fun loadPayload(kind: String, offset: Long = 0) = loadCallPayload(_state.value.selectedCallId, kind, offset)
+
+    fun loadCallPayload(identity: String, kind: String, offset: Long = 0) {
         if (_state.value.fixture) return
-        val identity = _state.value.selectedCallId
-        viewModelScope.launch {
+        payloadJob?.cancel()
+        val generation = ++payloadGeneration
+        payloadJob = viewModelScope.launch {
             try {
                 val value = graph.repository.callPayload(identity, kind, offset)
-                if (_state.value.selectedCallId == identity) _state.update { it.copy(payload = value, payloadKind = kind, detailError = "") }
+                if (generation == payloadGeneration) _state.update { it.copy(payload = value, payloadKind = kind, payloadCallId = identity, detailError = "") }
             } catch (error: CancellationException) { throw error
-            } catch (error: Exception) { _state.update { it.copy(detailError = ManagementContract.failure(error)) } }
+            } catch (error: Exception) { if (generation == payloadGeneration) _state.update { it.copy(detailError = ManagementContract.failure(error)) } }
         }
     }
 
@@ -299,12 +314,14 @@ class WorkbenchViewModel(
                 .put("approval_policy", approval).put("approval_reviewer", settings.approvalReviewer)))
     }
 
-    fun runTermux(operation: String) = perform {
+    fun runTermux(operation: String, arguments: JSONObject = JSONObject()) = perform {
         when (operation) {
             "start", "restart" -> graph.settings.setDesiredNodeState("running")
             "stop" -> graph.settings.setDesiredNodeState("stopped")
         }
-        val pending = withContext(Dispatchers.IO) { graph.termux.dispatch(operation, JSONObject().put("source", "android_ui")) }
+        val payload = JSONObject(arguments.toString()).put("source", "android_ui")
+        if (operation in setOf("install", "update")) payload.put("apk_version", BuildConfig.PRODUCT_VERSION)
+        val pending = withContext(Dispatchers.IO) { graph.termux.dispatch(operation, payload) }
         ActionOutcome(true, "queued", "已提交 ${pending.operation}；结果以 Termux 回执为准")
     }
 
@@ -338,6 +355,54 @@ class WorkbenchViewModel(
             getApplication<Application>().contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
             updateSettings { if (kind == "project") it.copy(projectTreeUri = uri.toString()) else it.copy(artifactTreeUri = uri.toString()) }
         } catch (error: Exception) { showError(error) }
+    }
+
+    fun showNotice(value: String) = _state.update { it.copy(message = value.take(2048)) }
+
+    fun exportRecords(uri: Uri, value: JSONObject) {
+        if (_state.value.fixture) { fixtureBlocked(); return }
+        val frozen = JSONObject(value.toString())
+        viewModelScope.launch {
+            try {
+                dev.agentdock.workbench.data.RecordExporter(getApplication()).write(uri, frozen)
+                showNotice("已导出明确选定的记录。")
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) { showError(error) }
+        }
+    }
+
+    fun exportCallScope(uri: Uri, filter: dev.agentdock.workbench.data.CallFilter) {
+        if (_state.value.fixture) { fixtureBlocked(); return }
+        viewModelScope.launch {
+            try {
+                val exporter = dev.agentdock.workbench.data.RecordExporter(getApplication())
+                val frozen = exporter.calls(graph.repository.managementClient(), filter)
+                exporter.write(uri, frozen)
+                showNotice("已导出完整筛选范围内的调用摘要；未预载工具输出。")
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) { showError(error) }
+        }
+    }
+
+    fun exportBridgeBundle(uri: Uri) {
+        if (_state.value.fixture) { fixtureBlocked(); return }
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val app = getApplication<Application>()
+                    val output = app.contentResolver.openOutputStream(uri, "w") ?: error("无法打开导出目标")
+                    java.util.zip.ZipOutputStream(output).use { zip ->
+                        for (name in listOf("agentdock-workbench", "agentdock_workbench.py", "agentdock-workbench-bootstrap.sh")) {
+                            zip.putNextEntry(java.util.zip.ZipEntry(name))
+                            app.assets.open(name).use { it.copyTo(zip) }
+                            zip.closeEntry()
+                        }
+                    }
+                }
+                showNotice("已导出完整桥包。请在外部 Termux 解压并手动运行 bootstrap。")
+            } catch (error: CancellationException) { throw error
+            } catch (error: Exception) { showError(error) }
+        }
     }
 
     fun exportBundledAsset(uri: Uri, assetName: String) {
@@ -402,6 +467,10 @@ class WorkbenchViewModel(
     }
 
     private fun stopStreams() {
+        resources.invalidate()
+        payloadGeneration++; payloadJob?.cancel(); detailJob?.cancel()
+        refreshGeneration++; refreshJob?.cancel()
+        _state.update { it.copy(payload = null, detail = null, snapshot = WorkbenchSnapshot()) }
         activityStream?.cancel(); activityStream = null
         callStream?.cancel(); callStream = null
         refreshDebounce?.cancel()
